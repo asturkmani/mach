@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft v0.2. Stack moved to TypeScript on Vercel |
-| **Date** | 2026-10-06 (v0.2) |
+| **Status** | Draft v0.3. Speed-first, Vercel-first; MVP scope cut |
+| **Date** | 2026-10-06 (v0.3) |
 | **Owner** | TBD |
 
 > Everything here is a proposal to react to. Items marked **[Decision Dn]** need a call before we build; they are collected in [§14 Open questions](#14-open-questions-and-decisions).
@@ -30,7 +30,7 @@
 8. [Key user journeys](#8-key-user-journeys)
 9. [Architecture](#9-architecture)
 10. [Non-functional requirements](#10-non-functional-requirements)
-11. [Phased roadmap](#11-phased-roadmap)
+11. [Roadmap](#11-roadmap)
 12. [Success metrics](#12-success-metrics)
 13. [Risks](#13-risks)
 14. [Open questions and decisions](#14-open-questions-and-decisions)
@@ -75,7 +75,8 @@ Agents should be as capable as open-source personal agents like OpenClaw and Her
 ### Non-goals (v1)
 
 - Structured HR/ERP data (payroll, contracts, headcount planning). The profile is text.
-- Building our own memory engine, sandbox or LLM. We integrate existing components behind interfaces.
+- Building our own sandbox, durable-execution engine, model gateway or credential store. We use Vercel's.
+- Portability layers. We accept lock-in to Vercel in exchange for shipping sooner (see [Build strategy](#build-strategy)).
 - Replacing Slack/Teams as the company's general chat. Human↔human collaboration in v1 centers on tasks and shared threads.
 - Customer-facing agents, i.e. agents talking to the company's own customers or suppliers. Likely v2 ([D8](#14-open-questions-and-decisions)).
 - Native mobile apps. In v1 the channels are the mobile experience, and the web app is responsive.
@@ -85,8 +86,8 @@ Agents should be as capable as open-source personal agents like OpenClaw and Her
 
 - **"Coordinator" and "Chief of Staff" are the same agent:** one per workspace, created automatically.
 - **"MCP and skills" support** means: tools via the Model Context Protocol, plus packaged procedures in the open Agent Skills (`SKILL.md`) format used by OpenClaw and Hermes Agent.
-- **Built in TypeScript on Vercel**, using as much of Vercel's agent stack as possible: AI SDK, AI Gateway, Workflow, Sandbox, Chat SDK, Connect, Queues and Marketplace storage. See [§9](#9-architecture).
-- **Vercel Sandbox is the default sandbox**, behind an interface so we can switch providers. (v0.1 of this spec assumed E2B.)
+- **Speed to market beats technical elegance.** Where Vercel has a solution we use it, even if a specialist tool would be better; where it doesn't, we build the simplest thing ourselves. See [Build strategy](#build-strategy).
+- **Built in TypeScript on Vercel**: AI SDK, AI Gateway, Workflow, Sandbox, Chat SDK, Connect, Blob, Cron, plus Marketplace products for Postgres, email and auth.
 - **Company knowledge is free text**, not hard data. We add structure only where the platform can't function without it.
 
 ## 4. Product principles
@@ -160,7 +161,7 @@ Priorities: **P0** = MVP · **P1** = fast follow · **P2** = later.
 | PROF-1 | P0 | **Onboarding interview.** When a workspace is created, the CoS interviews the owner (in-app or on a channel) and drafts the profile. It keeps asking follow-up questions until each core section has content or the owner explicitly skips it. |
 | PROF-2 | P0 | **Updates by chat.** Any member can tell the CoS a change ("Sam now runs sales and Priya reports to Sam"), and the CoS proposes the edit. |
 | PROF-3 | P0 | **Direct editing** in a markdown/rich-text editor. |
-| PROF-4 | P0 | **Versioning.** Every change records the author (human or agent), timestamp, diff and reason. Any version can be restored. |
+| PROF-4 | P1 | **Versioning.** Every change records the author (human or agent), timestamp, diff and reason. Any version can be restored. |
 | PROF-5 | P0 | **Change control.** By default, agent-proposed edits need owner/admin approval. A toggle lets the CoS edit without approval. |
 | PROF-6 | P0 | **Context injection.** Every agent run includes the profile, compressed if it exceeds a token budget. Sections can be marked *load on demand* to keep the always-loaded part small. |
 | PROF-7 | P1 | **Org chart view**, rendered from the People section. Read-only; the text stays the source of truth. |
@@ -198,23 +199,20 @@ Priorities: **P0** = MVP · **P1** = fast follow · **P2** = later.
 | BRAIN-2 | P0 | **Automatic extraction.** After each run and conversation, a background step pulls out candidate memories (corrections, new facts, preferences) and stores them with provenance: run, message, author. |
 | BRAIN-3 | P0 | Relevant memories are injected when a run starts (based on the task or message), and agents can search for more during the run. |
 | BRAIN-4 | P0 | **Brain UI.** Browse, search, filter by scope/type/agent, edit, delete, pin, and see provenance ("learned from task #142 on 3 Oct"). |
-| BRAIN-5 | P0 | **Dedup and conflicts.** A memory that contradicts an existing one supersedes it, and the history is kept. Facts carry valid-from/valid-to dates where possible. |
+| BRAIN-5 | P1 | **Dedup and conflicts.** A memory that contradicts an existing one supersedes it, and the history is kept. Facts carry valid-from/valid-to dates where possible. |
 | BRAIN-6 | P1 | **Restricted memories** visible only to named agents/humans. PII redaction rules. |
 | BRAIN-7 | P1 | **Brain → Profile promotion.** The CoS suggests moving stable, frequently used memories into the profile. |
 | BRAIN-8 | P1 | **Session search.** Full-text search across past conversations and run transcripts, for Hermes-style cross-session recall. |
 | BRAIN-9 | P2 | **Knowledge sources.** Index uploaded documents and connected drives (Google Drive, SharePoint) as read-only knowledge alongside memories. |
 
-**Implementation.** Memory sits behind an internal `MemoryService` interface. Because the stack is all TypeScript on Vercel, the v1 recommendation changes from v0.1 (which proposed Mem0 as a Python service):
+**Implementation.** Vercel has no memory product, so we build our own. It is deliberately simple:
 
 - **Recommended for v1: a thin TypeScript memory service on our own Postgres + pgvector** (Neon via the Vercel Marketplace).
   - Extraction, dedup and conflict resolution are AI SDK structured-output calls, run as Workflow steps after each run.
   - Embeddings come through AI Gateway.
   - Search is hybrid: pgvector similarity plus Postgres full-text, filtered by scope.
   - No extra service to host, and memories live next to the rest of the workspace data (row-level security, backups, export).
-- **Spike alternatives:**
-  - [Mem0](https://github.com/mem0ai/mem0)'s TypeScript SDK, if its pgvector support and extraction quality beat our own.
-  - [Graphiti](https://github.com/getzep/graphiti), a temporal knowledge graph that is strongest on facts that change over time. It is Python, so it would run outside Vercel. Revisit only if recall on people and customer facts is weak.
-- **[Decision D4]** Choose after a short spike comparing recall quality on a seeded sample company.
+- If recall quality turns out to be a problem after launch, look at Mem0's TypeScript SDK. No spike before launch.
 
 ### F3. Agents
 
@@ -323,7 +321,7 @@ stateDiagram-v2
 | BRD-5 | P0 | **Dependencies.** A task becomes dispatchable only when every blocked-by task is Done. |
 | BRD-6 | P0 | **Ways to create tasks:** the board UI; chat with any agent ("make a task for…"); email or Telegram to the CoS; agents themselves (delegation). |
 | BRD-7 | P0 | **Comments and @mentions** from humans and agents. Mentioning a member notifies them; mentioning an agent also wakes it ([DSP-2](#f42-dispatcher)). |
-| BRD-8 | P0 | **Realtime updates.** Agent-assigned cards show live run progress. |
+| BRD-8 | P0 | **Live updates.** Agent-assigned cards show run progress. MVP: the board polls every few seconds; the open run streams live from its Workflow. |
 | BRD-9 | P1 | **Recurring tasks** (cron-like), e.g. "Every Monday: prepare the weekly sales report". |
 | BRD-10 | P1 | Task templates and checklists. |
 | BRD-11 | P2 | List, calendar and timeline views. |
@@ -345,7 +343,7 @@ For a dispatchable task, the dispatcher **claims it atomically** (a lease), sets
 - relevant Brain memories,
 - its tools and skills.
 
-**Triggers.** Task events are published to Vercel Queues, and the dispatcher consumes them. It is event-driven: it reacts when a task is created, updated or assigned, a dependency completes, an approval is resolved, a comment or mention is added, an agent is un-paused, or a budget resets. A Vercel Cron Job sweep (every minute) catches anything the events miss.
+**Triggers.** Every code path that changes a task calls the dispatcher directly, which starts a Workflow for each newly dispatchable task. It is event-driven: it reacts when a task is created, updated or assigned, a dependency completes, an approval is resolved, a comment or mention is added, an agent is un-paused, or a budget resets. A Vercel Cron Job sweep (every minute) catches anything the events miss.
 
 **Run outcomes.** An agent ends its run by calling exactly one outcome tool:
 
@@ -433,8 +431,8 @@ Written once as TypeScript functions and filtered by the agent's permissions. Ag
 | ID | Pri | Requirement |
 |---|---|---|
 | MCP-1 | P0 | **Workspace MCP registry.** Admins add remote MCP servers (Streamable HTTP) by URL. Agents connect through the AI SDK MCP client. OAuth flows and tokens are handled by **Vercel Connect** where it has a connector, and by encrypted columns in Postgres otherwise. |
-| MCP-2 | P0 | **Curated catalog** of common SME integrations: Google Workspace, Microsoft 365, Slack, Notion, HubSpot, Xero/QuickBooks, Stripe, Shopify, GitHub, Airtable. Use a maintained MCP server where one exists; otherwise wrap the provider API as our own tools, using a Vercel Connect token. |
-| MCP-3 | P0 | **Per-agent grants**, by server and by tool, each with a policy: allow / ask / deny. |
+| MCP-2 | P0 | **Curated catalog.** MVP launches with whichever of these Vercel Connect already has a connector for, and adds the rest after launch: Google Workspace, Microsoft 365, Slack, Notion, HubSpot, Xero/QuickBooks, Stripe, Shopify, GitHub, Airtable. Use a maintained MCP server where one exists; otherwise wrap the provider API as our own tools, using a Vercel Connect token. |
+| MCP-3 | P0 | **Per-agent grants**, each with a policy: allow / ask / deny. MVP: per integration; per individual tool in P1. |
 | MCP-4 | P0 | **Credentials never reach the model or the sandbox.** Tool calls run in our Workflow steps, which fetch short-lived tokens from Vercel Connect at call time and log every call. When code inside a sandbox must call an API, Vercel Sandbox's credential brokering injects the header at the egress proxy, so the secret never enters the VM. |
 | MCP-5 | P1 | **Local (stdio) MCP servers** run inside the agent's sandbox from a package spec (npm, pip or container image). |
 | MCP-6 | P1 | **Per-person connections.** An agent working for a specific human can use that human's own OAuth connection (e.g. their mailbox) when allowed. Implemented with Vercel Connect user-subject tokens and a one-time consent flow. |
@@ -456,8 +454,8 @@ Written once as TypeScript functions and filtered by the agent's permissions. Ag
 |---|---|---|
 | SBX-1 | P0 | **Every agent has a [Vercel Sandbox](https://vercel.com/docs/sandbox)**, a Firecracker microVM, for shell commands, code, file work, a headless browser and local MCP servers. The agent loop itself runs outside the sandbox ([§9.2](#92-agent-runtime)); the sandbox is where its tools execute. |
 | SBX-2 | P0 | **Persistence.** Each agent has one persistent sandbox. Vercel saves its filesystem automatically when it stops and restores it on the next run, so installed packages, repos and files survive. Snapshot retention is set to "never expires" for active agents. The sandbox is not the system of record: durable outputs are synced to Vercel Blob. If a restore fails, a fresh sandbox starts from the agent's image. |
-| SBX-3 | P0 | **Images** per agent type, built as OCI images in Vercel Container Registry: Base (the default `universal` image: Node, Python, common tools), Coder (git, language toolchains), Browser (headless Chromium + Playwright), Data (Python data stack). |
-| SBX-4 | P0 | **Network policy.** Egress is allowed and logged by default. Admins can switch an agent to deny-all or a domain/CIDR allowlist; policies can be updated mid-run (`updateNetworkPolicy`). |
+| SBX-3 | P1 | **Images** per agent type (MVP: every agent uses the default `universal` image and installs what it needs; the install survives in its persistent sandbox), built as OCI images in Vercel Container Registry: Base (the default `universal` image: Node, Python, common tools), Coder (git, language toolchains), Browser (headless Chromium + Playwright), Data (Python data stack). |
+| SBX-4 | P1 | **Network policy.** Egress is allowed and logged by default (MVP). Admins can switch an agent to deny-all or a domain/CIDR allowlist; policies can be updated mid-run (`updateNetworkPolicy`). |
 | SBX-5 | P0 | **No secrets in sandboxes.** Model calls never happen inside the sandbox. Integration credentials reach sandboxed code only through credential brokering (MCP-4). |
 | SBX-6 | P1 | **Concurrent runs.** A persistent sandbox serves one run at a time. When an agent runs several tasks in parallel, extra runs start from the agent's latest snapshot. P1: evaluate Drives (beta) as a shared persistent home directory mounted into every run's sandbox. |
 | SBX-7 | P1 | **Live view.** Humans can watch terminal output and browser screenshots during a run, and download the sandbox's files. |
@@ -466,7 +464,7 @@ Written once as TypeScript functions and filtered by the agent's permissions. Ag
 
 Limits to design around (Pro plan, October 2026): a single sandbox session lasts at most 24 hours, so very long jobs must checkpoint and continue in a new session; snapshot storage is billed per GB-month. Sandboxes can run in any Vercel compute region, so we pin them to London (`lhr1`) for UK workspaces.
 
-The sandbox sits behind a `SandboxProvider` interface (`create`, `resume`, `stop`, `exec`, `files`, `destroy`) so E2B or Daytona can be added later.
+MVP: each agent runs one task at a time (concurrency 1), so one persistent sandbox per agent is enough and SBX-6 waits until after launch. We call the `@vercel/sandbox` SDK directly, with no provider abstraction.
 
 #### F5.5 Schedules, heartbeats, subagents
 
@@ -489,13 +487,13 @@ Every agent has an in-app inbox. Other channels are tick boxes on the agent's se
 | Channel | Pri | How it works | Notes |
 |---|---|---|---|
 | **In-app** | P0 | DMs and group threads in the web app | Always on |
-| **Email** | P0 | Each agent gets an address like `bookkeeper@<workspace>.<our-mail-domain>`. P1: custom domain (`bookkeeper@acme.co.uk`). | Resend (Vercel Marketplace) for sending and for receiving via `email.received` webhooks. Chat SDK has no email adapter, so we write one. Threading via `Message-ID` / `In-Reply-To`. SPF/DKIM/DMARC checks for sender verification. |
-| **Telegram** | P0 | One Telegram bot per agent: the owner creates it in BotFather and pastes the token, or follows a guided flow | Chat SDK Telegram adapter. Free and simple, with inline buttons (good for approvals), voice notes and files |
+| **Email** | P0 outbound, P1 inbound | MVP: Mach sends notifications, questions and briefs by email (Resend). P1: each agent gets its own address like `bookkeeper@<workspace>.<our-mail-domain>`. P1: custom domain (`bookkeeper@acme.co.uk`). | Resend (Vercel Marketplace) for sending and for receiving via `email.received` webhooks. Chat SDK has no email adapter, so we write one. Threading via `Message-ID` / `In-Reply-To`. SPF/DKIM/DMARC checks for sender verification. |
+| **Telegram** | P0 | MVP: one Mach bot for all workspaces; users link their Telegram account, and the CoS routes each message to the right agent (CHN-10). P1: a dedicated bot per agent, created in BotFather | Chat SDK Telegram adapter. Free and simple, with inline buttons (good for approvals), voice notes and files |
 | **WhatsApp** | P1, gated | WhatsApp Business Platform (Cloud API). One number per workspace, owned by the company via Embedded Signup. | Chat SDK WhatsApp adapter. See constraints below |
 | Slack / Teams / Discord | P1 | One app per workspace; agents appear as bot users | Chat SDK adapters exist and Vercel Connect manages their tokens, so these become cheap to add. Moved up from P2. |
 | SMS / voice calls | P2 | | |
 
-**Implementation.** All channels go through one pipeline built on Vercel's open-source [Chat SDK](https://github.com/vercel/chat), which gives one TypeScript API over Telegram, WhatsApp, Slack, Teams, Discord and more, with thread state kept in Redis or Postgres. A message on any channel resolves to a (member, agent, thread) and starts a run, exactly like an in-app message. Two things need a spike before we commit:
+**Implementation.** All channels go through one pipeline built on Vercel's open-source [Chat SDK](https://github.com/vercel/chat), which gives one TypeScript API over Telegram, WhatsApp, Slack, Teams, Discord and more, with thread state kept in Postgres. A message on any channel resolves to a (member, agent, thread) and starts a run, exactly like an in-app message. Launch avoids the hard parts by using one shared Mach Telegram bot (D14). Two things to check when we add per-agent bots and Slack/Teams after launch (D13):
 - **Many bots per deployment.** Mach needs a bot per agent per workspace, created at runtime from tokens users paste in. We must confirm Chat SDK adapters can be created per tenant on demand, not only configured once at startup.
 - **Vercel Connect's Chat SDK helpers** use one configured installation per connector and don't pick an installation from each inbound event. For per-tenant Slack/Teams apps we resolve the installation ourselves.
 
@@ -510,7 +508,7 @@ Every agent has an in-app inbox. Other channels are tick boxes on the agent's se
 | CHN-7 | P0 | **Attachments** (images, PDFs, documents) in both directions. Inbound files are saved to the thread and made available in the agent's sandbox. |
 | CHN-8 | P1 | **Voice notes** are transcribed and treated as text. P2: reply by voice. |
 | CHN-9 | P1 | **Group threads** with humans and several agents. An agent responds when @mentioned, or the CoS moderates. |
-| CHN-10 | P1 | **Shared entry point.** One WhatsApp/Telegram contact for the workspace, routed by the CoS ("@bookkeeper, …" or inferred from the message). |
+| CHN-10 | P0 | **Shared entry point.** One WhatsApp/Telegram contact for the workspace, routed by the CoS ("@bookkeeper, …" or inferred from the message). |
 
 **WhatsApp constraints. Resolve these before we build ([D5](#14-open-questions-and-decisions)):**
 
@@ -533,8 +531,8 @@ Every agent has an in-app inbox. Other channels are tick boxes on the agent's se
 |---|---|---|
 | COL-1 | P0 | **Delegation through the board.** Agent A creates a subtask and assigns it to agent B. A's task waits; when B finishes, B's output flows back to A. Any agent can delegate to agents. Only the CoS and agents with a "can assign humans" permission can delegate to humans. |
 | COL-2 | P1 | **Ask an agent.** An agent can ask another agent a quick question. This runs the target briefly and returns the answer. It is logged on both agents, and the target's own permissions apply (no borrowing privileges). |
-| COL-3 | P0 | **Activity feed.** A workspace-wide, filterable stream of notable events: tasks created or completed, approvals, agents created, Brain and profile changes. |
-| COL-4 | P0 | **Notifications.** Each human sets preferences per event type and channel, quiet hours, and digest mode. |
+| COL-3 | P1 | **Activity feed.** A workspace-wide, filterable stream of notable events: tasks created or completed, approvals, agents created, Brain and profile changes. |
+| COL-4 | P0 | **Notifications.** MVP: each human picks one preferred channel. P1: preferences per event type, quiet hours, digest mode. |
 | COL-5 | P1 | **Handoffs.** An agent can hand a task to a human with a structured summary (what's done, what's left, where the files are), and the human can hand it back. |
 | COL-6 | P1 | **Mixed group threads** ([CHN-9](#f6-communication-channels)). |
 
@@ -544,16 +542,16 @@ Agent↔agent work counts against both agents' budgets and against the delegatio
 
 | ID | Pri | Requirement |
 |---|---|---|
-| SEC-1 | P0 | **Human roles.** Owner and Admin manage agents, integrations and billing. Members create tasks and talk to agents. Guests see only what they're invited to. |
+| SEC-1 | P0 | **Human roles.** MVP: Owner (manages agents, integrations, billing) and Member (creates tasks, talks to agents). P1: Admin and Guest. |
 | SEC-2 | P0 | **Agent permissions:** tool grants (MCP-3), Brain scopes, which members it may message or assign to, whether it may create subtasks or agents. |
 | SEC-3 | P0 | **Action policies** of Allow / Ask first / Deny, set per tool or per category. Defaults are in the table below. |
-| SEC-4 | P0 | **Autonomy presets.** *Supervised* asks before any side effect outside Mach. *Standard* uses the defaults below. *Autonomous* asks only for categories explicitly set to Ask. **[Decision D7]** default for new agents. |
+| SEC-4 | P1 | **Autonomy presets.** *Supervised* asks before any side effect outside Mach. *Standard* uses the defaults below. *Autonomous* asks only for categories explicitly set to Ask. **[Decision D7]** default for new agents. |
 | SEC-5 | P0 | **Approval requests** show the exact action (tool, arguments and a rendered preview, e.g. the actual email), the reason and the task. They go to the agent's manager (fallback: owners) in-app and on the manager's preferred channel. Options: approve / deny / edit and approve / "always allow this for this agent". Requests expire after 24 h by default; expiry counts as a denial and the task moves to Waiting. |
 | SEC-6 | P0 | **Budgets.** Spend caps (LLM + sandbox + paid tools) per run, per agent per day/month and per workspace per month. Alerts at 50/80/100%. At 100% runs stop and the owner is notified. |
 | SEC-7 | P0 | **Audit log.** An immutable record of every action by every member, including tool calls with arguments, approvals and config changes. Exportable. |
 | SEC-8 | P0 | **Credentials.** OAuth and API tokens live in Vercel Connect, which issues short-lived tokens at call time; our deployment authenticates to it with Vercel OIDC, so no long-lived secrets are stored in the app. User-pasted secrets that Connect can't hold (e.g. Telegram bot tokens) are envelope-encrypted in Postgres, scoped per workspace or agent. |
 | SEC-9 | P0 | **Prompt-injection posture.** Content from web pages, emails, files and unverified senders is untrusted data. Instructions come only from verified members. If a run's context includes untrusted content, its sensitive actions require approval regardless of policy. P1: per-run taint tracking. |
-| SEC-10 | P0 | **Tenant isolation.** Every row is scoped by workspace with row-level security. Sandboxes are per agent. Memory never crosses workspaces. |
+| SEC-10 | P0 | **Tenant isolation.** Every row is scoped by workspace. MVP enforces this in one data-access layer that every query goes through; Postgres row-level security follows in P1. Sandboxes are per agent. Memory never crosses workspaces. |
 | SEC-11 | P1 | **Kill switch.** An owner can pause every agent with one click. |
 
 Default action policies (*Standard* preset):
@@ -573,7 +571,7 @@ Default action policies (*Standard* preset):
 |---|---|---|
 | OBS-1 | P0 | **Run viewer.** The full transcript (context, model responses, tool calls and results, sandbox commands and output, approvals), a timeline, tokens, cost, duration, and the model and agent version used. |
 | OBS-2 | P0 | **Live view** of active runs, streamed. |
-| OBS-3 | P0 | **Dashboard.** Tasks by status and assignee type, active runs, agent utilization, success rate, spend over time, pending approvals. |
+| OBS-3 | P1 | **Dashboard.** Tasks by status and assignee type, active runs, agent utilization, success rate, spend over time, pending approvals. |
 | OBS-4 | P1 | **Agent scorecards.** Review outcomes (accepted first time vs. changes requested), human corrections and failed runs per agent. |
 | OBS-5 | P1 | **Engineering tracing** with Vercel Observability, the Workflow run dashboard, AI SDK telemetry (OpenTelemetry) and AI Gateway usage reports, for our own debugging. |
 
@@ -581,10 +579,10 @@ Default action policies (*Standard* preset):
 
 | ID | Pri | Requirement |
 |---|---|---|
-| ADM-1 | P0 | Sign-up by email magic link, Google or Microsoft (Clerk via the Vercel Marketplace, or Better Auth). Creating a workspace creates its CoS, which starts the onboarding interview (PROF-1). |
+| ADM-1 | P0 | Sign-up by email magic link, Google or Microsoft (Clerk via the Vercel Marketplace). Creating a workspace creates its CoS, which starts the onboarding interview (PROF-1). |
 | ADM-2 | P0 | Invite humans by email link; they verify their channels (CHN-2). |
 | ADM-3 | P0 | The CoS proposes the first 1–3 worker agents based on the profile. |
-| ADM-4 | P0 | Admin pages for integrations (MCP registry), the skills library, channels, budgets and the audit log. |
+| ADM-4 | P0 | Admin pages for integrations, skills, channels and budgets. The audit log is viewable via the run viewer in MVP; a dedicated page is P1. |
 | ADM-5 | P0 | **Usage metering from day one** (model tokens and cost from AI Gateway, sandbox Active CPU and memory, Connect token requests, messages per channel), attributed per workspace and agent, so billing can be added later. |
 | ADM-6 | P1 | Data export (profile, Brain, tasks, transcripts) and workspace deletion, for GDPR. |
 | ADM-7 | P2 | SSO/SAML, SCIM. |
@@ -644,7 +642,30 @@ Default action policies (*Standard* preset):
 
 ## 9. Architecture
 
-**Stack choice.** Mach is built in TypeScript on Vercel and uses as much of Vercel's agent stack as fits. Most components are Vercel products; the rest are provisioned through the Vercel Marketplace (billed through Vercel), so there is one account, one deploy pipeline and one region setting.
+### Build strategy
+
+The goal is to get to market as fast as possible, not to build the most technically complete platform. Three rules decide every component:
+
+1. **Vercel has it → use it**, even when it's in beta or a specialist tool would be better.
+2. **Vercel Marketplace has it → use that** (billed through Vercel, provisioned in one click). This covers Postgres, email and auth.
+3. **Neither has it → build the simplest version ourselves**, in the same Next.js app.
+
+We do **not** build abstraction layers so we could switch providers later. Lock-in to Vercel is an accepted trade-off.
+
+| We use from Vercel | We build ourselves |
+|---|---|
+| Agent loop, tool calling, MCP client, tool approval (AI SDK) | Board, tasks and dispatcher rules |
+| Durable runs and human waits (Workflow) | Company Profile and onboarding interview |
+| Model access, budgets, usage (AI Gateway) | Company Brain (memory on pgvector) |
+| Sandboxes (Sandbox) | Platform tools (tasks, messaging, Brain, profile) |
+| Integration credentials and OAuth (Connect) | Permission policies and the approval flow |
+| Telegram, WhatsApp, Slack, Teams (Chat SDK) | Skills loader (`SKILL.md` index + `load_skill` tool) |
+| Schedules and sweeps (Cron Jobs) | Agent templates, the web UI |
+| Files and transcripts (Blob) | Inbound email adapter (P1) |
+| Tracing (Observability) | |
+| **From the Marketplace:** Neon Postgres + pgvector, Resend, Clerk | |
+
+**Stack overview.** One Next.js project on Vercel, one region (`lhr1`):
 
 | Need | Vercel product | Status (Oct 2026) |
 |---|---|---|
@@ -652,7 +673,6 @@ Default action policies (*Standard* preset):
 | Agent loop, tools, MCP client, tool approval | AI SDK 7 (`WorkflowAgent`, `ToolLoopAgent`) | GA (`HarnessAgent` is experimental) |
 | Model access, budgets, fallbacks, multi-provider | AI Gateway | GA |
 | Durable runs: pause, resume, retry, wait for humans | Workflow (`"use workflow"`, steps, hooks, `sleep`) | GA |
-| Task events and background fan-out | Queues | Public beta (powers Workflow) |
 | Sandboxed computer per agent | Sandbox (Firecracker microVMs, persistent, network policy, credential brokering) | GA; Drives in beta |
 | OAuth and API credentials for integrations | Connect (100+ connectors, short-lived tokens, user- or app-subject) | GA |
 | Telegram, WhatsApp, Slack, Teams, Discord | Chat SDK (open source) | GA |
@@ -661,7 +681,7 @@ Default action policies (*Standard* preset):
 | Custom sandbox images | Container Registry | GA |
 | Feature flags for beta features | Flags / Edge Config | GA |
 | Tracing and logs | Observability, AI SDK telemetry (OpenTelemetry) | GA |
-| Postgres + pgvector, Redis, email, auth | Marketplace: Neon, Upstash, Resend, Clerk | Partner products |
+| Postgres + pgvector, email, auth | Marketplace: Neon, Resend, Clerk | Partner products |
 
 ### 9.1 Components
 
@@ -680,7 +700,6 @@ flowchart LR
         MCPS[Mach MCP server]
     end
     subgraph Vercel["Vercel platform services"]
-        Q[[Queues]]
         GW[AI Gateway]
         SBX[Sandbox<br/>one per agent]
         CONN[Connect]
@@ -688,7 +707,6 @@ flowchart LR
     end
     subgraph Ext["Marketplace and external"]
         DB[(Neon Postgres + pgvector)]
-        REDIS[(Upstash Redis)]
         RESEND[Resend]
         LLM[Model providers]
         API3[Third-party APIs and MCP servers]
@@ -697,10 +715,9 @@ flowchart LR
     CH <--> CHAT
     RESEND <--> CHAT
     CHAT --> NEXT
-    CHAT --> REDIS
+    CHAT --> DB
     NEXT --> DB
-    NEXT --> Q
-    Q --> DSP
+    NEXT --> DSP
     CRON --> DSP
     DSP --> DB
     DSP --> WF
@@ -718,14 +735,14 @@ flowchart LR
 | Component | Responsibility |
 |---|---|
 | **Next.js app** | Auth, workspace data, board, profile, agent config, approvals, live views. Route handlers and server actions on Fluid compute; there is no separate API service. |
-| **Chat SDK bot** | One bot pipeline for every channel: webhooks in, messages out, identity resolution, thread state in Redis. Email is an adapter we write on top of Resend. |
-| **Dispatcher** | Consumes task events from Queues plus a cron sweep, claims dispatchable tasks ([F4.2](#f42-dispatcher)) and starts run workflows. |
+| **Chat SDK bot** | One bot pipeline for every channel: webhooks in, messages out, identity resolution, thread state in Postgres (Chat SDK's Postgres state adapter). Outbound email goes through Resend; an inbound email adapter is P1. |
+| **Dispatcher** | Called directly whenever a task changes, plus a one-minute cron sweep; claims dispatchable tasks ([F4.2](#f42-dispatcher)) and starts run workflows. |
 | **Run workflows** | One durable Workflow per run, driving an AI SDK `WorkflowAgent`. Each tool call is a step with automatic retries. Approvals and short human waits suspend on Workflow hooks. |
 | **Mach MCP server** | The platform tools (tasks, messaging, Brain, profile) exposed over MCP for agents that run inside a sandbox harness (option B below) and for future third-party agents. Agents on option A call the same functions in-process. |
 | **AI Gateway** | One endpoint for all models: per-agent model choice, fallbacks, budgets and usage reporting. |
 | **Sandbox** | Each agent's persistent computer, where its bash, file, browser and local-MCP tools run. |
 | **Connect** | Holds OAuth and API credentials and issues short-lived tokens to tool steps; brokers credentials into sandboxes when code there must call an API. |
-| **Memory service** | TypeScript module behind `MemoryService` on Postgres + pgvector ([F2](#f2-company-brain-memory)). |
+| **Memory** | Our own TypeScript module on Postgres + pgvector ([F2](#f2-company-brain-memory)). |
 
 ### 9.2 Agent runtime
 
@@ -752,7 +769,7 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | B. `HarnessAgent` running Claude Code / Codex inside the sandbox | A mature coding harness for Coder agents; same AI SDK stream format, so the UI doesn't change | Experimental (canary) API; the harness runs inside the sandbox, so its model access must go through a scoped gateway key; reaches platform tools only via the Mach MCP server |
 | C. eve (Vercel's open-source agent framework) | Agents with instructions, skills, tools, channels, schedules and a sandbox, durable on Vercel Functions | Agents are directories deployed as code. Mach's agents are created by users at runtime and stored in the database, so eve doesn't fit as the core. Borrow its patterns; revisit if it supports runtime-defined agents. |
 
-**Recommendation:** Option A for every agent in v1, behind an `AgentRuntime` interface. Add option B as an opt-in runtime for Coder agents in Phase 2, behind a flag, once `HarnessAgent` leaves canary.
+**Decision:** Option A for every agent at launch. No runtime abstraction. Revisit option B for Coder agents after launch, once `HarnessAgent` leaves canary.
 
 ### 9.3 Models
 
@@ -765,24 +782,22 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Language and repo | TypeScript end to end; pnpm + Turborepo monorepo | Apps: `web` (Next.js). Packages: `db`, `agents` (runtime + tools), `memory`, `channels`, `mcp`, `ui`. |
+| Language and repo | TypeScript; a single Next.js app | Split into a monorepo only if the codebase demands it |
 | Web app | Next.js App Router, AI SDK UI + AI Elements, shadcn/ui, Tailwind, dnd-kit for the board | |
 | API | Next.js route handlers and server actions on Fluid compute | Long-running work goes to Workflow, not request handlers |
 | Agent runtime | AI SDK 7 `WorkflowAgent` + AI SDK MCP client | [§9.2](#92-agent-runtime) |
-| Durable execution | Vercel Workflow | Runs, wake-ups, approvals, post-run jobs |
-| Events | Vercel Queues | Task events to the dispatcher; channel inbound fan-out |
+| Durable execution | Vercel Workflow | Runs, wake-ups, approvals, post-run jobs. Workflow uses Vercel Queues internally, so we don't use Queues directly. |
 | Schedules | Vercel Cron Jobs (every-minute sweep) | Dispatch sweep, agent schedules, daily briefs |
 | Models | AI Gateway | Budgets, fallbacks, usage per workspace/agent |
 | Sandbox | Vercel Sandbox, images in Vercel Container Registry | [F5.4](#f54-sandbox) |
 | Credentials | Vercel Connect; envelope-encrypted Postgres column for user-pasted bot tokens | [SEC-8](#f8-permissions-approvals-safety) |
 | Channels | Chat SDK (Telegram, WhatsApp, Slack, Teams, Discord) + our Resend email adapter | [F6](#f6-communication-channels) |
 | Database | Neon Postgres + pgvector (Marketplace), Drizzle ORM, row-level security per workspace | London region |
-| Cache and chat state | Upstash Redis (Marketplace) | Chat SDK state adapter, rate limits, pub/sub for live board |
-| Memory | Own `MemoryService` on pgvector | [F2](#f2-company-brain-memory) |
+| Memory | Own module on pgvector | [F2](#f2-company-brain-memory) |
 | Files | Vercel Blob | Attachments, outputs, transcripts |
-| Realtime | Workflow streams for runs; SSE route fed by Redis pub/sub for board updates | |
+| Live updates | Workflow streams for the open run; board polls every few seconds | Add push updates after launch if needed |
 | Mach MCP server | MCP route on Next.js (Vercel MCP adapter) | For option B harnesses and future third-party agents |
-| Auth | Clerk (Marketplace) or Better Auth | Passport is for internal enterprise apps, not customer sign-in |
+| Auth | Clerk (Marketplace) | Vercel has no customer sign-in product; Passport is for internal enterprise apps |
 | Feature flags | Vercel Flags | Gate beta pieces (WhatsApp, HarnessAgent, Drives) |
 | Protection | Vercel Firewall, BotID on public forms | |
 | Observability | Vercel Observability, AI SDK telemetry, AI Gateway reports | |
@@ -832,35 +847,36 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | **Availability** | 99.5% for the web app and API in v1. |
 | **Accessibility** | WCAG 2.1 AA for the web app. |
 
-## 11. Phased roadmap
+## 11. Roadmap
 
-**Phase 0: Foundations**
-- Workspaces, auth, members, in-app chat with the CoS
-- Agent runtime: `WorkflowAgent` on Vercel Workflow, AI Gateway, sandbox tools on Vercel Sandbox, platform tools (tasks, messaging, profile), run viewer
-- Company Profile and the onboarding interview
-- Spikes: memory recall (D4), per-tenant Chat SDK bots (D13), sandbox persistence and concurrency (SBX-2, SBX-6)
-- *Exit criterion:* a founder can onboard and chat with a CoS that knows the company and can do work in its sandbox.
+The plan is one launch milestone, then fast iterations driven by design partners. Anything not needed for the launch journeys (J1–J5) waits.
 
-**Phase 1: MVP**
-- Board and dispatcher: statuses, subtasks, dependencies, outcomes, wake-ups, review loop
-- Worker agents: templates, create-by-chat, settings page
-- Company Brain (pgvector `MemoryService`): extraction and UI
-- MCP registry and gateway with 5–8 curated integrations; skills library
-- Channels: email and Telegram
-- Approvals, budgets, audit log, autonomy presets
+### Launch (MVP)
+
+- **Workspace and people:** sign-up (Clerk), invite members, Owner/Member roles, Telegram identity linking.
+- **Chief of Staff:** onboarding interview, Company Profile (edit by chat or editor), daily brief, triage and delegation.
+- **Worker agents:** create from 4–5 templates or by asking the CoS; settings page; pause/resume; one task at a time per agent.
+- **Board and dispatcher:** one board, canonical statuses, subtasks, dependencies, comments and mentions, run outcomes, wake-ups, review loop.
+- **Agent runtime:** `WorkflowAgent` on Workflow, AI Gateway (Claude), web search, persistent Vercel Sandbox on the default image, skills (upload + `load_skill`).
+- **Integrations:** Vercel Connect connectors that exist on launch day, granted per agent.
+- **Company Brain:** remember/recall tools, post-run extraction, a simple list/search/delete page.
+- **Channels:** in-app chat; one Mach Telegram bot routed by the CoS; outbound email notifications.
+- **Control:** allow/ask/deny policies with defaults, approvals in-app and via Telegram buttons, spend caps, run viewer with full transcripts.
 - *Exit criterion:* 5 design-partner SMEs run real work through agents every week.
 
-**Phase 2: Fast follow**
-- WhatsApp (after the policy review); Slack, Teams and Discord via Chat SDK
-- Schedules and heartbeats, recurring tasks, subagents
-- Ask-an-agent, group threads, voice notes
-- Agent-authored skills, org chart view, scorecards, test-drive mode, custom email domains
+### Cut from launch (first iterations after)
 
-**Phase 3: Later**
+- Inbound email to agents, a Telegram bot per agent, Slack/Teams/Discord, WhatsApp (after the policy review)
+- Agent schedules and heartbeats, recurring tasks, subagents, ask-an-agent, group threads, voice notes
+- Profile version restore, Brain conflict handling, activity feed, dashboard, scorecards, autonomy presets
+- Custom sandbox images, network policies, parallel runs per agent, Admin/Guest roles, row-level security
+- Agent-authored skills, skill import from public registries, test-drive mode, org chart view, custom email domains
+
+### Later
+
 - Customer-facing agents (external contacts)
-- Template marketplace, desktop computer use
-- Knowledge sources (Drive / SharePoint), SSO/SCIM
-- More runtimes and model providers
+- Template marketplace, desktop computer use, `HarnessAgent` for Coder agents
+- Knowledge sources (Drive / SharePoint), SSO/SCIM, bring-your-own model keys
 
 ## 12. Success metrics
 
@@ -883,28 +899,37 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | Runaway cost (loops, long runs) | Budgets, run limits, loop protection (DSP-7) |
 | Agent quality disappoints, and users stop trusting it | Conservative default autonomy, review loop, scorecards, templates tuned on real SME tasks |
 | Skill and MCP supply-chain attacks | Admin approval, scanning, sandbox isolation, gateway-held credentials |
-| Concentration on Vercel (runtime, sandbox, credentials, channels) | Keep `AgentRuntime`, `SandboxProvider`, `MemoryService` and channel interfaces; data stays in standard Postgres; Workflow and Chat SDK are open source |
-| Newer Vercel pieces change under us (HarnessAgent is experimental; Drives and Queues' Python SDK are beta) | Only GA pieces on the P0 path; experimental ones behind flags |
+| Full dependence on Vercel (runtime, sandbox, credentials, channels) | Accepted for speed. Data stays in standard Postgres, and Workflow and Chat SDK are open source, so a later migration is possible but not planned |
+| Vercel products change under us or have gaps we hit late | Use GA products for launch where one exists; build a thin workaround in-app when blocked rather than switching vendor |
 | Workflow / Sandbox / Connect cost at scale | Meter per workspace from day one; review unit cost per completed task monthly |
 | Memory pollution (agents learn wrong things) | Provenance, human curation, conflict handling, restricted scopes |
 
 ## 14. Open questions and decisions
 
+### Decided
+
+| ID | Decision |
+|---|---|
+| D2 | Each member has an optional `manager` link, used only to route approvals and escalations. The org is still described in profile text. |
+| D3 | Agent runtime: AI SDK `WorkflowAgent` on Vercel Workflow for every agent. No runtime abstraction. |
+| D4 | Memory: our own module on Neon pgvector. No pre-launch spike. |
+| D6 | Models: Claude via AI Gateway at launch. Other models and bring-your-own-key after launch. |
+| D9 | Human↔human chat: task comments and mentions only at launch. |
+| D11 | Launch market: UK, hosted in `lhr1`. |
+| D12 | One assignee per task. |
+| D14 | Telegram at launch: one Mach bot for all workspaces, routed by the Chief of Staff (users link their Telegram account). A bot per agent comes after launch. This removes BotFather setup from onboarding and avoids D13 for launch. |
+| D15 | Speed over elegance: Vercel first, Marketplace second, build our own third; no portability layers ([Build strategy](#build-strategy)). |
+
+### Still open
+
 | ID | Question | Recommendation |
 |---|---|---|
 | D1 | Is "Mach" the product name or a working title? | Working title |
-| D2 | Add an optional `manager` link per member for routing approvals and escalations, or keep the org chart purely in text? | Add the link; keep the description in text |
-| D3 | Agent runtime: AI SDK `WorkflowAgent` on Workflow, `HarnessAgent` (Claude Code / Codex in the sandbox), or eve? | `WorkflowAgent` for all agents; `HarnessAgent` as an opt-in for Coder agents once it leaves canary |
-| D4 | Memory engine: own pgvector service, Mem0's TypeScript SDK, or Graphiti? | Own pgvector service, confirmed by a spike |
-| D5 | WhatsApp: go ahead under Meta's AI policy? One number per workspace? | Policy review first; one number per workspace, owned by the company |
-| D6 | Which models to expose, and when to allow bring-your-own-key? | Claude by default via AI Gateway; a short curated list of other models per agent; BYOK in Phase 3 |
-| D7 | Default autonomy for new agents: Supervised or Standard? | Supervised for the first week, then the CoS suggests Standard |
-| D8 | When can external contacts (customers, suppliers) talk to agents? | Phase 3; design channel identity with it in mind |
-| D9 | Human↔human chat: lightweight threads, or full team chat? | Lightweight threads |
-| D10 | Pricing: per seat, per agent, usage-based or hybrid? | Decide before Phase 1 ends; metering exists from day one |
-| D11 | Launch market and data-residency commitments? | UK first, UK/EU hosting |
-| D12 | Multiple assignees per task? | No: one owner, plus watchers/collaborators |
-| D13 | Can Chat SDK run many per-tenant bots (a Telegram bot per agent, Slack apps per workspace) created at runtime? | Spike in Phase 0; fallback is our own thin Telegram/WhatsApp webhook handlers behind the same channel interface |
+| D5 | WhatsApp: go ahead under Meta's AI policy? One number per workspace? | Policy review in parallel with the build; not on the launch path |
+| D7 | Default autonomy for new agents? | Ask before any external side effect at launch; loosen per agent |
+| D8 | When can external contacts (customers, suppliers) talk to agents? | After launch; design channel identity with it in mind |
+| D10 | Pricing: per seat, per agent, usage-based or hybrid? | Decide before design partners convert to paid; metering exists from day one |
+| D13 | Can Chat SDK create per-tenant bots (a bot per agent, Slack apps per workspace) at runtime? | Check when per-agent bots are picked up; if not, write our own webhook handlers for those channels |
 
 ---
 
