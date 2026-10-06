@@ -59,7 +59,7 @@ The Chief of Staff's web search and page-reading tools run through AI Gateway (P
 
 1. Import the repo; connect Neon from the Marketplace.
 2. Add the WorkOS variables and `CHIEF_OF_STAFF_MODEL`. Set `NEXT_PUBLIC_WORKOS_REDIRECT_URI` to `https://<your-domain>/callback` and add the same URL in WorkOS.
-3. Run `pnpm db:migrate` against the production database once.
+3. Deploy. Vercel builds run `vercel-build`, which applies `db/schema.sql` before building, so the production tables are created automatically.
 
 ## Checks
 
