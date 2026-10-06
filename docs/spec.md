@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft v0.3. Speed-first, Vercel-first; MVP scope cut |
-| **Date** | 2026-10-06 (v0.3) |
+| **Status** | Draft v0.4. Launch channels: WhatsApp (Twilio) and email |
+| **Date** | 2026-10-06 (v0.4) |
 | **Owner** | TBD |
 
 > Everything here is a proposal to react to. Items marked **[Decision Dn]** need a call before we build; they are collected in [§14 Open questions](#14-open-questions-and-decisions).
@@ -49,7 +49,7 @@ Every company on Mach gets:
 - a **Chief of Staff**, the coordinator agent that runs the agent team,
 - **worker agents** the company creates for specific jobs (coder, data entry, bookkeeper…),
 - a **Kanban board** where tasks go to humans or agents, and a **dispatcher** that starts agents automatically when their work is ready,
-- **channels** (WhatsApp, Telegram, email, in-app), ticked per agent, so people can talk to agents from wherever they already work.
+- **channels** (WhatsApp, email, in-app), ticked per agent, so people can talk to agents from wherever they already work.
 
 Agents should be as capable as open-source personal agents like OpenClaw and Hermes Agent: tools over MCP, skills, a sandboxed cloud computer (Vercel Sandbox), memory, schedules, messaging. The difference is that Mach agents work for a company rather than for one person.
 
@@ -128,7 +128,7 @@ Human workspace roles are **Owner, Admin, Member, Guest** ([F8](#f8-permissions-
 | **Sandbox** | An isolated cloud computer (a Vercel Sandbox microVM) where an agent runs code, uses a browser and works with files. |
 | **Integration / tool** | A capability exposed over MCP (Gmail, Xero, GitHub, HubSpot…) or built in. |
 | **Skill** | A packaged procedure (`SKILL.md` plus optional scripts) that teaches an agent to do a specific job. |
-| **Channel** | A way to reach a member: in-app, email, Telegram, WhatsApp. |
+| **Channel** | A way to reach a member: in-app, email, WhatsApp. |
 | **Thread** | A conversation between members, in any mix of humans and agents, on any channel. |
 | **Approval** | A request from an agent asking a human to allow an action before it happens. |
 
@@ -252,7 +252,7 @@ Each agent is defined on an Agent Settings page. Every field is editable, and ea
 | Tools & integrations | MCP servers and tools it may use, each with a policy: allow / ask / deny |
 | Skills | Attached from the workspace skill library |
 | Sandbox template | Base, Coder (git, Node, Python), Browser (headless Chromium), Data (Python, pandas)… |
-| Channels | Tick boxes: In-app (always on), Email, Telegram, WhatsApp ([F6](#f6-communication-channels)) |
+| Channels | Tick boxes: In-app (always on), Email, WhatsApp ([F6](#f6-communication-channels)) |
 | Brain access | Which memory scopes it can read and write |
 | Schedules | Recurring jobs, e.g. "every weekday at 08:00, check the orders inbox" |
 | Autonomy level | Preset approval policies: Supervised / Standard / Autonomous ([F8](#f8-permissions-approvals-safety)) |
@@ -319,7 +319,7 @@ stateDiagram-v2
 | BRD-3 | P0 | **Task fields:** title; description (markdown); assignee (exactly one member, or unassigned); creator; reviewer (optional, defaults to the creator for agent-assigned tasks); status; priority; due date; start-after date; labels; parent; blocked-by dependencies; acceptance criteria; attachments; comments and activity; outputs (files, links, summaries); linked runs; cost so far. |
 | BRD-4 | P0 | **Subtasks** are tasks with a parent. The data model allows any depth; the task drawer shows them as a nested list, and parents show rolled-up progress. By default (configurable), a parent can't be Done while it has open subtasks. |
 | BRD-5 | P0 | **Dependencies.** A task becomes dispatchable only when every blocked-by task is Done. |
-| BRD-6 | P0 | **Ways to create tasks:** the board UI; chat with any agent ("make a task for…"); email or Telegram to the CoS; agents themselves (delegation). |
+| BRD-6 | P0 | **Ways to create tasks:** the board UI; chat with any agent ("make a task for…"); email or WhatsApp to the CoS; agents themselves (delegation). |
 | BRD-7 | P0 | **Comments and @mentions** from humans and agents. Mentioning a member notifies them; mentioning an agent also wakes it ([DSP-2](#f42-dispatcher)). |
 | BRD-8 | P0 | **Live updates.** Agent-assigned cards show run progress. MVP: the board polls every few seconds; the open run streams live from its Workflow. |
 | BRD-9 | P1 | **Recurring tasks** (cron-like), e.g. "Every Monday: prepare the weekly sales report". |
@@ -486,38 +486,54 @@ Every agent has an in-app inbox. Other channels are tick boxes on the agent's se
 
 | Channel | Pri | How it works | Notes |
 |---|---|---|---|
-| **In-app** | P0 | DMs and group threads in the web app | Always on |
-| **Email** | P0 outbound, P1 inbound | MVP: Mach sends notifications, questions and briefs by email (Resend). P1: each agent gets its own address like `bookkeeper@<workspace>.<our-mail-domain>`. P1: custom domain (`bookkeeper@acme.co.uk`). | Resend (Vercel Marketplace) for sending and for receiving via `email.received` webhooks. Chat SDK has no email adapter, so we write one. Threading via `Message-ID` / `In-Reply-To`. SPF/DKIM/DMARC checks for sender verification. |
-| **Telegram** | P0 | MVP: one Mach bot for all workspaces; users link their Telegram account, and the CoS routes each message to the right agent (CHN-10). P1: a dedicated bot per agent, created in BotFather | Chat SDK Telegram adapter. Free and simple, with inline buttons (good for approvals), voice notes and files |
-| **WhatsApp** | P1, gated | WhatsApp Business Platform (Cloud API). One number per workspace, owned by the company via Embedded Signup. | Chat SDK WhatsApp adapter. See constraints below |
-| Slack / Teams / Discord | P1 | One app per workspace; agents appear as bot users | Chat SDK adapters exist and Vercel Connect manages their tokens, so these become cheap to add. Moved up from P2. |
-| SMS / voice calls | P2 | | |
+| **In-app** | P0 | DMs and threads in the web app | Always on |
+| **WhatsApp** | P0 | Through our existing **Twilio** account. MVP: one Mach WhatsApp number for all workspaces; users verify their phone number, and the CoS routes each message to the right agent (CHN-10). Later: a dedicated number per workspace. | Our own webhook route plus the `twilio` npm SDK ([below](#whatsapp-via-twilio)) |
+| **Email** | P0 | MVP: one address per workspace for the CoS (`<workspace>@<our-mail-domain>`) plus outbound email from any agent. P1: an address per agent and custom domains (`bookkeeper@acme.co.uk`). | Open-source libraries in our app ([below](#email)) |
+| Slack / Teams / Discord | P1 | One app per workspace; agents appear as bot users | Chat SDK adapters exist and Vercel Connect manages their tokens |
+| Telegram | P2 | Not planned for now | Chat SDK has an adapter if we want it later |
+| SMS / voice calls | P2 | Twilio | Chat SDK's Twilio adapter covers SMS/MMS |
 
-**Implementation.** All channels go through one pipeline built on Vercel's open-source [Chat SDK](https://github.com/vercel/chat), which gives one TypeScript API over Telegram, WhatsApp, Slack, Teams, Discord and more, with thread state kept in Postgres. A message on any channel resolves to a (member, agent, thread) and starts a run, exactly like an in-app message. Launch avoids the hard parts by using one shared Mach Telegram bot (D14). Two things to check when we add per-agent bots and Slack/Teams after launch (D13):
-- **Many bots per deployment.** Mach needs a bot per agent per workspace, created at runtime from tokens users paste in. We must confirm Chat SDK adapters can be created per tenant on demand, not only configured once at startup.
-- **Vercel Connect's Chat SDK helpers** use one configured installation per connector and don't pick an installation from each inbound event. For per-tenant Slack/Teams apps we resolve the installation ourselves.
+**Implementation.** At launch both external channels are simple webhook routes in our Next.js app that we write ourselves, because Chat SDK's WhatsApp adapter targets Meta's Cloud API directly and its Twilio adapter covers SMS/MMS only, and it has no email adapter. Every inbound message resolves to a (member, agent, thread) and starts a run, exactly like an in-app message. Chat SDK comes in when we add Slack and Teams.
+
+#### WhatsApp via Twilio
+
+- **Inbound:** Twilio posts each message to `/api/channels/whatsapp`. We verify the `X-Twilio-Signature`, look up the sender's verified phone number to find the member and workspace, store the message (media is copied to Blob), and start a run. We acknowledge immediately and reply asynchronously, since agent runs outlast Twilio's webhook timeout.
+- **Outbound:** `client.messages.create({ from: 'whatsapp:+44…', to: 'whatsapp:+44…', body })` from a Workflow step.
+- **24-hour window:** free-form replies are allowed within 24 hours of the user's last message. Anything we start after that (approval requests, questions, daily briefs, "task done") must use a pre-approved Twilio **Content Template**. Launch needs four templates: `approval_request` (with Approve / Deny quick-reply buttons), `agent_question`, `daily_brief`, `task_update`. Submit them for approval early; it takes days.
+- **Approvals:** quick-reply buttons come back as an inbound message carrying the button payload, which resolves the waiting Workflow hook.
+- **Person in several workspaces:** the CoS asks which company a message is for and remembers the choice for that conversation.
+
+#### Email
+
+Built from open-source libraries inside the Next.js app; no separate mail server to run:
+
+- **Sending:** [Nodemailer](https://nodemailer.com) over SMTP.
+- **Receiving:** an inbound-parse webhook posts the raw message to `/api/channels/email`, and [mailparser](https://github.com/nodemailer/mailparser) (from the Nodemailer project) turns it into text, HTML and attachments. We strip quoted replies before handing text to the agent.
+- **Delivery provider:** **Twilio SendGrid**, since we already work with Twilio. Its Inbound Parse webhook (with "send raw" on) receives mail for our domain, and its SMTP relay sends. Because we only speak SMTP and raw MIME, any provider can replace it by changing configuration.
+- **Threading and trust:** `Message-ID` / `In-Reply-To` headers map replies to threads. Only senders whose address is verified on a member are accepted, and inbound messages failing SPF/DKIM are dropped (CHN-3).
+
+A fully self-hosted open-source mail stack (Postal, Reloop) would need its own server and IP reputation management, so it isn't worth it for launch.
 
 | ID | Pri | Requirement |
 |---|---|---|
 | CHN-1 | P0 | **Channel toggles** per agent, with guided setup and a "send test message" step. |
-| CHN-2 | P0 | **Identity linking.** Each human links their channel identities (email addresses, Telegram account, WhatsApp number) by verification code or magic link. Inbound messages are attributed to that member, and that member's permissions apply. |
+| CHN-2 | P0 | **Identity linking.** Each human links their channel identities (email addresses, WhatsApp number) by verification code or magic link. Inbound messages are attributed to that member, and that member's permissions apply. |
 | CHN-3 | P0 | **Unknown senders.** A per-agent policy: ignore, forward to the manager, or send a canned reply. Default: forward to the manager. **Agents never act on instructions from unverified senders.** (External contacts like customers and suppliers: P2, [D8](#14-open-questions-and-decisions).) |
 | CHN-4 | P0 | **Unified threads.** Messages from every channel land in one thread per (member, agent), marked with channel badges. Agents reply on the channel the message came in on, and a conversation can move across channels. |
 | CHN-5 | P0 | **Proactive outbound.** Agents message humans (questions, approvals, completions, briefs) on the human's preferred channel and respect quiet hours. |
-| CHN-6 | P0 | **Approvals and questions in-channel**: inline buttons on Telegram; reply keywords ("approve 4821") or a deep link on email/WhatsApp. |
+| CHN-6 | P0 | **Approvals and questions in-channel**: quick-reply buttons on WhatsApp (Twilio Content Templates); a deep link to the app, or a reply keyword ("approve 4821"), on email. |
 | CHN-7 | P0 | **Attachments** (images, PDFs, documents) in both directions. Inbound files are saved to the thread and made available in the agent's sandbox. |
-| CHN-8 | P1 | **Voice notes** are transcribed and treated as text. P2: reply by voice. |
+| CHN-8 | P1 | **WhatsApp voice notes** are transcribed and treated as text. P2: reply by voice. |
 | CHN-9 | P1 | **Group threads** with humans and several agents. An agent responds when @mentioned, or the CoS moderates. |
-| CHN-10 | P0 | **Shared entry point.** One WhatsApp/Telegram contact for the workspace, routed by the CoS ("@bookkeeper, …" or inferred from the message). |
+| CHN-10 | P0 | **Shared entry point.** One WhatsApp number and one email address per workspace, routed by the CoS ("@bookkeeper, …" or inferred from the message). |
 
-**WhatsApp constraints. Resolve these before we build ([D5](#14-open-questions-and-decisions)):**
+**WhatsApp risks we accept for launch ([D5](#14-open-questions-and-decisions)):**
 
-1. **Meta policy.** Since 15 Jan 2026, WhatsApp Business Solution terms prohibit providers whose *primary* function is distributing a general-purpose AI assistant. AI used inside a business's own service (support, bookings, operations) is allowed. An internal "chat with your AI staff" product is a grey zone and needs policy/legal review. The architecture should have each company connect **its own** WhatsApp Business account, so the business is the sender, using its agents for its own business.
-2. **24-hour window.** Messages the business initiates more than 24 hours after the user's last message need pre-approved templates and are charged per message. That affects proactive briefs and approval requests.
-3. **Provisioning.** Business verification and number setup take days to weeks, so a number per agent is impractical. Use one number per workspace with CoS routing (CHN-10).
-4. **No unofficial bridges.** WhatsApp Web bridges, which personal agents often use, violate WhatsApp's terms and risk the number being banned. Not acceptable for a business product.
+1. **Meta policy.** Since 15 Jan 2026, WhatsApp Business Solution terms (which apply through Twilio too) prohibit providers whose *primary* function is distributing a general-purpose AI assistant. AI used inside a business's own operations is allowed. Mach is a business-operations product used by each company's own staff, but one shared Mach number serving many companies is the riskiest shape. Mitigation: keep the number's use clearly about running your business (tasks, approvals, briefs), and move to a WhatsApp sender per workspace, registered for that company, after launch.
+2. **24-hour window and templates** (above): proactive messages cost per message and need approved templates.
+3. **No unofficial bridges.** WhatsApp Web bridges violate WhatsApp's terms and risk a ban. Twilio's official API only.
 
-**→ MVP ships Telegram and email. WhatsApp follows the policy review.**
+
 
 ### F7. Collaboration
 
@@ -549,7 +565,7 @@ Agent↔agent work counts against both agents' budgets and against the delegatio
 | SEC-5 | P0 | **Approval requests** show the exact action (tool, arguments and a rendered preview, e.g. the actual email), the reason and the task. They go to the agent's manager (fallback: owners) in-app and on the manager's preferred channel. Options: approve / deny / edit and approve / "always allow this for this agent". Requests expire after 24 h by default; expiry counts as a denial and the task moves to Waiting. |
 | SEC-6 | P0 | **Budgets.** Spend caps (LLM + sandbox + paid tools) per run, per agent per day/month and per workspace per month. Alerts at 50/80/100%. At 100% runs stop and the owner is notified. |
 | SEC-7 | P0 | **Audit log.** An immutable record of every action by every member, including tool calls with arguments, approvals and config changes. Exportable. |
-| SEC-8 | P0 | **Credentials.** OAuth and API tokens live in Vercel Connect, which issues short-lived tokens at call time; our deployment authenticates to it with Vercel OIDC, so no long-lived secrets are stored in the app. User-pasted secrets that Connect can't hold (e.g. Telegram bot tokens) are envelope-encrypted in Postgres, scoped per workspace or agent. |
+| SEC-8 | P0 | **Credentials.** OAuth and API tokens live in Vercel Connect, which issues short-lived tokens at call time; our deployment authenticates to it with Vercel OIDC, so no long-lived secrets are stored in the app. Mach's own Twilio and SendGrid keys are Vercel environment variables (sensitive). Any secret a customer pastes in that Connect can't hold is envelope-encrypted in Postgres, scoped per workspace or agent. |
 | SEC-9 | P0 | **Prompt-injection posture.** Content from web pages, emails, files and unverified senders is untrusted data. Instructions come only from verified members. If a run's context includes untrusted content, its sensitive actions require approval regardless of policy. P1: per-run taint tracking. |
 | SEC-10 | P0 | **Tenant isolation.** Every row is scoped by workspace. MVP enforces this in one data-access layer that every query goes through; Postgres row-level security follows in P1. Sandboxes are per agent. Memory never crosses workspaces. |
 | SEC-11 | P1 | **Kill switch.** An owner can pause every agent with one click. |
@@ -595,13 +611,13 @@ Default action policies (*Standard* preset):
 
 1. The founder of *Greenfield Supplies*, a farm-supplies business, signs up and creates a workspace.
 2. The Chief of Staff introduces itself and starts the interview: what the company does, its customers and team, this quarter's goals, how the team likes to work.
-3. The founder pastes the company website and answers some questions by Telegram voice note on the way to a customer (P1).
+3. The founder pastes the company website and answers some questions by WhatsApp on the way to a customer.
 4. The CoS drafts the profile. The founder edits two lines and approves it.
 5. The CoS suggests: *"From what you've told me, a Bookkeeper and an Inbox Assistant would save you the most time. Shall I set them up?"*
 
 ### J2. Creating an agent by conversation
 
-1. The founder messages the CoS on Telegram: *"I need someone to enter supplier invoices into Xero every day."*
+1. The founder messages the CoS on WhatsApp: *"I need someone to enter supplier invoices into Xero every day."*
 2. The CoS drafts a **Bookkeeper** agent:
    - job description and instructions,
    - Xero access, plus Gmail read access limited to the invoices label,
@@ -616,7 +632,7 @@ Default action policies (*Standard* preset):
 1. The ops lead creates *"Reconcile September Stripe payouts with Xero"*, assigns it to the Bookkeeper, sets the founder as reviewer and moves it to Ready.
 2. The dispatcher claims the task and starts a run; the card shows a live indicator.
 3. The agent resumes its sandbox, pulls data over MCP, runs a Python script and finds two unmatched payouts.
-4. It calls `needs_input`: *"Two payouts (£412, £96) have no matching invoice. Are these Etsy sales?"* The ops lead gets the question on Telegram and replies *"yes, Etsy"*.
+4. It calls `needs_input`: *"Two payouts (£412, £96) have no matching invoice. Are these Etsy sales?"* The ops lead gets the question on WhatsApp and replies *"yes, Etsy"*.
 5. The agent wakes up and finishes the reconciliation. It saves a memory: *"Small unmatched Stripe payouts are usually Etsy sales; check the Etsy export."* It attaches a reconciliation CSV and calls `complete`, which moves the task to In review.
 6. The founder accepts it, and the task moves to Done.
 
@@ -659,11 +675,11 @@ We do **not** build abstraction layers so we could switch providers later. Lock-
 | Model access, budgets, usage (AI Gateway) | Company Brain (memory on pgvector) |
 | Sandboxes (Sandbox) | Platform tools (tasks, messaging, Brain, profile) |
 | Integration credentials and OAuth (Connect) | Permission policies and the approval flow |
-| Telegram, WhatsApp, Slack, Teams (Chat SDK) | Skills loader (`SKILL.md` index + `load_skill` tool) |
+| Slack, Teams later (Chat SDK) | Skills loader (`SKILL.md` index + `load_skill` tool) |
 | Schedules and sweeps (Cron Jobs) | Agent templates, the web UI |
-| Files and transcripts (Blob) | Inbound email adapter (P1) |
+| Files and transcripts (Blob) | WhatsApp channel on Twilio; email channel on Nodemailer + mailparser |
 | Tracing (Observability) | |
-| **From the Marketplace:** Neon Postgres + pgvector, Resend, Clerk | |
+| **From the Marketplace:** Neon Postgres + pgvector, Clerk | |
 
 **Stack overview.** One Next.js project on Vercel, one region (`lhr1`):
 
@@ -675,13 +691,13 @@ We do **not** build abstraction layers so we could switch providers later. Lock-
 | Durable runs: pause, resume, retry, wait for humans | Workflow (`"use workflow"`, steps, hooks, `sleep`) | GA |
 | Sandboxed computer per agent | Sandbox (Firecracker microVMs, persistent, network policy, credential brokering) | GA; Drives in beta |
 | OAuth and API credentials for integrations | Connect (100+ connectors, short-lived tokens, user- or app-subject) | GA |
-| Telegram, WhatsApp, Slack, Teams, Discord | Chat SDK (open source) | GA |
+| Slack, Teams, Discord (after launch) | Chat SDK (open source) | GA |
 | Schedules and sweeps | Cron Jobs | GA |
 | Files and attachments | Blob | GA |
 | Custom sandbox images | Container Registry | GA |
 | Feature flags for beta features | Flags / Edge Config | GA |
 | Tracing and logs | Observability, AI SDK telemetry (OpenTelemetry) | GA |
-| Postgres + pgvector, email, auth | Marketplace: Neon, Resend, Clerk | Partner products |
+| Postgres + pgvector, auth | Marketplace: Neon, Clerk | Partner products |
 
 ### 9.1 Components
 
@@ -689,11 +705,11 @@ We do **not** build abstraction layers so we could switch providers later. Lock-
 flowchart LR
     subgraph Clients
         WEB[Web app]
-        CH[Telegram / WhatsApp / Slack / Email]
+        CH[WhatsApp / Email]
     end
     subgraph App["Mach on Vercel, lhr1"]
         NEXT[Next.js app and API routes]
-        CHAT[Chat SDK bot<br/>+ our email adapter]
+        CHAT[Channel routes<br/>WhatsApp + email]
         DSP[Dispatcher]
         CRON[Cron: sweep and schedules]
         WF[Run workflows<br/>AI SDK WorkflowAgent]
@@ -707,13 +723,13 @@ flowchart LR
     end
     subgraph Ext["Marketplace and external"]
         DB[(Neon Postgres + pgvector)]
-        RESEND[Resend]
+        TWILIO[Twilio WhatsApp<br/>+ SendGrid email]
         LLM[Model providers]
         API3[Third-party APIs and MCP servers]
     end
     WEB <--> NEXT
-    CH <--> CHAT
-    RESEND <--> CHAT
+    CH <--> TWILIO
+    TWILIO <--> CHAT
     CHAT --> NEXT
     CHAT --> DB
     NEXT --> DB
@@ -735,7 +751,7 @@ flowchart LR
 | Component | Responsibility |
 |---|---|
 | **Next.js app** | Auth, workspace data, board, profile, agent config, approvals, live views. Route handlers and server actions on Fluid compute; there is no separate API service. |
-| **Chat SDK bot** | One bot pipeline for every channel: webhooks in, messages out, identity resolution, thread state in Postgres (Chat SDK's Postgres state adapter). Outbound email goes through Resend; an inbound email adapter is P1. |
+| **Channel routes** | Our own webhook routes for WhatsApp (Twilio) and email (SendGrid Inbound Parse + mailparser), plus senders (Twilio SDK, Nodemailer). They verify signatures, resolve the member and workspace, store the message and start a run. |
 | **Dispatcher** | Called directly whenever a task changes, plus a one-minute cron sweep; claims dispatchable tasks ([F4.2](#f42-dispatcher)) and starts run workflows. |
 | **Run workflows** | One durable Workflow per run, driving an AI SDK `WorkflowAgent`. Each tool call is a step with automatic retries. Approvals and short human waits suspend on Workflow hooks. |
 | **Mach MCP server** | The platform tools (tasks, messaging, Brain, profile) exposed over MCP for agents that run inside a sandbox harness (option B below) and for future third-party agents. Agents on option A call the same functions in-process. |
@@ -790,15 +806,15 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | Schedules | Vercel Cron Jobs (every-minute sweep) | Dispatch sweep, agent schedules, daily briefs |
 | Models | AI Gateway | Budgets, fallbacks, usage per workspace/agent |
 | Sandbox | Vercel Sandbox, images in Vercel Container Registry | [F5.4](#f54-sandbox) |
-| Credentials | Vercel Connect; envelope-encrypted Postgres column for user-pasted bot tokens | [SEC-8](#f8-permissions-approvals-safety) |
-| Channels | Chat SDK (Telegram, WhatsApp, Slack, Teams, Discord) + our Resend email adapter | [F6](#f6-communication-channels) |
+| Credentials | Vercel Connect for integrations; Vercel sensitive env vars for our Twilio/SendGrid keys | [SEC-8](#f8-permissions-approvals-safety) |
+| Channels | WhatsApp: Twilio (`twilio` SDK, Content Templates). Email: Nodemailer + mailparser over Twilio SendGrid. Chat SDK later for Slack/Teams. | [F6](#f6-communication-channels) |
 | Database | Neon Postgres + pgvector (Marketplace), Drizzle ORM, row-level security per workspace | London region |
 | Memory | Own module on pgvector | [F2](#f2-company-brain-memory) |
 | Files | Vercel Blob | Attachments, outputs, transcripts |
 | Live updates | Workflow streams for the open run; board polls every few seconds | Add push updates after launch if needed |
 | Mach MCP server | MCP route on Next.js (Vercel MCP adapter) | For option B harnesses and future third-party agents |
 | Auth | Clerk (Marketplace) | Vercel has no customer sign-in product; Passport is for internal enterprise apps |
-| Feature flags | Vercel Flags | Gate beta pieces (WhatsApp, HarnessAgent, Drives) |
+| Feature flags | Vercel Flags | Gate beta pieces (HarnessAgent, Drives) |
 | Protection | Vercel Firewall, BotID on public forms | |
 | Observability | Vercel Observability, AI SDK telemetry, AI Gateway reports | |
 | Hosting region | `lhr1` (London) for functions and sandboxes | GDPR, UK customers |
@@ -814,7 +830,7 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | `agent_version` | id, agent_id, job_description, instructions, model, autonomy, limits, sandbox_template, created_by, created_at |
 | `agent_tool_grant` | agent_id, mcp_server_id, tool (or `*`), policy (`allow`/`ask`/`deny`) |
 | `agent_skill` | agent_id, skill_version_id |
-| `channel_identity` | member_id, channel, external_id (email / Telegram id / phone / bot), verified_at |
+| `channel_identity` | member_id, channel, external_id (email address / WhatsApp number), verified_at |
 | `channel_binding` | agent_id, channel, config_ref, status |
 | `profile_section` | id, workspace_id, title, body_md, load_policy (`always`/`on_demand`), position |
 | `profile_revision` | id, section_id, body_md, author_member_id, reason, status (`proposed`/`applied`/`rejected`) |
@@ -842,7 +858,7 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | **Latency** | An inbound message gets an acknowledgment or typing indicator within 3 s. Simple questions get a meaningful first reply in about 15 s (P50). |
 | **Scale (v1 target)** | 200 workspaces averaging 5 agents each; 100 concurrent runs at peak. All services scale horizontally. |
 | **Security** | SOC 2-ready from the start: encryption at rest and in transit, least privilege, audit logs, KMS-managed secrets, dependency scanning. |
-| **Privacy** | UK GDPR / GDPR: UK/EU data residency; DPAs with sub-processors (Vercel, model providers, Neon, Resend, messaging providers); data export and deletion; no training on customer data. |
+| **Privacy** | UK GDPR / GDPR: UK/EU data residency; DPAs with sub-processors (Vercel, model providers, Neon, Twilio/SendGrid, Clerk); data export and deletion; no training on customer data. |
 | **Cost control** | Cost per completed task visible per agent. Hard caps per workspace. |
 | **Availability** | 99.5% for the web app and API in v1. |
 | **Accessibility** | WCAG 2.1 AA for the web app. |
@@ -853,20 +869,20 @@ The plan is one launch milestone, then fast iterations driven by design partners
 
 ### Launch (MVP)
 
-- **Workspace and people:** sign-up (Clerk), invite members, Owner/Member roles, Telegram identity linking.
+- **Workspace and people:** sign-up (Clerk), invite members, Owner/Member roles, WhatsApp and email identity verification.
 - **Chief of Staff:** onboarding interview, Company Profile (edit by chat or editor), daily brief, triage and delegation.
 - **Worker agents:** create from 4–5 templates or by asking the CoS; settings page; pause/resume; one task at a time per agent.
 - **Board and dispatcher:** one board, canonical statuses, subtasks, dependencies, comments and mentions, run outcomes, wake-ups, review loop.
 - **Agent runtime:** `WorkflowAgent` on Workflow, AI Gateway (Claude), web search, persistent Vercel Sandbox on the default image, skills (upload + `load_skill`).
 - **Integrations:** Vercel Connect connectors that exist on launch day, granted per agent.
 - **Company Brain:** remember/recall tools, post-run extraction, a simple list/search/delete page.
-- **Channels:** in-app chat; one Mach Telegram bot routed by the CoS; outbound email notifications.
-- **Control:** allow/ask/deny policies with defaults, approvals in-app and via Telegram buttons, spend caps, run viewer with full transcripts.
+- **Channels:** in-app chat; one Mach WhatsApp number (Twilio) routed by the CoS, with four approved templates; email to and from each workspace's CoS address (Nodemailer + mailparser over SendGrid).
+- **Control:** allow/ask/deny policies with defaults, approvals in-app and via WhatsApp quick-reply buttons, spend caps, run viewer with full transcripts.
 - *Exit criterion:* 5 design-partner SMEs run real work through agents every week.
 
 ### Cut from launch (first iterations after)
 
-- Inbound email to agents, a Telegram bot per agent, Slack/Teams/Discord, WhatsApp (after the policy review)
+- An email address per agent, custom email domains, a WhatsApp number per workspace, voice-note transcription, Slack/Teams/Discord
 - Agent schedules and heartbeats, recurring tasks, subagents, ask-an-agent, group threads, voice notes
 - Profile version restore, Brain conflict handling, activity feed, dashboard, scorecards, autonomy presets
 - Custom sandbox images, network policies, parallel runs per agent, Admin/Guest roles, row-level security
@@ -894,7 +910,8 @@ The plan is one launch milestone, then fast iterations driven by design partners
 
 | Risk | Mitigation |
 |---|---|
-| WhatsApp policy blocks or limits the channel | [D5](#14-open-questions-and-decisions) review; Telegram and email first; companies connect their own business account |
+| Meta restricts the shared WhatsApp number under its AI-assistant policy | Keep usage clearly business-operational; email and in-app work without WhatsApp; move to per-workspace senders after launch |
+| Template approval delays proactive WhatsApp messages | Submit the four templates in week one; fall back to email for proactive messages until approved |
 | Prompt injection via email or the web leads to a harmful action | SEC-9, approvals, untrusted content raises sensitivity, no secrets in sandboxes |
 | Runaway cost (loops, long runs) | Budgets, run limits, loop protection (DSP-7) |
 | Agent quality disappoints, and users stop trusting it | Conservative default autonomy, review loop, scorecards, templates tuned on real SME tasks |
@@ -917,7 +934,8 @@ The plan is one launch milestone, then fast iterations driven by design partners
 | D9 | Human↔human chat: task comments and mentions only at launch. |
 | D11 | Launch market: UK, hosted in `lhr1`. |
 | D12 | One assignee per task. |
-| D14 | Telegram at launch: one Mach bot for all workspaces, routed by the Chief of Staff (users link their Telegram account). A bot per agent comes after launch. This removes BotFather setup from onboarding and avoids D13 for launch. |
+| D14 | Channels at launch: in-app, WhatsApp via our Twilio account (one shared Mach number routed by the CoS) and email via Nodemailer + mailparser over Twilio SendGrid. Telegram dropped for now. |
+| D5 | WhatsApp goes ahead at launch on the shared Twilio number, accepting the Meta-policy risk ([F6](#f6-communication-channels)); per-workspace senders after launch. |
 | D15 | Speed over elegance: Vercel first, Marketplace second, build our own third; no portability layers ([Build strategy](#build-strategy)). |
 
 ### Still open
@@ -925,11 +943,10 @@ The plan is one launch milestone, then fast iterations driven by design partners
 | ID | Question | Recommendation |
 |---|---|---|
 | D1 | Is "Mach" the product name or a working title? | Working title |
-| D5 | WhatsApp: go ahead under Meta's AI policy? One number per workspace? | Policy review in parallel with the build; not on the launch path |
 | D7 | Default autonomy for new agents? | Ask before any external side effect at launch; loosen per agent |
 | D8 | When can external contacts (customers, suppliers) talk to agents? | After launch; design channel identity with it in mind |
 | D10 | Pricing: per seat, per agent, usage-based or hybrid? | Decide before design partners convert to paid; metering exists from day one |
-| D13 | Can Chat SDK create per-tenant bots (a bot per agent, Slack apps per workspace) at runtime? | Check when per-agent bots are picked up; if not, write our own webhook handlers for those channels |
+| D13 | When we add Slack/Teams: can Chat SDK create per-workspace bots at runtime? | Check then; if not, write our own webhook routes as we did for WhatsApp |
 
 ---
 
@@ -938,7 +955,7 @@ The plan is one launch milestone, then fast iterations driven by design partners
 | | OpenClaw | Hermes Agent (Nous Research) | Mach |
 |---|---|---|---|
 | **Serves** | One person | One person | A company: many humans and many agents |
-| **Channels** | WhatsApp, Telegram, Signal, Discord… | Telegram, Discord, Slack, WhatsApp, Signal, CLI, with continuity across platforms | In-app, email, Telegram, WhatsApp (official API), ticked per agent, with unified threads |
+| **Channels** | WhatsApp, Telegram, Signal, Discord… | Telegram, Discord, Slack, WhatsApp, Signal, CLI, with continuity across platforms | In-app, email and WhatsApp (official API via Twilio), with unified threads |
 | **Memory** | Local markdown files | Agent-curated memory plus full-text search over past sessions | Shared Company Profile plus Company Brain, with scopes and provenance |
 | **Skills** | Markdown skills; ClawHub registry | Skills created and refined from experience; agentskills.io standard | Workspace skill library in the same open format; agent-proposed, human-approved |
 | **Proactivity** | Heartbeat checklist every N minutes | Built-in cron scheduler | Agent schedules plus dispatcher-driven tasks |
