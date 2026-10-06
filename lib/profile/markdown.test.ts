@@ -4,11 +4,10 @@ import {
   emptyProfile,
   getCompanyName,
   getSection,
-  parsePeople,
-  removePerson,
+  onboardingChecklist,
+  renderPeople,
   setCompanyName,
   setSection,
-  upsertPerson,
 } from "./markdown";
 
 describe("sections", () => {
@@ -32,55 +31,66 @@ describe("sections", () => {
   });
 });
 
-describe("people", () => {
-  const withTeam = () => {
-    let md = emptyProfile("Greenfield Supplies");
-    md = upsertPerson(md, { name: "Aisha Khan", role: "Founder & CEO", reportsTo: "" });
-    md = upsertPerson(md, { name: "Sam Lee", role: "Head of Sales", reportsTo: "Aisha Khan" });
-    md = upsertPerson(md, { name: "Priya Patel", role: "Account Manager", reportsTo: "Sam Lee" });
-    return md;
-  };
+const person = (name: string, role: string, reportsTo = "") => ({
+  name,
+  role,
+  reportsTo,
+  responsibilities: "",
+  contact: "",
+});
 
-  it("round-trips people through the markdown table", () => {
-    const people = parsePeople(withTeam());
-    expect(people.map((p) => [p.name, p.reportsTo])).toEqual([
-      ["Aisha Khan", ""],
-      ["Sam Lee", "Aisha Khan"],
-      ["Priya Patel", "Sam Lee"],
+describe("people section", () => {
+  it("renders a table and a nested reporting tree", () => {
+    const section = renderPeople([
+      person("Aisha Khan", "Founder & CEO"),
+      person("Sam Lee", "Head of Sales", "Aisha Khan"),
+      person("Priya Patel", "Account Manager", "Sam Lee"),
     ]);
-  });
-
-  it("renders a nested reporting tree", () => {
-    const section = getSection(withTeam(), "People & Responsibilities")!;
+    expect(section).toContain("| Sam Lee | Head of Sales | Aisha Khan |");
     expect(section).toContain(
       "- **Aisha Khan**, Founder & CEO\n  - **Sam Lee**, Head of Sales\n    - **Priya Patel**, Account Manager",
     );
   });
 
-  it("updates only the fields passed", () => {
-    const md = upsertPerson(withTeam(), { name: "sam lee", responsibilities: "New business | renewals" });
-    const sam = parsePeople(md).find((p) => p.name === "Sam Lee")!;
-    expect(sam).toMatchObject({ role: "Head of Sales", reportsTo: "Aisha Khan", responsibilities: "New business | renewals" });
-  });
-
-  it("flags managers that are not listed yet", () => {
-    const md = upsertPerson(emptyProfile(), { name: "Tom", role: "Driver", reportsTo: "Jo" });
-    expect(getSection(md, "People & Responsibilities")).toContain("**Tom**, Driver (reports to Jo, not yet listed)");
-  });
-
-  it("removes a person and clears their reports' manager", () => {
-    const md = removePerson(withTeam(), "Sam Lee");
-    expect(parsePeople(md).map((p) => [p.name, p.reportsTo])).toEqual([
-      ["Aisha Khan", ""],
-      ["Priya Patel", ""],
-    ]);
+  it("escapes pipes in cells", () => {
+    expect(renderPeople([{ ...person("Sam", "Sales"), responsibilities: "New | renewals" }])).toContain(
+      "New \\| renewals",
+    );
   });
 
   it("survives a reporting cycle", () => {
-    let md = upsertPerson(emptyProfile(), { name: "A", reportsTo: "B" });
-    md = upsertPerson(md, { name: "B", reportsTo: "A" });
-    const section = getSection(md, "People & Responsibilities")!;
+    const section = renderPeople([person("A", "", "B"), person("B", "", "A")]);
     expect(section).toContain("**A**");
     expect(section).toContain("**B**");
+  });
+});
+
+describe("onboarding checklist", () => {
+  it("starts with nothing done", () => {
+    expect(onboardingChecklist(emptyProfile()).map((i) => i.done)).toEqual([false, false, false]);
+  });
+
+  it("ticks off the essentials", () => {
+    let md = setSection(emptyProfile(), "Overview", "Family office for the Cedar family.");
+    md = setSection(md, "Goals", "- Cash flow");
+    md = setSection(md, "People & Responsibilities", renderPeople([person("Ahmed", "Principal"), person("Mustapha", "Finance", "Ahmed")]));
+    expect(onboardingChecklist(md)).toEqual([
+      { label: "What the company does", done: true },
+      { label: "Team and reporting lines", done: true, detail: "2 people" },
+      { label: "Top priorities", done: true },
+    ]);
+  });
+
+  it("flags people without a manager", () => {
+    const md = setSection(
+      emptyProfile(),
+      "People & Responsibilities",
+      renderPeople([person("Ahmed", "Principal"), person("Mustapha", "Finance"), person("Lina", "Ops")]),
+    );
+    expect(onboardingChecklist(md)[1]).toEqual({
+      label: "Team and reporting lines",
+      done: false,
+      detail: "3 people, 2 need a manager",
+    });
   });
 });

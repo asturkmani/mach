@@ -1,12 +1,15 @@
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createChiefOfStaff } from "./chief-of-staff";
-import { emptyProfile, getCompanyName, getSection, parsePeople } from "@/lib/profile/markdown";
+import { chiefOfStaffInstructions, createChiefOfStaff } from "./chief-of-staff";
+import { createOrganization, getOrganization } from "@/lib/orgs";
+import { linkMember, listPeople, syncPeopleSection } from "@/lib/people";
+import { getSection, onboardingChecklist } from "@/lib/profile/markdown";
+import { loadProfile } from "@/lib/profile/store";
+import { useTestDb } from "@/test/db";
+
+const ORG = "org_cedar";
+const user = { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" };
 
 const usage = {
   inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
@@ -17,7 +20,7 @@ function toolCall(id: string, toolName: string, input: object) {
   return { type: "tool-call" as const, toolCallId: id, toolName, input: JSON.stringify(input) };
 }
 
-// First model call: record the organisation via tools. Second: reply in text.
+// First model call: record the essentials via tools (in parallel). Second: reply.
 function scriptedModel() {
   let call = 0;
   return new MockLanguageModelV4({
@@ -26,10 +29,11 @@ function scriptedModel() {
       if (call === 1) {
         return {
           content: [
-            toolCall("1", "set_company_name", { name: "Greenfield Supplies" }),
-            toolCall("2", "upsert_person", { name: "Aisha Khan", role: "Founder & CEO", reportsTo: "" }),
-            toolCall("3", "upsert_person", { name: "Sam Lee", role: "Head of Sales", reportsTo: "Aisha Khan" }),
-            toolCall("4", "update_section", { section: "Overview", content: "Refurbished farm equipment, UK-wide." }),
+            toolCall("1", "update_section", { section: "Overview", content: "Single-family office for the Cedar family." }),
+            toolCall("2", "save_person", { name: "Ahmed", role: "Principal", reportsTo: "" }),
+            toolCall("3", "save_person", { name: "Mustapha", role: "Finance lead", reportsTo: "Ahmed", responsibilities: "Masttro" }),
+            toolCall("4", "update_section", { section: "Goals", content: "- Manage cash flow\n- AI-first operations" }),
+            toolCall("5", "complete_onboarding", {}),
           ],
           finishReason: { unified: "tool-calls" as const, raw: undefined },
           usage,
@@ -37,7 +41,7 @@ function scriptedModel() {
         };
       }
       return {
-        content: [{ type: "text" as const, text: "Got it. Who else is on the team?" }],
+        content: [{ type: "text" as const, text: "You're set up." }],
         finishReason: { unified: "stop" as const, raw: undefined },
         usage,
         warnings: [],
@@ -46,31 +50,58 @@ function scriptedModel() {
   });
 }
 
+async function setUpOrg() {
+  await createOrganization({ id: ORG, name: "Cedar Legacy", website: "https://cedar.example" });
+  await linkMember(ORG, user);
+  await syncPeopleSection(ORG);
+  return (await getOrganization(ORG))!;
+}
+
 describe("Chief of Staff", () => {
-  let dataDir: string;
-
   beforeEach(async () => {
-    dataDir = await mkdtemp(path.join(tmpdir(), "mach-"));
-    process.env.MACH_DATA_DIR = dataDir;
+    await useTestDb();
   });
 
-  it("writes the organisation into the profile markdown file", async () => {
-    const agent = createChiefOfStaff(emptyProfile(), scriptedModel());
-    const result = await agent.generate({ prompt: "We're Greenfield Supplies. I'm Aisha, the CEO; Sam runs sales." });
+  it("records the essentials for the signed-in company and finishes onboarding", async () => {
+    const organization = await setUpOrg();
+    const agent = createChiefOfStaff(
+      { organization, user, profile: await loadProfile(ORG) },
+      { model: scriptedModel(), research: false },
+    );
+    const result = await agent.generate({ prompt: "We're a family office. Mustapha runs Masttro and reports to me." });
+    expect(result.text).toBe("You're set up.");
 
-    expect(result.text).toBe("Got it. Who else is on the team?");
-
-    const saved = await readFile(path.join(dataDir, "company-profile.md"), "utf8");
-    expect(getCompanyName(saved)).toBe("Greenfield Supplies");
-    expect(getSection(saved, "Overview")).toBe("Refurbished farm equipment, UK-wide.");
-    expect(parsePeople(saved).map((p) => [p.name, p.reportsTo])).toEqual([
-      ["Aisha Khan", ""],
-      ["Sam Lee", "Aisha Khan"],
+    expect((await listPeople(ORG)).map((p) => [p.name, p.role, p.managerName, p.status])).toEqual([
+      ["Ahmed", "Principal", null, "active"],
+      ["Mustapha", "Finance lead", "Ahmed", "not_invited"],
     ]);
+
+    const profile = await loadProfile(ORG);
+    expect(getSection(profile, "Overview")).toBe("Single-family office for the Cedar family.");
+    expect(getSection(profile, "People & Responsibilities")).toContain("- **Ahmed**, Principal\n  - **Mustapha**, Finance lead");
+    expect(onboardingChecklist(profile).every((item) => item.done)).toBe(true);
+    expect((await getOrganization(ORG))!.onboardingCompletedAt).toBeInstanceOf(Date);
   });
 
-  it("refuses to start without a model", () => {
+  it("offers research tools, reads the website first and drops the interview after onboarding", async () => {
+    const organization = await setUpOrg();
+    const onboarding = createChiefOfStaff({ organization, user, profile: "" }, { model: scriptedModel() });
+    expect(onboarding.tools).toHaveProperty("web_search");
+    expect(onboarding.tools).toHaveProperty("fetch_page");
+
+    expect(chiefOfStaffInstructions({ organization, user, profile: "" })).toContain(
+      "read it with fetch_page",
+    );
+    expect(chiefOfStaffInstructions({ organization, user, profile: "" })).toContain("https://cedar.example");
+
+    const done = { ...organization, onboardingCompletedAt: new Date() };
+    expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).toContain("Onboarding is complete");
+    expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).not.toContain("fetch_page");
+  });
+
+  it("refuses to start without a model", async () => {
+    const organization = await setUpOrg();
     delete process.env.CHIEF_OF_STAFF_MODEL;
-    expect(() => createChiefOfStaff(emptyProfile())).toThrow(/CHIEF_OF_STAFF_MODEL/);
+    expect(() => createChiefOfStaff({ organization, user, profile: "" })).toThrow(/CHIEF_OF_STAFF_MODEL/);
   });
 });

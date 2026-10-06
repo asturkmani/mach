@@ -2,37 +2,69 @@
 
 A command center for running a small or medium-sized business, where people and AI agents work together in one place: a shared company profile and brain, a Chief of Staff agent coordinating worker agents, a Kanban board with automatic dispatch to agents, and agents reachable over WhatsApp and email.
 
-Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway, Workflow, Sandbox, Connect), with WhatsApp via Twilio and email via Nodemailer.
+Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres for data and WorkOS AuthKit for sign-in, companies and invitations.
 
 - [Product specification (draft)](docs/spec.md)
 
-## What works today: onboarding
+## What works today
 
-Chat with the Chief of Staff and it interviews you about the company: what it does, the people, who reports to whom, goals, products, customers and how you work. As you talk it writes everything into a single markdown file, the company profile, shown live next to the chat.
+1. **Sign in** with WorkOS (Google, Microsoft, email magic link — whatever you enable in WorkOS).
+2. **Create your company**: name and website (guessed from your work email). This creates a WorkOS organization with you as admin.
+3. **Chief of Staff onboarding**: a short chat that captures just the essentials — what the company does (it reads your website first), the team and reporting lines, and the top priorities — then marks onboarding complete. It looks things up on the web instead of asking you to explain tools or companies.
+4. **Team page**: everyone in the org chart with their status:
+   - **Not invited** — in the org chart, no login.
+   - **Invited** — WorkOS emailed them an invitation; you can also copy the link and send it on WhatsApp.
+   - **Joined** — they signed in. People are matched to their entry by email.
 
-- People are kept as a table (name, role, reports to, responsibilities, contact) with a generated reporting tree.
-- Locally the profile is `data/company-profile.md`. On Vercel, connect a Blob store and it is saved to Vercel Blob instead.
+   Add people, change who they report to, invite or remove them (admins only).
 
-## Run it locally
+The company profile is one markdown document per company, stored in Postgres. Its people section is generated from the `people` table.
+
+## Set up
+
+### 1. WorkOS
+
+1. Create a free account at [workos.com](https://workos.com) and open the **Staging** environment.
+2. **Authentication**: enable the sign-in methods you want (e.g. Google OAuth, Magic Auth).
+3. **Redirects**:
+   - Redirect URI: `http://localhost:3000/callback` (add your Vercel URL + `/callback` later)
+   - Initiate login URI: `http://localhost:3000/sign-in`
+   - Sign-out redirect: `http://localhost:3000`
+4. **Roles**: make sure an `admin` role exists (company creators get it).
+5. Copy the API key and client ID.
+
+### 2. Database
+
+Add **Neon** from the Vercel Marketplace (Storage → Create → Neon) and connect it to the project, or create a free project at [neon.com](https://neon.com). Then:
+
+```bash
+vercel env pull .env.local   # or paste DATABASE_URL into .env.local yourself
+pnpm db:migrate              # creates the tables (safe to re-run)
+```
+
+### 3. Run it
 
 ```bash
 pnpm install
-cp .env.example .env.local   # then fill in AI_GATEWAY_API_KEY and CHIEF_OF_STAFF_MODEL
+cp .env.example .env.local   # fill in WorkOS, DATABASE_URL, AI_GATEWAY_API_KEY, CHIEF_OF_STAFF_MODEL
+pnpm db:migrate
 pnpm dev
 ```
 
-Open http://localhost:3000 and click **Start onboarding**. Delete `data/company-profile.md` to start over.
+Open http://localhost:3000, sign in, create your company, then click **Start onboarding**.
 
-## Deploy to Vercel
+The Chief of Staff's web search and page-reading tools run through AI Gateway (Parallel search and Browserbase fetch, a few dollars per thousand calls) and are billed to your AI Gateway credits, even when the model itself uses your own provider key.
 
-1. Import the repo into Vercel.
-2. Set `CHIEF_OF_STAFF_MODEL`. AI Gateway authenticates automatically on Vercel.
-3. Connect a Blob store (Storage → Blob) so the profile persists; Vercel's filesystem is read-only.
+### Deploy to Vercel
+
+1. Import the repo; connect Neon from the Marketplace.
+2. Add the WorkOS variables and `CHIEF_OF_STAFF_MODEL`. Set `NEXT_PUBLIC_WORKOS_REDIRECT_URI` to `https://<your-domain>/callback` and add the same URL in WorkOS.
+3. Run `pnpm db:migrate` against the production database once.
 
 ## Checks
 
 ```bash
-pnpm test        # unit tests, including the agent with a mock model
+pnpm test        # unit tests against an in-memory Postgres (PGlite) with WorkOS mocked
 pnpm typecheck
 pnpm lint
 pnpm build
@@ -42,8 +74,12 @@ pnpm build
 
 | Path | What it is |
 |---|---|
-| `components/onboarding.tsx` | Chat UI and live profile preview |
-| `app/api/chat/route.ts` | Streams the Chief of Staff's replies |
-| `lib/agents/chief-of-staff.ts` | Agent instructions and profile-editing tools |
-| `lib/profile/markdown.ts` | Read and rewrite profile sections and the people table |
-| `lib/profile/store.ts` | Load and save the profile (local file or Vercel Blob) |
+| `proxy.ts` | Requires sign-in on every route except `/callback` and `/sign-in` |
+| `app/welcome/` | Create-your-company step |
+| `app/(app)/page.tsx`, `components/onboarding.tsx` | Chief of Staff chat, live profile and onboarding checklist |
+| `app/(app)/team/` | Team page and its server actions (add, set manager, invite, remove) |
+| `app/api/chat/route.ts` | Streams the Chief of Staff's replies for the signed-in company |
+| `lib/agents/chief-of-staff.ts` | Agent instructions and tools |
+| `lib/session.ts` | Signed-in user, current company and their person record |
+| `lib/people.ts`, `lib/orgs.ts`, `lib/profile/` | Data access for people, companies and the profile |
+| `db/schema.sql` | Database schema |

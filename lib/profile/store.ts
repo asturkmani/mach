@@ -1,50 +1,41 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { get, put } from "@vercel/blob";
-
+import { getDb } from "@/lib/db";
 import { emptyProfile } from "./markdown";
 
-// One markdown file holds the company profile. On Vercel it lives in a private
-// Vercel Blob; locally (no Blob credentials) it is a file under ./data, or
-// under MACH_DATA_DIR when that is set.
+// One markdown document per organization, stored in Postgres.
 
-const BLOB_PATH = "profile/company-profile.md";
-
-function localPath(): string {
-  return path.join(process.env.MACH_DATA_DIR ?? path.join(process.cwd(), "data"), "company-profile.md");
+export async function loadProfile(organizationId: string): Promise<string> {
+  const [row] = await getDb().query<{ markdown: string }>(
+    "select markdown from company_profiles where organization_id = $1",
+    [organizationId],
+  );
+  return row?.markdown ?? emptyProfile();
 }
 
-function blobConfigured(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
+export async function saveProfile(organizationId: string, markdown: string): Promise<void> {
+  await getDb().query(
+    `insert into company_profiles (organization_id, markdown, updated_at) values ($1, $2, now())
+     on conflict (organization_id) do update set markdown = excluded.markdown, updated_at = now()`,
+    [organizationId, markdown],
+  );
 }
 
-export async function loadProfile(): Promise<string> {
-  if (blobConfigured()) {
-    const result = await get(BLOB_PATH, { access: "private", useCache: false });
-    if (!result || result.statusCode !== 200) return emptyProfile();
-    return new Response(result.stream).text();
-  }
-  try {
-    return await readFile(localPath(), "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyProfile();
-    throw error;
-  }
-}
+// Tool calls often arrive in parallel, so read-modify-write changes to one
+// organization's profile are queued to stop them overwriting each other.
+const queues = new Map<string, Promise<unknown>>();
 
-export async function saveProfile(markdown: string): Promise<void> {
-  if (blobConfigured()) {
-    await put(BLOB_PATH, markdown, {
-      access: "private",
-      allowOverwrite: true,
-      addRandomSuffix: false,
-      contentType: "text/markdown; charset=utf-8",
-    });
-    return;
-  }
-  const file = localPath();
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, markdown, "utf8");
+export function updateProfile(organizationId: string, change: (markdown: string) => string): Promise<string> {
+  const previous = queues.get(organizationId) ?? Promise.resolve();
+  const next = previous.then(async () => {
+    const updated = change(await loadProfile(organizationId));
+    await saveProfile(organizationId, updated);
+    return updated;
+  });
+  const settled = next.catch(() => undefined);
+  queues.set(organizationId, settled);
+  settled.then(() => {
+    if (queues.get(organizationId) === settled) queues.delete(organizationId);
+  });
+  return next;
 }

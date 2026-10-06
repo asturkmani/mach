@@ -97,9 +97,10 @@ function sameHeading(a: string, b: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// People: a markdown table plus a generated reporting tree.
+// People live in the database; their section of the profile is generated from
+// it as a markdown table plus a reporting tree.
 
-export type Person = {
+export type ProfilePerson = {
   name: string;
   role: string;
   reportsTo: string;
@@ -109,40 +110,11 @@ export type Person = {
 
 const PEOPLE_COLUMNS = ["Name", "Role", "Reports to", "Responsibilities", "Contact"];
 
-export function parsePeople(markdown: string): Person[] {
-  const body = getSection(markdown, PEOPLE_SECTION) ?? "";
-  const rows = body
-    .split("\n")
-    .filter((line) => line.trim().startsWith("|"))
-    .map((line) => splitRow(line));
-  // Skip the header and the |---| divider.
-  return rows
-    .filter((cells) => !cells.every((c) => /^:?-{3,}:?$/.test(c)))
-    .filter((cells) => cells[0]?.toLowerCase() !== "name")
-    .map(([name = "", role = "", reportsTo = "", responsibilities = "", contact = ""]) => ({
-      name: unescapeCell(name),
-      role: unescapeCell(role),
-      reportsTo: unescapeCell(reportsTo === "—" ? "" : reportsTo),
-      responsibilities: unescapeCell(responsibilities),
-      contact: unescapeCell(contact),
-    }))
-    .filter((p) => p.name);
-}
-
-function splitRow(line: string): string[] {
-  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-  return trimmed.split(/(?<!\\)\|/).map((c) => c.trim());
-}
-
 function escapeCell(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
 }
 
-function unescapeCell(value: string): string {
-  return value.replace(/\\\|/g, "|").trim();
-}
-
-export function renderPeople(people: Person[]): string {
+export function renderPeople(people: ProfilePerson[]): string {
   if (people.length === 0) return EMPTY_SECTION;
   const header = `| ${PEOPLE_COLUMNS.join(" | ")} |`;
   const divider = `| ${PEOPLE_COLUMNS.map(() => "---").join(" | ")} |`;
@@ -153,10 +125,10 @@ export function renderPeople(people: Person[]): string {
   return [header, divider, ...rows, "", "### Reporting lines", "", renderOrgTree(people)].join("\n");
 }
 
-export function renderOrgTree(people: Person[]): string {
+export function renderOrgTree(people: ProfilePerson[]): string {
   const byName = new Map(people.map((p) => [p.name.toLowerCase(), p]));
-  const reports = new Map<string, Person[]>();
-  const roots: Person[] = [];
+  const reports = new Map<string, ProfilePerson[]>();
+  const roots: ProfilePerson[] = [];
   for (const person of people) {
     const manager = person.reportsTo ? byName.get(person.reportsTo.toLowerCase()) : undefined;
     if (manager && manager !== person) {
@@ -169,7 +141,7 @@ export function renderOrgTree(people: Person[]): string {
 
   const lines: string[] = [];
   const visited = new Set<string>();
-  const walk = (person: Person, depth: number) => {
+  const walk = (person: ProfilePerson, depth: number) => {
     const key = person.name.toLowerCase();
     if (visited.has(key)) return;
     visited.add(key);
@@ -187,25 +159,36 @@ export function renderOrgTree(people: Person[]): string {
   return lines.join("\n");
 }
 
-export function upsertPerson(markdown: string, update: Partial<Person> & { name: string }): string {
-  const people = parsePeople(markdown);
-  const index = people.findIndex((p) => p.name.toLowerCase() === update.name.trim().toLowerCase());
-  const base: Person =
-    index >= 0 ? people[index] : { name: update.name.trim(), role: "", reportsTo: "", responsibilities: "", contact: "" };
-  const merged: Person = { ...base };
-  for (const key of ["role", "reportsTo", "responsibilities", "contact"] as const) {
-    if (update[key] !== undefined) merged[key] = update[key]!.trim();
-  }
-  if (index >= 0) people[index] = merged;
-  else people.push(merged);
-  return setSection(markdown, PEOPLE_SECTION, renderPeople(people));
+// ---------------------------------------------------------------------------
+// Onboarding only needs the essentials; everything else is filled in later.
+
+export type ChecklistItem = { label: string; done: boolean; detail?: string };
+
+export function isCaptured(markdown: string, section: string): boolean {
+  const body = getSection(markdown, section)?.trim() ?? "";
+  return body !== "" && body !== EMPTY_SECTION;
 }
 
-export function removePerson(markdown: string, name: string): string {
-  const people = parsePeople(markdown);
-  const target = name.trim().toLowerCase();
-  const remaining = people
-    .filter((p) => p.name.toLowerCase() !== target)
-    .map((p) => (p.reportsTo.toLowerCase() === target ? { ...p, reportsTo: "" } : p));
-  return setSection(markdown, PEOPLE_SECTION, renderPeople(remaining));
+export function onboardingChecklist(markdown: string): ChecklistItem[] {
+  const peopleBody = getSection(markdown, PEOPLE_SECTION) ?? "";
+  const people = peopleBody
+    .split("\n")
+    .filter((line) => line.startsWith("| ") && !line.startsWith("| Name |") && !line.startsWith("| ---"))
+    .map((line) => line.split(" | "));
+  // One person (the founder or CEO) is expected to report to no one.
+  const withoutManager = people.filter((cells) => cells[2]?.trim() === "—").length;
+  return [
+    { label: "What the company does", done: isCaptured(markdown, "Overview") },
+    {
+      label: "Team and reporting lines",
+      done: people.length > 1 && withoutManager <= 1,
+      detail:
+        people.length === 0
+          ? undefined
+          : `${people.length} ${people.length === 1 ? "person" : "people"}${
+              withoutManager > 1 ? `, ${withoutManager - 1} need a manager` : ""
+            }`,
+    },
+    { label: "Top priorities", done: isCaptured(markdown, "Goals") },
+  ];
 }

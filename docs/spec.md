@@ -87,7 +87,7 @@ Agents should be as capable as open-source personal agents like OpenClaw and Her
 - **"Coordinator" and "Chief of Staff" are the same agent:** one per workspace, created automatically.
 - **"MCP and skills" support** means: tools via the Model Context Protocol, plus packaged procedures in the open Agent Skills (`SKILL.md`) format used by OpenClaw and Hermes Agent.
 - **Speed to market beats technical elegance.** Where Vercel has a solution we use it, even if a specialist tool would be better; where it doesn't, we build the simplest thing ourselves. See [Build strategy](#build-strategy).
-- **Built in TypeScript on Vercel**: AI SDK, AI Gateway, Workflow, Sandbox, Chat SDK, Connect, Blob, Cron, plus Marketplace products for Postgres, email and auth.
+- **Built in TypeScript on Vercel**: AI SDK, AI Gateway, Workflow, Sandbox, Chat SDK, Connect, Blob, Cron, plus Neon Postgres from the Marketplace and WorkOS AuthKit for sign-in, orgs and invitations.
 - **Company knowledge is free text**, not hard data. We add structure only where the platform can't function without it.
 
 ## 4. Product principles
@@ -595,7 +595,7 @@ Default action policies (*Standard* preset):
 
 | ID | Pri | Requirement |
 |---|---|---|
-| ADM-1 | P0 | Sign-up by email magic link, Google or Microsoft (Clerk via the Vercel Marketplace). Creating a workspace creates its CoS, which starts the onboarding interview (PROF-1). |
+| ADM-1 | P0 | Sign-up by email magic link, Google or Microsoft (WorkOS AuthKit, free up to 1M monthly users). Creating a workspace creates its CoS, which starts the onboarding interview (PROF-1). |
 | ADM-2 | P0 | Invite humans by email link; they verify their channels (CHN-2). |
 | ADM-3 | P0 | The CoS proposes the first 1–3 worker agents based on the profile. |
 | ADM-4 | P0 | Admin pages for integrations, skills, channels and budgets. The audit log is viewable via the run viewer in MVP; a dedicated page is P1. |
@@ -679,7 +679,8 @@ We do **not** build abstraction layers so we could switch providers later. Lock-
 | Schedules and sweeps (Cron Jobs) | Agent templates, the web UI |
 | Files and transcripts (Blob) | WhatsApp channel on Twilio; email channel on Nodemailer + mailparser |
 | Tracing (Observability) | |
-| **From the Marketplace:** Neon Postgres + pgvector, Clerk | |
+| **From the Marketplace:** Neon Postgres + pgvector | |
+| **Outside Vercel:** WorkOS AuthKit (sign-in, orgs, invitations) | |
 
 **Stack overview.** One Next.js project on Vercel, one region (`lhr1`):
 
@@ -697,7 +698,8 @@ We do **not** build abstraction layers so we could switch providers later. Lock-
 | Custom sandbox images | Container Registry | GA |
 | Feature flags for beta features | Flags / Edge Config | GA |
 | Tracing and logs | Observability, AI SDK telemetry (OpenTelemetry) | GA |
-| Postgres + pgvector, auth | Marketplace: Neon, Clerk | Partner products |
+| Postgres + pgvector | Marketplace: Neon | Partner product |
+| Sign-in, orgs, invitations | WorkOS AuthKit (not a Vercel product; Vercel has no customer sign-in) | GA |
 
 ### 9.1 Components
 
@@ -813,7 +815,7 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | Files | Vercel Blob | Attachments, outputs, transcripts |
 | Live updates | Workflow streams for the open run; board polls every few seconds | Add push updates after launch if needed |
 | Mach MCP server | MCP route on Next.js (Vercel MCP adapter) | For option B harnesses and future third-party agents |
-| Auth | Clerk (Marketplace) | Vercel has no customer sign-in product; Passport is for internal enterprise apps |
+| Auth | WorkOS AuthKit (`@workos-inc/authkit-nextjs`) | Free up to 1M monthly users; orgs, invitations and Google/Microsoft sign-in built in. Users live in WorkOS; our `people` table holds the org chart, including people without a login |
 | Feature flags | Vercel Flags | Gate beta pieces (HarnessAgent, Drives) |
 | Protection | Vercel Firewall, BotID on public forms | |
 | Observability | Vercel Observability, AI SDK telemetry, AI Gateway reports | |
@@ -858,7 +860,7 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | **Latency** | An inbound message gets an acknowledgment or typing indicator within 3 s. Simple questions get a meaningful first reply in about 15 s (P50). |
 | **Scale (v1 target)** | 200 workspaces averaging 5 agents each; 100 concurrent runs at peak. All services scale horizontally. |
 | **Security** | SOC 2-ready from the start: encryption at rest and in transit, least privilege, audit logs, KMS-managed secrets, dependency scanning. |
-| **Privacy** | UK GDPR / GDPR: UK/EU data residency; DPAs with sub-processors (Vercel, model providers, Neon, Twilio/SendGrid, Clerk); data export and deletion; no training on customer data. |
+| **Privacy** | UK GDPR / GDPR: UK/EU data residency; DPAs with sub-processors (Vercel, model providers, Neon, Twilio/SendGrid, WorkOS); data export and deletion; no training on customer data. |
 | **Cost control** | Cost per completed task visible per agent. Hard caps per workspace. |
 | **Availability** | 99.5% for the web app and API in v1. |
 | **Accessibility** | WCAG 2.1 AA for the web app. |
@@ -869,7 +871,7 @@ The plan is one launch milestone, then fast iterations driven by design partners
 
 ### Launch (MVP)
 
-- **Workspace and people:** sign-up (Clerk), invite members, Owner/Member roles, WhatsApp and email identity verification.
+- **Workspace and people:** sign-up (WorkOS), invite members, Owner/Member roles, WhatsApp and email identity verification.
 - **Chief of Staff:** onboarding interview, Company Profile (edit by chat or editor), daily brief, triage and delegation.
 - **Worker agents:** create from 4–5 templates or by asking the CoS; settings page; pause/resume; one task at a time per agent.
 - **Board and dispatcher:** one board, canonical statuses, subtasks, dependencies, comments and mentions, run outcomes, wake-ups, review loop.
