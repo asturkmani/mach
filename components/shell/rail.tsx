@@ -5,6 +5,7 @@ import {
   Building,
   CircleDashed,
   Command as CommandIcon,
+  FolderOpen,
   Inbox,
   LogOut,
   Monitor,
@@ -46,6 +47,7 @@ export function Rail() {
   ];
   const company: Item[] = [
     { href: "/agents", label: "Agents", icon: Bot },
+    { href: "/files", label: "Files", icon: FolderOpen },
     { href: "/team", label: "Team", icon: Users },
     { href: "/company", label: "Company profile", icon: Building },
   ];
@@ -89,7 +91,7 @@ export function Rail() {
 
   return (
     <nav aria-label="Main" className="group/rail relative z-30 w-[60px] shrink-0">
-      <div className="absolute inset-y-0 left-0 flex w-[60px] flex-col overflow-hidden border-r border-transparent bg-bg py-3 transition-[width,box-shadow,border-color] duration-200 group-hover/rail:w-60 group-hover/rail:border-line group-hover/rail:shadow-[var(--shadow)] group-has-[:focus-visible]/rail:w-60 group-has-[:focus-visible]/rail:border-line">
+      <div className="absolute inset-y-0 left-0 flex w-[60px] flex-col overflow-clip border-r border-transparent bg-bg py-3 transition-[width,box-shadow,border-color] duration-200 group-hover/rail:w-60 group-hover/rail:border-line group-hover/rail:shadow-[var(--shadow)] group-has-[:focus-visible]/rail:w-60 group-has-[:focus-visible]/rail:border-line">
         <div className="mb-3 flex h-10 items-center gap-3 px-[15px] whitespace-nowrap">
           <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center bg-ink font-mono text-sm font-semibold text-panel">
             M

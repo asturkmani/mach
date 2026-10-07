@@ -5,9 +5,12 @@ import { refresh } from "next/cache";
 import { searchTasks as search, updateTask, type Priority, type Task, type TaskStatus } from "@/lib/tasks";
 import { PRIORITIES, TASK_STATUSES } from "@/lib/task-words";
 import { requireAppContext } from "@/lib/session";
+import { attachToTask, detachFromTask } from "@/lib/files";
 import {
   addToTask,
   approveOrDone,
+  archiveTask,
+  unarchiveTask,
   createTaskWithTeam,
   pickOption,
   replyToTask,
@@ -205,4 +208,42 @@ export async function searchTasksAction(query: string): Promise<TaskHit[]> {
   const { organization } = await requireAppContext();
   const tasks = await search(organization.id, query, 12);
   return tasks.map((t) => ({ id: t.id, number: t.number, title: t.title, status: t.status }));
+}
+
+export async function archiveAction(taskId: string): Promise<TaskActionResult> {
+  const { organizationId, by } = await actor();
+  return attempt(async () => {
+    await archiveTask(organizationId, taskId, by);
+  });
+}
+
+export async function unarchiveAction(taskId: string): Promise<TaskActionResult> {
+  const { organizationId, by } = await actor();
+  return attempt(async () => {
+    await unarchiveTask(organizationId, taskId, by);
+  });
+}
+
+/** Attaches a company file to a job as an input. */
+export async function attachFileAction(taskId: string, fileId: string): Promise<TaskActionResult> {
+  const { organizationId, by } = await actor();
+  return attempt(async () => {
+    const task = await getTask(organizationId, taskId);
+    if (!task) throw new WorkError("That task no longer exists.");
+    try {
+      await attachToTask(organizationId, taskId, fileId, "input");
+    } catch (error) {
+      throw new WorkError(error instanceof Error ? error.message : "Couldn't attach that file.");
+    }
+    await addMessage(taskId, { author: by.name, personId: by.personId, kind: "event", body: "Attached a file from the library." });
+  });
+}
+
+export async function detachFileAction(taskId: string, fileId: string): Promise<TaskActionResult> {
+  const { organizationId } = await actor();
+  return attempt(async () => {
+    const task = await getTask(organizationId, taskId);
+    if (!task) throw new WorkError("That task no longer exists.");
+    await detachFromTask(taskId, fileId);
+  });
 }

@@ -1,7 +1,7 @@
 import type { Agent } from "@/lib/agents/store";
 import { skillList } from "@/lib/agents/skills";
 import type { Organization } from "@/lib/orgs";
-import type { Task, TaskMessage, TaskOutput } from "@/lib/tasks";
+import type { Task, TaskMessage } from "@/lib/tasks";
 
 // What an agent reads when it works a task: its instructions, the company
 // profile and everything on the task. Plain functions, so they can run in a
@@ -40,15 +40,26 @@ export function lastLines(text: string | undefined, max: number): string | undef
 const time = (date: Date) => new Date(date).toISOString().slice(0, 16).replace("T", " ");
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}\n[…cut, ${text.length - max} more characters]` : text);
 
+/** A file on the task, as the agent sees it: text files include their (latest) content. */
+export type BriefFile = {
+  name: string;
+  kind: "deliverable" | "code";
+  role: "input" | "output";
+  version: number;
+  from: string;
+  text: string | null;
+  size: number;
+};
+
 export function taskBrief({
   task,
   messages,
-  outputs,
+  files,
   agent,
 }: {
   task: Task;
   messages: TaskMessage[];
-  outputs: TaskOutput[];
+  files: BriefFile[];
   agent: Agent;
 }): string {
   const members = task.members
@@ -63,7 +74,12 @@ export function taskBrief({
   const thread = shown
     .map((m) => `[${time(m.createdAt)}] ${m.author} (${m.kind}):\n${clip(m.body, 6000)}`)
     .join("\n\n");
-  const files = outputs.map((o) => `<file name="${o.filename}">\n${clip(o.content, 8000)}\n</file>`).join("\n");
+  const fileList = files
+    .map((f) => {
+      const label = `name="${f.name}" kind="${f.kind}" role="${f.role}" version="${f.version}" from="${f.from}" bytes="${f.size}"`;
+      return f.text === null ? `<file ${label} />` : `<file ${label}>\n${clip(f.text, 8000)}\n</file>`;
+    })
+    .join("\n");
 
   return `<task number="${task.number}">
 Title: ${task.title}
@@ -83,7 +99,8 @@ ${members}
 
 Thread (oldest first):
 ${thread || "(empty)"}
-${files ? `\nFiles saved on this task:\n${files}` : ""}
+${fileList ? `\nFiles on this task (latest versions):\n${fileList}` : ""}
+${task.memory ? `\nJob notes (NOTES.md, kept from earlier runs):\n${clip(task.memory, 8000)}` : ""}
 </task>`;
 }
 
@@ -109,9 +126,17 @@ You work on tasks in Mach, where people and agents run the company together. Eve
 
 How to work:
 - Do the work yourself with your tools. Look things up instead of asking. Load a skill when the work matches one.
-- Save deliverables (models, tables, drafts, lists) as files with save_output: CSV for tables and models, markdown for documents.
+- Save short text deliverables (a list, a draft, a small table) with save_output. For anything you compute, use your sandbox (below).
 - Use post_update for a short note on the thread when you reach a milestone on long work. Don't narrate every step.
 - Never give a number you didn't find or calculate. Say what you don't know.
+
+Your sandbox (for calculations, models, data and code):
+- This job has its own Linux sandbox that keeps its files between runs until the job is archived. It starts the first time you run code. The job folder is /vercel/job: code/ for scripts, inputs/ for files people attached, outputs/ for deliverables, and NOTES.md for the job's notes. Files already on this task are copied in when it starts.
+- Installed: Python 3.14 with pandas, numpy, scipy, statsmodels, scikit-learn, numpy-financial, openpyxl, xlsxwriter, matplotlib, seaborn, pyarrow, duckdb, requests, httpx, beautifulsoup4, python-docx, python-pptx; Node 24; LibreOffice. Install anything else with run_command (uv pip install --system NAME).
+- Calculate with code, never in your head. Write scripts with run_code; each run is limited to about four minutes, so split long work into steps.
+- Structure work so it can be rerun and changed: a config file with the inputs and assumptions, scripts that read it, and run.sh to run everything. A change of assumptions should be a config change.
+- Excel models: put assumptions on their own sheet as input cells and use real formulas that reference them, so people can change an input and see the model update. Charts as PNG files. Save deliverables in outputs/ and attach each one with attach_file; attaching a file with the same name as one on the task saves a new version of it. Name deliverables for what they are, not for the variant (portfolio-model.xlsx, not portfolio_6040.xlsx), and keep the name when you update one, so each change becomes the next version of the same file; put a variant's label in attach_file's note. Attach only what people will open (the model, charts, a requested document). Don't attach code, zips of code or READMEs: your scripts, config and run.sh are kept with the job automatically, and your explanation belongs in your report.
+- Keep NOTES.md current before you finish: what each script does, how to rerun it, the variants you tried with their key results, and decisions people made.
 
 How to end your run (call exactly one of these):
 - finish: the work is done, or done as far as you can take it. Report the result.

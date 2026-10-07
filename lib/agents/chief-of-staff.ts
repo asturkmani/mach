@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { skillList, skillTool } from "@/lib/agents/skills";
 import { createAgent, type Agent } from "@/lib/agents/store";
+import { findFiles, type LibraryFile } from "@/lib/files";
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
 import { removePersonByName, savePerson, syncPeopleSection, type Person } from "@/lib/people";
 import {
@@ -35,6 +36,8 @@ type Context = {
   person?: Person;
   agents?: Agent[];
   openTasks?: Task[];
+  /** Recent files in the company library, which new jobs can start from. */
+  files?: LibraryFile[];
 };
 
 function onboardingInstructions({ organization }: Context): string {
@@ -67,13 +70,20 @@ Keeping the profile current:
 - Don't start an interview. Ask at most one short question when something important is missing.`;
 }
 
-function workInstructions({ agents = [], openTasks = [] }: Context): string {
+function workInstructions({ agents = [], openTasks = [], files = [] }: Context): string {
   const agentLines = agents
     .filter((a) => a.kind === "defined" && a.status === "active")
     .map((a) => `- ${a.name}${a.role ? ` (${a.role})` : ""}${a.description ? `: ${a.description}` : ""}`);
   const taskLines = openTasks
     .slice(0, 30)
     .map((t) => `- #${t.number} ${t.title} [${t.status}] · ${t.members.map((m) => m.name).join(", ") || "no one"}`);
+  const fileLines = files
+    .filter((f) => f.kind === "deliverable" && f.versions.length)
+    .slice(0, 30)
+    .map((f) => {
+      const v = f.versions[0];
+      return `- ${f.name} (v${v.version}${v.taskNumber ? `, from #${v.taskNumber}` : ""})`;
+    });
   return `Tasks and agents:
 - When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
 - Answer quick questions yourself. Create a task only for real work.
@@ -83,7 +93,10 @@ Defined agents:
 ${agentLines.join("\n") || "(none yet)"}
 
 Open tasks:
-${taskLines.join("\n") || "(none)"}`;
+${taskLines.join("\n") || "(none)"}
+
+Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in create_task's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
+${fileLines.join("\n") || "(none yet)"}`;
 }
 
 export function chiefOfStaffInstructions(context: Context): string {
@@ -220,9 +233,13 @@ function workTools(context: Context) {
           .string()
           .optional()
           .describe("Add a new worker agent with this role, e.g. 'Financial analysis', when no defined agent fits."),
+        files: z.array(z.string()).optional().describe("Exact names of company files the job should start from."),
       }),
-      execute: async ({ title, description, priority, people, agents, workerRole }) => {
+      execute: async ({ title, description, priority, people, agents, workerRole, files }) => {
         try {
+          const found = await findFiles(orgId, files ?? []);
+          const missing = (files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
+          if (missing.length) throw new WorkError(`No company file called ${missing.join(", ")}.`);
           const team = await resolveTeam(orgId, { people, agents });
           const task = await createTaskWithTeam(orgId, {
             title,
@@ -231,6 +248,7 @@ function workTools(context: Context) {
             personIds: team.people.map((p) => p.id),
             agentIds: team.agents.map((a) => a.id),
             workerRole,
+            inputFileIds: found.map((f) => f.id),
             by,
           });
           return {

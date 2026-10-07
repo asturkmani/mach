@@ -2,9 +2,11 @@ import "server-only";
 
 import { agentToWake, dispatchRun, startIfReady } from "@/lib/agents/dispatch";
 import { createWorker, findAgentByName, listAgents, updateAgent, type Agent } from "@/lib/agents/store";
+import { attachToTask } from "@/lib/files";
 import { listPeople, type Person } from "@/lib/people";
 import { PEOPLE_SECTION, SECTIONS, setSection } from "@/lib/profile/markdown";
 import { updateProfile } from "@/lib/profile/store";
+import { sandboxes } from "@/lib/sandbox";
 import { STATUS_WORDS } from "@/lib/task-words";
 import {
   addMember,
@@ -13,8 +15,11 @@ import {
   CLOSED_STATUSES,
   createTask,
   getTask,
+  isRunning,
   listMessages,
   resetAgentTurns,
+  setArchived,
+  setSandboxName,
   updateTask,
   type Priority,
   type Task,
@@ -72,6 +77,8 @@ export async function createTaskWithTeam(
     agentIds?: string[];
     /** Adds a new worker agent with this role ("" for a general worker). */
     workerRole?: string;
+    /** Library files the job starts from. */
+    inputFileIds?: string[];
     by: Actor;
   },
 ): Promise<Task> {
@@ -87,6 +94,7 @@ export async function createTaskWithTeam(
     people: [...(input.by.personId ? [input.by.personId] : []), ...own.personIds],
     agents: agentIds,
   });
+  for (const fileId of input.inputFileIds ?? []) await attachToTask(organizationId, task.id, fileId, "input");
   await addMessage(task.id, { author: input.by.name, personId: input.by.personId, kind: "event", body: "Created this task." });
   await startIfReady(organizationId, task.id);
   return (await getTask(organizationId, task.id))!;
@@ -100,8 +108,9 @@ export async function replyToTask(organizationId: string, taskId: string, by: Ac
   await addMessage(task.id, { author: by.name, personId: by.personId, kind: "comment", body });
   await resetAgentTurns(task.id);
 
+  // Replying on a done job reopens it: the same agent picks it up in the same sandbox.
   const agentId = agentToWake(task, await listMessages(task.id), body);
-  if (agentId && !CLOSED_STATUSES.includes(task.status) && task.kind === "task") {
+  if (agentId && !task.archivedAt && task.kind === "task") {
     await updateTask(organizationId, task.id, { status: "ready", laterUntil: null, options: [] });
     await dispatchRun(organizationId, task.id, agentId);
   }
@@ -154,17 +163,42 @@ export async function setStatus(
       kind: "event",
       body: note ?? `Moved this to ${STATUS_WORDS[status]}.`,
     });
-    if (CLOSED_STATUSES.includes(status)) await archiveWorkers(organizationId, task);
     if (status === "ready") await startIfReady(organizationId, task.id);
   }
   return (await getTask(organizationId, task.id))!;
 }
 
-/** Worker agents exist for one task; when it closes they're archived. */
-async function archiveWorkers(organizationId: string, task: Task): Promise<void> {
+/**
+ * Retires a job: it leaves every list, its sandbox is deleted and its worker
+ * agents are archived. Its files stay in the company library. Done only ends a
+ * round; a done job keeps its sandbox and agents so it can be picked up again.
+ */
+export async function archiveTask(organizationId: string, taskId: string, by: Actor): Promise<Task> {
+  const task = await mustGet(organizationId, taskId);
+  if (task.archivedAt) return task;
+  if (task.runStartedAt && isRunning(task)) throw new WorkError("An agent is working on this. Archive it when it's done.");
+  if (task.sandboxName) {
+    await sandboxes().remove(task.sandboxName);
+    await setSandboxName(task.id, null);
+  }
   for (const agent of agentsOn(task)) {
     if (agent.kind === "worker") await updateAgent(organizationId, agent.id, { status: "archived" });
   }
+  await setArchived(organizationId, task.id, true);
+  await addMessage(task.id, { author: by.name, personId: by.personId, kind: "event", body: "Archived this job." });
+  return (await getTask(organizationId, task.id))!;
+}
+
+/** Brings an archived job back. Its sandbox is rebuilt from its files the next time code runs. */
+export async function unarchiveTask(organizationId: string, taskId: string, by: Actor): Promise<Task> {
+  const task = await mustGet(organizationId, taskId);
+  if (!task.archivedAt) return task;
+  for (const agent of agentsOn(task)) {
+    if (agent.kind === "worker") await updateAgent(organizationId, agent.id, { status: "active" });
+  }
+  await setArchived(organizationId, task.id, false);
+  await addMessage(task.id, { author: by.name, personId: by.personId, kind: "event", body: "Brought this job back." });
+  return (await getTask(organizationId, task.id))!;
 }
 
 export async function addToTask(
@@ -198,7 +232,7 @@ export async function addToTask(
 export async function runNow(organizationId: string, taskId: string, agentId: string, by: Actor): Promise<void> {
   const task = await mustGet(organizationId, taskId);
   if (!agentsOn(task).some((a) => a.id === agentId)) throw new WorkError("That agent isn't on this task.");
-  if (CLOSED_STATUSES.includes(task.status)) throw new WorkError("Reopen the task first.");
+  if (task.archivedAt) throw new WorkError("Bring the job back from the archive first.");
   await resetAgentTurns(task.id);
   await updateTask(organizationId, task.id, { status: "ready" });
   await addMessage(task.id, { author: by.name, personId: by.personId, kind: "event", body: "Started a run." });

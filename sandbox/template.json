@@ -1,0 +1,10 @@
+{
+  "key": "data-v1",
+  "image": "vercel/sandbox/universal:latest",
+  "python": [
+    "pandas", "numpy", "scipy", "statsmodels", "scikit-learn", "numpy-financial",
+    "openpyxl", "xlsxwriter", "matplotlib", "seaborn", "pyarrow", "duckdb",
+    "requests", "httpx", "beautifulsoup4", "python-docx", "python-pptx", "tabulate"
+  ],
+  "apt": ["libreoffice-calc-nogui"]
+}

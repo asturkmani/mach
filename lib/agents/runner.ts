@@ -16,6 +16,15 @@ import {
   reportText,
   saveFile,
 } from "@/lib/agents/run-steps";
+import {
+  attachSandboxFile,
+  closeSandbox,
+  listSandboxFiles,
+  readSandboxFile,
+  runCode,
+  runShell,
+  writeSandboxFile,
+} from "@/lib/agents/sandbox-steps";
 import { skillTool } from "@/lib/agents/skills";
 
 // Runs agents on a task. The agent sees everything on the task (its
@@ -63,6 +72,57 @@ const reportFields = {
     .describe("The steps done so far, one per line, oldest first, at most six lines. Send the whole list."),
 };
 
+type RunState = { outcome?: RunOutcome; usedSandbox?: boolean };
+
+function sandboxTools(context: RunContext, state: RunState) {
+  // Any sandbox tool starts (or resumes) the job's sandbox; it is closed when the run ends.
+  const using = <T>(work: Promise<T>) => {
+    state.usedSandbox = true;
+    return work;
+  };
+  return {
+    run_code: tool({
+      description:
+        "Save a script under code/ in the job's sandbox and run it from the job folder. Returns the exit code, stdout, stderr and the files it created or changed in outputs/.",
+      inputSchema: z.object({
+        filename: z.string().describe("A simple file name, e.g. simulate.py or build_model.py. Reusing a name replaces that script."),
+        language: z.enum(["python", "node", "bash"]),
+        code: z.string().min(1),
+      }),
+      execute: (input) => using(runCode(context, input)),
+    }),
+    run_command: tool({
+      description: "Run a shell command in the job folder, e.g. to install a package or run run.sh.",
+      inputSchema: z.object({ command: z.string().min(1) }),
+      execute: (input) => using(runShell(context, input)),
+    }),
+    read_file: tool({
+      description: "Read a text file in the job folder (a path relative to /vercel/job).",
+      inputSchema: z.object({ path: z.string().min(1) }),
+      execute: (input) => using(readSandboxFile(context, input)),
+    }),
+    write_file: tool({
+      description: "Write a text file in the job folder, e.g. config.yaml, run.sh or NOTES.md.",
+      inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
+      execute: (input) => using(writeSandboxFile(context, input)),
+    }),
+    list_files: tool({
+      description: "List the files in the job folder.",
+      inputSchema: z.object({}),
+      execute: () => using(listSandboxFiles(context)),
+    }),
+    attach_file: tool({
+      description:
+        "Attach a file from the sandbox (usually in outputs/) to the task as a deliverable people can open. A file with the same name as one already on the task becomes its next version.",
+      inputSchema: z.object({
+        path: z.string().min(1).describe("Path relative to /vercel/job, e.g. outputs/portfolio-model.xlsx."),
+        note: z.string().optional().describe("What this version is, e.g. 'rules ABD' or '70/30 mix'."),
+      }),
+      execute: (input) => using(attachSandboxFile(context, input)),
+    }),
+  } satisfies ToolSet;
+}
+
 function runTools(context: RunContext, otherAgents: { id: string; name: string }[], end: (outcome: RunOutcome) => void) {
   return {
     post_update: tool({
@@ -72,7 +132,7 @@ function runTools(context: RunContext, otherAgents: { id: string; name: string }
     }),
     save_output: tool({
       description:
-        "Save a file on the task, e.g. a model as CSV or a report as markdown. Saving the same filename again replaces it.",
+        "Save a short text file on the task (a list, a draft, a small table) without using the sandbox. Saving the same filename again makes a new version.",
       inputSchema: z.object({
         filename: z
           .string()
@@ -143,7 +203,7 @@ export async function runAgentOnTask(
   const begun = await beginRun(organizationId, taskId, agentId, { modelGiven: Boolean(options.model) });
   if (!begun.ok) return begun.outcome;
   const { context } = begun;
-  const state: { outcome?: RunOutcome } = {};
+  const state: RunState = {};
 
   try {
     const agent = new WorkflowAgent({
@@ -151,6 +211,7 @@ export async function runAgentOnTask(
       instructions: begun.instructions,
       tools: {
         ...runTools(context, begun.otherAgents, (outcome) => (state.outcome = outcome)),
+        ...sandboxTools(context, state),
         ...(options.research === false ? {} : researchTools()),
         use_skill: skillTool(),
       },
@@ -166,6 +227,13 @@ export async function runAgentOnTask(
   } catch (error) {
     return recordFailure(context, error instanceof Error ? error.message : String(error));
   } finally {
+    if (state.usedSandbox) {
+      try {
+        await closeSandbox(context);
+      } catch (error) {
+        console.error(`Couldn't close the sandbox for task ${context.taskId}`, error);
+      }
+    }
     await endRun(context);
   }
 }

@@ -265,6 +265,7 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
       { id: "go-progress", group: "Go to", label: "In progress", run: () => router.push("/in-progress") },
       { id: "go-board", group: "Go to", label: "Board", run: () => router.push("/board") },
       { id: "go-agents", group: "Go to", label: "Agents", run: () => router.push("/agents") },
+      { id: "go-files", group: "Go to", label: "Files", run: () => router.push("/files") },
       { id: "go-team", group: "Go to", label: "Team", run: () => router.push("/team") },
       { id: "go-company", group: "Go to", label: "Company profile", run: () => router.push("/company") },
       { id: "new-task", group: "Create", label: "New task", keys: ["N"], run: () => setNewTask(true) },

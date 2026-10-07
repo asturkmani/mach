@@ -7,7 +7,11 @@ import { createOrganization } from "@/lib/orgs";
 import { linkMember, savePerson } from "@/lib/people";
 import { addMessage, getTask, listMessages } from "@/lib/tasks";
 import { useTestDb } from "@/test/db";
-import { addToTask, createTaskWithTeam, replyToTask } from "@/lib/work";
+import { addToTask, archiveTask, createTaskWithTeam, replyToTask, setStatus, unarchiveTask } from "@/lib/work";
+import { createWorker, getAgent } from "@/lib/agents/store";
+import { setSandboxProvider } from "@/lib/sandbox";
+import { listInbox, setSandboxName } from "@/lib/tasks";
+import { fakeSandboxes } from "@/test/fake-sandbox";
 
 const ORG = "org_cedar";
 const OTHER = "org_other";
@@ -104,5 +108,36 @@ describe("work on tasks", () => {
     await replyToTask(ORG, task.id, by, "Use the latest 10-Q.");
     expect(scheduled).toHaveLength(2);
     expect((await getTask(ORG, task.id))!.status).toBe("ready");
+  });
+
+  it("keeps a done job's sandbox and agents, and retires them only when it's archived", async () => {
+    const { ahmed, by } = await seed();
+    const worker = await createWorker(ORG, "Research");
+    const scheduled: (() => Promise<void>)[] = [];
+    setScheduler((work) => scheduled.push(work));
+    const task = await createTaskWithTeam(ORG, { title: "Backtest rules ABC", agentIds: [worker.id], by });
+    const sandboxes = fakeSandboxes();
+    setSandboxProvider(sandboxes.provider);
+    await sandboxes.provider.open(`mach-task-${task.id}`, async () => {});
+    await setSandboxName(task.id, `mach-task-${task.id}`);
+
+    await setStatus(ORG, task.id, "done", by);
+    expect((await getAgent(ORG, worker.id))!.status).toBe("active");
+    expect(sandboxes.machines.size).toBe(1);
+
+    // Replying on a done job reopens it for the same agent.
+    await replyToTask(ORG, task.id, by, "Try rules ABD");
+    expect((await getTask(ORG, task.id))!.status).toBe("ready");
+
+    await archiveTask(ORG, task.id, by);
+    expect((await getAgent(ORG, worker.id))!.status).toBe("archived");
+    expect(sandboxes.log).toContain(`delete mach-task-${task.id}`);
+    expect(await getTask(ORG, task.id)).toMatchObject({ sandboxName: null, archivedAt: expect.any(Date) });
+    expect(await listInbox(ORG, ahmed.id)).toEqual([]);
+
+    await unarchiveTask(ORG, task.id, by);
+    expect((await getAgent(ORG, worker.id))!.status).toBe("active");
+    expect((await getTask(ORG, task.id))!.archivedAt).toBeNull();
+    setSandboxProvider(null);
   });
 });

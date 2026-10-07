@@ -7,7 +7,8 @@ import { getSection, onboardingChecklist } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { setScheduler } from "@/lib/agents/dispatch";
 import { createAgent, listAgents } from "@/lib/agents/store";
-import { getTaskByNumber, listInbox, listOutputs } from "@/lib/tasks";
+import { listTaskFiles } from "@/lib/files";
+import { getTaskByNumber, listInbox } from "@/lib/tasks";
 import { pickOption } from "@/lib/work";
 import { useTestDb } from "@/test/db";
 import { scriptedModel } from "@/test/scripted-model";
@@ -137,7 +138,7 @@ describe("Chief of Staff", () => {
       ["agent", "Financial analysis worker"],
     ]);
     expect(task).toMatchObject({ status: "review", summary: "Model ready: revenue grows to $100M. Share it?" });
-    expect((await listOutputs(task.id)).map((o) => o.filename)).toEqual(["model.csv"]);
+    expect((await listTaskFiles(ORG, task.id)).map((f) => f.name)).toEqual(["model.csv"]);
     expect((await listInbox(ORG, person.id)).map((t) => t.number)).toEqual([1]);
     expect(JSON.stringify(model.doGenerateCalls.at(-1)!.prompt)).toContain("Created task #1 with Ahmed, Financial analysis worker.");
   });

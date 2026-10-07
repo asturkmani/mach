@@ -6,7 +6,11 @@ import { MAX_AGENT_TURNS, normalizeOptions, runAgentOnTask, taskBrief } from "@/
 import { createAgent, createWorker } from "@/lib/agents/store";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
-import { addMessage, createTask, getTask, listMessages, listOutputs } from "@/lib/tasks";
+import { listTaskFiles } from "@/lib/files";
+import { setSandboxProvider } from "@/lib/sandbox";
+import { addMessage, createTask, getTask, listMessages } from "@/lib/tasks";
+import { replyToTask } from "@/lib/work";
+import { fakeSandboxes } from "@/test/fake-sandbox";
 import { scriptedModel, type Step } from "@/test/scripted-model";
 import { useTestDb } from "@/test/db";
 
@@ -76,7 +80,9 @@ describe("agent runs", () => {
       ["Analyst", "update"],
       ["Analyst", "result"],
     ]);
-    expect((await listOutputs(task.id)).map((o) => o.filename)).toEqual(["micron-model.csv"]);
+    expect((await listTaskFiles(ORG, task.id)).map((f) => [f.name, f.kind, f.versions[0].version])).toEqual([
+      ["micron-model.csv", "deliverable", 1],
+    ]);
   });
 
   it("asks a question and waits on the people on the task", async () => {
@@ -168,6 +174,95 @@ describe("agent runs", () => {
   });
 });
 
+describe("agent runs with a sandbox", () => {
+  beforeEach(async () => {
+    setScheduler(null);
+    setSandboxProvider(null);
+    await useTestDb();
+  });
+
+  it("runs code in the job's sandbox, attaches the results and keeps the job's notes", async () => {
+    const { ahmed, analyst, task } = await setUp();
+    const sandboxes = fakeSandboxes({
+      "simulate.py": (files) => {
+        files.set("/vercel/job/outputs/portfolio-model.xlsx", Buffer.from(`model for ${files.get("/vercel/job/config.json")}`));
+        files.set("/vercel/job/NOTES.md", Buffer.from("# Notes\n- 60/40: median 6.1%"));
+        return { stdout: "median 6.1%" };
+      },
+    });
+    setSandboxProvider(sandboxes.provider);
+
+    const outcome = await run(task.id, analyst.id, [
+      [["write_file", { path: "config.json", content: "60/40" }]],
+      [["run_code", { filename: "simulate.py", language: "python", code: "print('median 6.1%')" }]],
+      [["attach_file", { path: "outputs/portfolio-model.xlsx", note: "60/40" }]],
+      [["finish", { summary: "Median 1-year return is 6.1%. Model attached.", report: "Done." }]],
+    ]);
+    expect(outcome).toEqual({ type: "finished" });
+
+    const name = `mach-task-${task.id}`;
+    // Attaching an xlsx recalculates it first, so its values preview correctly.
+    expect(sandboxes.log).toEqual([`create ${name}`, "run simulate.py", expect.stringContaining("recalc"), `stop ${name}`]);
+    const files = await listTaskFiles(ORG, task.id);
+    // The model, then the code that made it, including the config it read.
+    expect(files.map((f) => [f.name, f.kind, f.versions.map((v) => v.version)])).toEqual([
+      ["portfolio-model.xlsx", "deliverable", [1]],
+      ["simulate.py", "code", [1]],
+      ["config.json", "code", [1]],
+    ]);
+    expect(files[1].versions[0].note).toContain("median 6.1%");
+    expect(await getTask(ORG, task.id)).toMatchObject({ sandboxName: name, memory: "# Notes\n- 60/40: median 6.1%" });
+
+    // A reply next week: the same sandbox, the same scripts, the next version of the model.
+    sandboxes.machines.get(name)!.files.set("/vercel/job/config.json", Buffer.from("60/40"));
+    const runs: Promise<void>[] = [];
+    setScheduler((work) => runs.push(work()), {
+      model: scriptedModel([
+        [["write_file", { path: "config.json", content: "70/30" }]],
+        [["run_code", { filename: "simulate.py", language: "python", code: "print('median 6.1%')" }]],
+        [["attach_file", { path: "outputs/portfolio-model.xlsx", note: "70/30" }]],
+        [["finish", { summary: "70/30 lifts the median to 6.9%.", report: "Done." }]],
+      ]),
+      research: false,
+    });
+    await replyToTask(ORG, task.id, { name: "Ahmed", personId: ahmed.id }, "Try 70/30 instead");
+    await Promise.all(runs);
+
+    expect(sandboxes.log.filter((l) => l.startsWith("create"))).toHaveLength(1);
+    const [model] = await listTaskFiles(ORG, task.id);
+    expect(model.versions.map((v) => [v.version, v.note])).toEqual([
+      [2, "70/30"],
+      [1, "60/40"],
+    ]);
+  });
+
+  it("never starts a sandbox for work that doesn't need one", async () => {
+    const { analyst, task } = await setUp();
+    const sandboxes = fakeSandboxes();
+    setSandboxProvider(sandboxes.provider);
+    await run(task.id, analyst.id, [[["finish", { summary: "Done.", report: "Done." }]]]);
+    expect(sandboxes.log).toEqual([]);
+  });
+
+  it("seeds a new job's sandbox with the files it starts from", async () => {
+    const { ahmed, analyst } = await setUp();
+    const { saveVersion, attachToTask } = await import("@/lib/files");
+    const earlier = await createTask(ORG, { title: "Old model", people: [ahmed.id] });
+    const v1 = await saveVersion(ORG, { name: "model.xlsx", kind: "deliverable", bytes: Buffer.from("v1"), taskId: earlier.id });
+    const task = await createTask(ORG, { title: "Extend the model", people: [ahmed.id], agents: [analyst.id] });
+    await attachToTask(ORG, task.id, v1.fileId, "input");
+
+    const sandboxes = fakeSandboxes();
+    setSandboxProvider(sandboxes.provider);
+    await run(task.id, analyst.id, [
+      [["list_files", {}]],
+      [["finish", { summary: "Done.", report: "Done." }]],
+    ]);
+    expect(sandboxes.file(`mach-task-${task.id}`, "inputs/model.xlsx")?.toString()).toBe("v1");
+    expect(sandboxes.file(`mach-task-${task.id}`, "NOTES.md")?.toString()).toBe("# Job notes\n");
+  });
+});
+
 describe("normalizeOptions", () => {
   it("recommends exactly one option", () => {
     expect(normalizeOptions([{ label: "A" }, { label: "B", recommended: true }, { label: "C", recommended: true }])).toEqual([
@@ -196,7 +291,7 @@ describe("taskBrief", () => {
       body: `message ${i}`,
       createdAt: new Date(),
     }));
-    const brief = taskBrief({ task, messages, outputs: [], agent });
+    const brief = taskBrief({ task, messages, files: [], agent });
     expect(brief).toContain("message 0\n");
     expect(brief).not.toContain("message 10\n");
     expect(brief).toContain("message 69");

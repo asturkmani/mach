@@ -1,15 +1,16 @@
 "use client";
 
-import { ArrowLeft, Download, LoaderCircle, Play, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, LoaderCircle, Play, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import {
   addMemberAction,
   approveOrDoneAction,
+  archiveAction,
   pickOptionAction,
   removeMemberAction,
   replyAction,
@@ -17,11 +18,12 @@ import {
   runAgentAction,
   setPriorityAction,
   setStatusAction,
+  unarchiveAction,
   updateTaskTextAction,
 } from "@/app/(app)/tasks/actions";
+import { CodeSection, FilesSection, type FileView, type LibraryOption } from "@/components/task-files";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
 import { Face, PriorityMark, useStoredFlag, When } from "@/components/ui";
-import { parseCsv } from "@/lib/csv";
 import { byline, type TaskView } from "@/lib/task-view";
 import { PRIORITIES, PRIORITY_WORDS, STATUS_WORDS, TASK_STATUSES, type Priority, type TaskStatus } from "@/lib/task-words";
 import type { TaskMember, TaskMessageKind } from "@/lib/tasks";
@@ -30,11 +32,15 @@ type Detail = TaskView & {
   description: string;
   context: string;
   progress: string;
+  memory: string;
+  archived: boolean;
+  hasSandbox: boolean;
   createdAt: string;
   members: TaskMember[];
 };
+
+export type { FileView };
 type Message = { id: string; author: string; personId: string | null; agentId: string | null; kind: TaskMessageKind; body: string; createdAt: string };
-type Output = { id: string; filename: string; content: string; updatedAt: string };
 type Option = { id: string; name: string; role: string };
 
 const SUMMARY_KEY = "mach-summary-open";
@@ -42,7 +48,8 @@ const SUMMARY_KEY = "mach-summary-open";
 export function TaskDetail({
   task,
   messages,
-  outputs,
+  files,
+  library,
   people,
   agents,
   nextNumber,
@@ -50,7 +57,8 @@ export function TaskDetail({
 }: {
   task: Detail;
   messages: Message[];
-  outputs: Output[];
+  files: FileView[];
+  library: LibraryOption[];
   people: Option[];
   agents: Option[];
   nextNumber: number | null;
@@ -62,7 +70,7 @@ export function TaskDetail({
   const [reply, setReply] = useState("");
   const [summaryOpen, setSummaryOpen] = useStoredFlag(SUMMARY_KEY, true);
   const replyRef = useRef<HTMLTextAreaElement>(null);
-  const closed = task.status === "done" || task.status === "cancelled";
+  const closed = task.status === "done" || task.status === "cancelled" || task.archived;
   const lastResult = [...messages].reverse().find((m) => m.kind === "result" || m.kind === "ask");
 
   const goNext = () => router.push(nextNumber ? `/tasks/${nextNumber}` : "/");
@@ -111,6 +119,17 @@ export function TaskDetail({
       if (previous) pushUndo(`Priority ${PRIORITY_WORDS[priority].toLowerCase()}`, async () => void (await restoreAction(task.id, previous)));
     });
 
+  const archive = (on: boolean) => {
+    if (on && task.hasSandbox && !confirm("Archive this job? Its sandbox is deleted; its files stay in the library.")) return;
+    act(
+      () => (on ? archiveAction(task.id) : unarchiveAction(task.id)),
+      () => {
+        toast(on ? `Archived #${task.number}` : `Brought back #${task.number}`);
+        if (on) goNext();
+      },
+    );
+  };
+
   const sendReply = () => {
     const text = reply.trim();
     if (!text) return;
@@ -149,6 +168,9 @@ export function TaskDetail({
     })),
     { id: "later", group, label: "Later…", keys: ["L"], run: () => openLater(task.id) },
     { id: "summary", group, label: summaryOpen ? "Hide summary" : "Show summary", keys: ["S"], run: toggleSummary },
+    task.archived
+      ? { id: "unarchive", group, label: "Bring back from the archive", run: () => archive(false) }
+      : { id: "archive", group, label: "Archive this job", run: () => archive(true) },
   ]);
 
   const agentMembers = task.members.filter((m): m is Extract<TaskMember, { type: "agent" }> => m.type === "agent");
@@ -165,8 +187,20 @@ export function TaskDetail({
           <span className="label text-faint">/</span>
           <span className="label">#{task.number}</span>
           {task.kind === "suggestion" && <span className="label text-accent">Profile suggestion</span>}
+          {task.archived && <span className="label text-faint">Archived</span>}
         </div>
         <div className="flex items-center gap-2">
+          {task.kind === "task" && (
+            <button
+              onClick={() => archive(!task.archived)}
+              className="btn btn-ghost"
+              disabled={pending || task.running}
+              title={task.archived ? "Bring this job back" : "Retire this job: deletes its sandbox, keeps its files"}
+            >
+              {task.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+              {task.archived ? "Unarchive" : "Archive"}
+            </button>
+          )}
           <button onClick={() => openLater(task.id)} className="btn btn-ghost" disabled={closed}>
             Later <kbd className="kbd">L</kbd>
           </button>
@@ -236,14 +270,8 @@ export function TaskDetail({
               </section>
             )}
 
-            {outputs.length > 0 && (
-              <section className="mt-8 space-y-3">
-                <p className="label">Files</p>
-                {outputs.map((output, i) => (
-                  <OutputFile key={output.id} taskNumber={task.number} output={output} startOpen={i === 0} />
-                ))}
-              </section>
-            )}
+            <FilesSection taskId={task.id} taskNumber={task.number} files={files} library={library} />
+            <CodeSection files={files} notes={task.memory} />
 
             <section className="mt-10">
               <p className="label mb-4">Thread</p>
@@ -607,74 +635,5 @@ function ThreadMessage({ message }: { message: Message }) {
         </div>
       </div>
     </li>
-  );
-}
-
-function OutputFile({ taskNumber, output, startOpen }: { taskNumber: number; output: Output; startOpen: boolean }) {
-  const [open, setOpen] = useState(startOpen);
-  const extension = output.filename.split(".").pop()?.toLowerCase();
-  const rows = useMemo(() => (extension === "csv" ? parseCsv(output.content) : []), [extension, output.content]);
-  return (
-    <div className="border border-line bg-raised">
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-        <button onClick={() => setOpen(!open)} className="min-w-0 truncate text-left font-mono text-sm hover:text-accent">
-          {output.filename}
-        </button>
-        <span className="flex shrink-0 items-center gap-3">
-          <span className="label text-faint">
-            <When date={output.updatedAt} />
-          </span>
-          <a href={`/tasks/${taskNumber}/files/${output.id}`} className="text-muted hover:text-ink" title="Download">
-            <Download size={15} />
-          </a>
-        </span>
-      </div>
-      {open && (
-        <div className="scroll-quiet max-h-[28rem] overflow-auto border-t border-line-soft">
-          {extension === "csv" && rows.length > 0 ? (
-            <table className="w-max min-w-full border-collapse font-mono text-xs">
-              <thead>
-                <tr>
-                  {rows[0].map((cell, i) => (
-                    <th
-                      key={i}
-                      title={cell}
-                      className={`sticky top-0 border-b border-line bg-raised px-3 py-2 font-normal whitespace-nowrap text-muted ${
-                        i === 0 ? "left-0 z-20 text-left" : "z-10 text-right"
-                      }`}
-                    >
-                      {cell}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(1).map((row, r) => (
-                  <tr key={r} className="group/row">
-                    {row.map((cell, i) => (
-                      <td
-                        key={i}
-                        title={cell}
-                        className={`max-w-56 truncate border-b border-line-soft px-3 py-1.5 group-hover/row:bg-hover ${
-                          i === 0 ? "sticky left-0 z-10 max-w-80 bg-raised text-left" : "text-right tabular-nums"
-                        }`}
-                      >
-                        {cell}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : extension === "md" ? (
-            <div className="prose prose-mach max-w-none px-4 py-3 text-sm">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{output.content}</ReactMarkdown>
-            </div>
-          ) : (
-            <pre className="whitespace-pre-wrap px-4 py-3 font-mono text-xs">{output.content}</pre>
-          )}
-        </div>
-      )}
-    </div>
   );
 }

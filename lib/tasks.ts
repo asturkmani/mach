@@ -40,6 +40,10 @@ export type Task = {
   runAgentId: string | null;
   runStartedAt: Date | null;
   agentTurns: number;
+  /** The job's notes (the agent's NOTES.md): how to rerun it, variants tried, results. */
+  memory: string;
+  sandboxName: string | null;
+  archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   closedAt: Date | null;
@@ -57,8 +61,6 @@ export type TaskMessage = {
   body: string;
   createdAt: Date;
 };
-
-export type TaskOutput = { id: string; filename: string; content: string; agentId: string | null; updatedAt: Date };
 
 type TaskRow = {
   id: string;
@@ -79,6 +81,9 @@ type TaskRow = {
   run_agent_id: string | null;
   run_started_at: Date | null;
   agent_turns: number;
+  memory: string;
+  sandbox_name: string | null;
+  archived_at: Date | null;
   created_at: Date;
   updated_at: Date;
   closed_at: Date | null;
@@ -98,7 +103,7 @@ type MemberRow = {
 
 const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary, t.context, t.progress, t.status,
   t.priority, t.options, t.payload, t.later_until, t.created_by_person_id, t.created_by_agent_id, t.run_agent_id,
-  t.run_started_at, t.agent_turns, t.created_at, t.updated_at, t.closed_at`;
+  t.run_started_at, t.agent_turns, t.memory, t.sandbox_name, t.archived_at, t.created_at, t.updated_at, t.closed_at`;
 
 /** Sorts urgent first, then high, medium, low. */
 export const PRIORITY_ORDER = `case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`;
@@ -126,6 +131,9 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     runAgentId: row.run_agent_id,
     runStartedAt: row.run_started_at,
     agentTurns: row.agent_turns,
+    memory: row.memory,
+    sandboxName: row.sandbox_name,
+    archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     closedAt: row.closed_at,
@@ -196,10 +204,12 @@ export async function getTaskByNumber(organizationId: string, number: number): P
 /** Every task in the organization, open ones first. Closed tasks are limited to the most recent. */
 export async function listTasks(organizationId: string, { closedLimit = 30 } = {}): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
-    `(select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.status not in ('done', 'cancelled')
+    `(select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
+        and t.status not in ('done', 'cancelled')
       order by ${PRIORITY_ORDER}, t.updated_at desc)
      union all
-     (select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.status in ('done', 'cancelled')
+     (select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
+        and t.status in ('done', 'cancelled')
       order by t.closed_at desc nulls last limit $2)`,
     [organizationId, closedLimit],
   );
@@ -207,7 +217,8 @@ export async function listTasks(organizationId: string, { closedLimit = 30 } = {
 }
 
 const NEEDS_PERSON = `
-  t.status not in ('done', 'cancelled', 'backlog')
+  t.archived_at is null
+  and t.status not in ('done', 'cancelled', 'backlog')
   and (t.later_until is null or t.later_until <= now())
   and (t.status in ('waiting', 'review')
        or (t.status = 'ready' and not exists (select 1 from task_members a where a.task_id = t.id and a.agent_id is not null)))`;
@@ -235,7 +246,7 @@ export async function countInbox(organizationId: string, personId: string): Prom
 /** This person's open tasks that don't need them right now: agents working, queued, put off or not started. */
 export async function listInProgress(organizationId: string, personId: string): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
-    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and ${IS_MEMBER}
+    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and ${IS_MEMBER} and t.archived_at is null
        and t.status not in ('done', 'cancelled') and not (${NEEDS_PERSON})
      order by ${PRIORITY_ORDER}, t.updated_at desc`,
     [organizationId, personId],
@@ -286,25 +297,6 @@ export async function listMessages(taskId: string): Promise<TaskMessage[]> {
     kind: r.kind,
     body: r.body,
     createdAt: r.created_at,
-  }));
-}
-
-export async function listOutputs(taskId: string): Promise<TaskOutput[]> {
-  const rows = await getDb().query<{
-    id: string;
-    filename: string;
-    content: string;
-    agent_id: string | null;
-    updated_at: Date;
-  }>("select id, filename, content, agent_id, updated_at from task_outputs where task_id = $1 order by created_at", [
-    taskId,
-  ]);
-  return rows.map((r) => ({
-    id: r.id,
-    filename: r.filename,
-    content: r.content,
-    agentId: r.agent_id,
-    updatedAt: r.updated_at,
   }));
 }
 
@@ -445,15 +437,20 @@ export async function addMessage(
   await getDb().query("update tasks set updated_at = now() where id = $1", [taskId]);
 }
 
-export async function saveOutput(
-  taskId: string,
-  output: { filename: string; content: string; agentId?: string },
-): Promise<void> {
+export async function saveMemory(taskId: string, memory: string): Promise<void> {
+  await getDb().query("update tasks set memory = $2 where id = $1", [taskId, memory]);
+}
+
+export async function setSandboxName(taskId: string, name: string | null): Promise<void> {
+  await getDb().query("update tasks set sandbox_name = $2 where id = $1", [taskId, name]);
+}
+
+/** Retires a job (or brings it back): archived jobs leave every list but keep their files. */
+export async function setArchived(organizationId: string, taskId: string, archived: boolean): Promise<void> {
   await getDb().query(
-    `insert into task_outputs (task_id, agent_id, filename, content) values ($1, $2, $3, $4)
-     on conflict (task_id, lower(filename)) do update set content = excluded.content, agent_id = excluded.agent_id,
-       updated_at = now()`,
-    [taskId, output.agentId ?? null, output.filename.trim(), output.content],
+    `update tasks set archived_at = case when $3 then coalesce(archived_at, now()) else null end, updated_at = now()
+     where organization_id = $1 and id = $2`,
+    [organizationId, taskId, archived],
   );
 }
 

@@ -1,4 +1,5 @@
 import { getAgent } from "@/lib/agents/store";
+import { contentTypeFor, isText, listTaskFiles, readVersion, saveVersion } from "@/lib/files";
 import {
   agentInstructions,
   firstSentence,
@@ -6,6 +7,7 @@ import {
   MAX_AGENT_TURNS,
   normalizeOptions,
   taskBrief,
+  type BriefFile,
   type RunContext,
   type RunOutcome,
 } from "@/lib/agents/prompts";
@@ -18,10 +20,8 @@ import {
   countPersonComments,
   getTask,
   listMessages,
-  listOutputs,
   releaseRun,
   renewRun,
-  saveOutput,
   updateTask,
   type TaskOption,
 } from "@/lib/tasks";
@@ -79,20 +79,43 @@ export async function beginRun(
   }
   if (!(await claimRun(organizationId, task.id, agent.id))) return { ok: false, outcome: { type: "busy" } };
 
-  const [profile, messages, outputs] = await Promise.all([
+  const [profile, messages, files] = await Promise.all([
     loadProfile(organizationId),
     listMessages(task.id),
-    listOutputs(task.id),
+    briefFiles(organizationId, task.id),
   ]);
   const others = agentsOn(task).filter((m) => m.id !== agent.id);
   return {
     ok: true,
     context,
     model,
-    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, outputs, agent }) }),
+    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent }) }),
     prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
   };
+}
+
+/** The job's files as the agent sees them; small text files include their content. */
+async function briefFiles(organizationId: string, taskId: string): Promise<BriefFile[]> {
+  const files = await listTaskFiles(organizationId, taskId);
+  return Promise.all(
+    files
+      .filter((f) => f.versions.length > 0)
+      .map(async (f) => {
+        const latest = f.versions[0];
+        const textual = isText(latest.contentType || contentTypeFor(f.name)) && latest.size <= 100_000;
+        const content = textual ? await readVersion(organizationId, latest.id) : null;
+        return {
+          name: f.name,
+          kind: f.kind,
+          role: f.role,
+          version: latest.version,
+          from: latest.taskId === taskId ? "this task" : latest.taskNumber ? `task #${latest.taskNumber}` : "the library",
+          text: content ? content.bytes.toString("utf8") : null,
+          size: latest.size,
+        };
+      }),
+  );
 }
 
 const by = (context: RunContext) => ({ author: context.agentName, agentId: context.agentId });
@@ -108,8 +131,14 @@ export async function postUpdate(context: RunContext, input: { message: string; 
 
 export async function saveFile(context: RunContext, input: { filename: string; content: string }): Promise<string> {
   "use step";
-  await saveOutput(context.taskId, { ...input, agentId: context.agentId });
-  return `Saved ${input.filename}.`;
+  const saved = await saveVersion(context.organizationId, {
+    name: input.filename,
+    kind: "deliverable",
+    bytes: Buffer.from(input.content),
+    taskId: context.taskId,
+    agentId: context.agentId,
+  });
+  return saved.unchanged ? `${input.filename} is unchanged.` : `Saved ${input.filename} (version ${saved.version}).`;
 }
 
 type Report = { summary: string; options?: TaskOption[]; context?: string; progress?: string };

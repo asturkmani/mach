@@ -132,15 +132,60 @@ create table if not exists task_messages (
 
 create index if not exists task_messages_task on task_messages (task_id, created_at);
 
--- Files an agent produced for a task, such as a model as CSV or a report as markdown.
-create table if not exists task_outputs (
+-- Jobs keep a memory (the agent's NOTES.md) and, once code has run, a
+-- sandbox. Done ends a round; archiving retires the job and its sandbox.
+alter table tasks add column if not exists memory text not null default '';
+alter table tasks add column if not exists sandbox_name text;
+alter table tasks add column if not exists archived_at timestamptz;
+
+-- The company file library. Every deliverable an agent attaches and every
+-- script it runs is a file with versions, so later jobs can build on it.
+create table if not exists files (
   id uuid primary key default gen_random_uuid(),
-  task_id uuid not null references tasks (id) on delete cascade,
-  agent_id uuid references agents (id) on delete set null,
-  filename text not null,
-  content text not null,
+  organization_id text not null references organizations (id) on delete cascade,
+  name text not null,
+  kind text not null default 'deliverable' check (kind in ('deliverable', 'code')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create unique index if not exists task_outputs_name on task_outputs (task_id, lower(filename));
+create index if not exists files_org on files (organization_id, updated_at desc);
+
+create table if not exists file_versions (
+  id uuid primary key default gen_random_uuid(),
+  file_id uuid not null references files (id) on delete cascade,
+  version integer not null,
+  content_type text not null,
+  size integer not null,
+  sha256 text not null,
+  blob_pathname text, -- stored in Vercel Blob when a store is connected
+  content bytea, -- otherwise stored here
+  task_id uuid references tasks (id) on delete set null,
+  agent_id uuid references agents (id) on delete set null,
+  person_id uuid references people (id) on delete set null,
+  based_on integer, -- the version this one was built from
+  note text not null default '', -- e.g. "rules ABD", or a script's last run output
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists file_versions_number on file_versions (file_id, version);
+
+-- A read-only preview (sheet tables, CSV rows, text), built once when the
+-- version is saved or first opened.
+alter table file_versions add column if not exists preview jsonb;
+
+-- Which library files a job works with: inputs someone attached, and outputs it produced.
+create table if not exists task_files (
+  task_id uuid not null references tasks (id) on delete cascade,
+  file_id uuid not null references files (id) on delete cascade,
+  role text not null default 'output' check (role in ('input', 'output')),
+  added_at timestamptz not null default now(),
+  primary key (task_id, file_id)
+);
+
+-- Prebuilt sandbox snapshots (the data stack), so job sandboxes boot ready.
+create table if not exists sandbox_templates (
+  key text primary key,
+  snapshot_id text not null,
+  created_at timestamptz not null default now()
+);

@@ -43,7 +43,8 @@ When to suggest a change:
 - Title: the outcome, starting with a verb, under 60 characters. "Review Micron's Q4 earnings", not "Micron".
 - Description: the goal, the inputs or sources to use, what done looks like (the deliverable and its format), and any deadline. Short paragraphs or a short list.
 - People: always include the person who asked. Add anyone else who must decide or act.
-- Agents: use a defined agent when its role fits the work. Otherwise add a worker agent with a clear role (for example "Financial analysis"), which is made for this task only.
+- Agents: use a defined agent when its role fits the work. Otherwise add a worker agent with a clear role (for example "Financial analysis"), which is made for this task only. Every agent can run code in its own sandbox, so models, simulations and data work are fine to delegate.
+- Files: when the work builds on an existing company file, start the job from it (create_task's files), and say in the description what should change.
 - Priority: leave it at medium unless they said it is urgent or important.
 - One task per outcome. Check the open tasks first and don't create a duplicate.`,
   },
@@ -80,8 +81,26 @@ Projection model:
 - Build quarterly columns: the last two to four reported quarters, then the projected quarters, clearly marked as estimates (for example "FQ1 2027E").
 - Rows: revenue (by segment if it matters), gross margin %, gross profit, operating expenses, operating income, operating margin %, tax rate, net income, diluted shares, EPS.
 - Drive the projections from a few explicit assumptions listed at the top or bottom: revenue growth per quarter, margins, opex growth, tax rate, share count. Anchor the first projected quarter to company guidance.
-- Save the model with save_output as a CSV (one header row of quarters, one row per line item, numbers without currency symbols, units stated in the row label, e.g. "Revenue ($M)").
+- Build the model in your sandbox as an xlsx (load the excel-models skill): assumptions as input cells, the model as formulas that reference them, and the script that builds it kept under code/ so it can be rebuilt. Attach it with attach_file.
 - In your report, give the headline numbers, the key assumptions and the main risks in a few sentences. The full table belongs in the file.`,
+  },
+  {
+    name: "excel-models",
+    description: "Building Excel models and simulations in the sandbox that people can open, check and change.",
+    body: `Build workbooks with a Python script (openpyxl) kept under code/, so the model can be rebuilt after any change. Put the inputs in a config file (config.yaml or config.json) the script reads.
+
+Layout:
+- An Assumptions sheet: one input per row with a label, the value and a unit or note. Style inputs as inputs (blue font), so people know what they may change.
+- Calculation sheets that use real formulas referencing the assumption cells (=Assumptions!B3*(1+Assumptions!B4)), never pasted numbers, so changing an input updates the model.
+- For simulations (Monte Carlo and similar), run the simulation in Python with a fixed random seed, write the per-run results or a percentile table to a sheet, and say in the Assumptions sheet that the simulated values are static outputs of the script.
+- A Summary sheet first, with the handful of numbers people asked for, referencing the other sheets.
+- Number formats on every number (0.0%, #,##0, $#,##0.00), sensible column widths, frozen header rows, units in labels ("Revenue ($M)").
+
+Charts: save PNGs with matplotlib (dpi 150, labelled axes, a title, units) in outputs/ and attach them; optionally also add the image to the Summary sheet.
+
+Checks before you attach:
+- Run recalc on the file (the attach step also does this) and read it back with openpyxl(data_only=True) to make sure no cell shows an error (#REF!, #DIV/0!, #NAME?) and the key numbers match what your script computed.
+- Report the headline numbers from the recalculated file, not from memory.`,
   },
 ];
 
