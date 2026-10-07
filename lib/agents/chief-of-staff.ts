@@ -10,13 +10,32 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import { skillList, skillTool } from "@/lib/agents/skills";
+import { createAgent, type Agent } from "@/lib/agents/store";
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
-import { removePersonByName, savePerson, syncPeopleSection } from "@/lib/people";
-import { onboardingChecklist, PEOPLE_SECTION, SECTIONS, setCompanyName, setSection } from "@/lib/profile/markdown";
+import { removePersonByName, savePerson, syncPeopleSection, type Person } from "@/lib/people";
+import {
+  isCaptured,
+  onboardingChecklist,
+  PEOPLE_SECTION,
+  SECTIONS,
+  setCompanyName,
+  setSection,
+} from "@/lib/profile/markdown";
 import { updateProfile } from "@/lib/profile/store";
 import type { SessionUser } from "@/lib/session";
+import { PRIORITIES, type Task } from "@/lib/tasks";
+import { createTaskWithTeam, resolveTeam, suggestProfileUpdate, WorkError } from "@/lib/work";
 
-type Context = { organization: Organization; user: SessionUser; profile: string };
+type Context = {
+  organization: Organization;
+  user: SessionUser;
+  profile: string;
+  /** The signed-in person, who is put on any task they ask for. */
+  person?: Person;
+  agents?: Agent[];
+  openTasks?: Task[];
+};
 
 function onboardingInstructions({ organization }: Context): string {
   const website = organization.website
@@ -38,7 +57,34 @@ How to run it:
 - As soon as the three essentials are captured, call complete_onboarding on its own (after your other saves). If it reports something missing, ask about that in one short question and try again later. Once it succeeds, reply with a three-line summary and tell them they can keep telling you things at any time.`;
 }
 
-const AFTER_ONBOARDING = `Onboarding is complete. You are now the company's Chief of Staff: answer questions using the profile, record anything new you learn, and keep the people list and reporting lines up to date. Don't start a new interview; ask at most one short question when something important is missing.`;
+function afterOnboardingInstructions({ profile }: Context): string {
+  const empty = SECTIONS.filter((section) => section !== PEOPLE_SECTION && !isCaptured(profile, section));
+  return `Onboarding is complete. You are now the company's Chief of Staff: answer questions using the profile, keep the people list and reporting lines up to date, and turn requests into tasks.
+
+Keeping the profile current:
+- Listen for anything new about the company in every message: a tool they use, a customer, a goal that changed, a term you didn't know. When you learn something the profile lacks or gets wrong, call suggest_profile_update straight away (load the company-profile skill first if you haven't), then carry on with what they asked. Don't ask permission; they apply or dismiss it from a card.
+- ${empty.length > 0 ? `Still empty in the profile: ${empty.join(", ")}. When the conversation touches these, suggest an update.` : "Every section has something in it; keep them accurate."}
+- Don't start an interview. Ask at most one short question when something important is missing.`;
+}
+
+function workInstructions({ agents = [], openTasks = [] }: Context): string {
+  const agentLines = agents
+    .filter((a) => a.kind === "defined" && a.status === "active")
+    .map((a) => `- ${a.name}${a.role ? ` (${a.role})` : ""}${a.description ? `: ${a.description}` : ""}`);
+  const taskLines = openTasks
+    .slice(0, 30)
+    .map((t) => `- #${t.number} ${t.title} [${t.status}] · ${t.members.map((m) => m.name).join(", ") || "no one"}`);
+  return `Tasks and agents:
+- When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
+- Answer quick questions yourself. Create a task only for real work.
+- If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
+
+Defined agents:
+${agentLines.join("\n") || "(none yet)"}
+
+Open tasks:
+${taskLines.join("\n") || "(none)"}`;
+}
 
 export function chiefOfStaffInstructions(context: Context): string {
   const { organization, user, profile } = context;
@@ -47,14 +93,22 @@ export function chiefOfStaffInstructions(context: Context): string {
 
 You are talking to ${user.name} (${user.email}), who is already in the people list. If you learn their role or manager, save it.
 
-${organization.onboardingCompletedAt ? AFTER_ONBOARDING : onboardingInstructions(context)}
+${organization.onboardingCompletedAt ? afterOnboardingInstructions(context) : onboardingInstructions(context)}
+
+${workInstructions(context)}
 
 Recording facts:
 - The company profile below is a markdown document and your memory of the company. Record facts as soon as you learn them; don't ask permission to save.
 - Write in the company's own words, concise and factual. Never invent facts.
 - Use save_person / remove_person for people. Never write the "${PEOPLE_SECTION}" section with update_section; it is generated from the people list.
-- Use update_section for every other section, passing the complete new body (markdown, no "## " heading). It replaces what was there, so keep anything that should stay.
-- Use set_company_name only if they correct the company's name.
+${
+    organization.onboardingCompletedAt
+      ? "- Use suggest_profile_update for every other section, passing the complete new body (markdown, no \"## \" heading). It replaces what was there when applied, so keep anything that should stay."
+      : "- Use update_section for every other section, passing the complete new body (markdown, no \"## \" heading). It replaces what was there, so keep anything that should stay.\n- Use set_company_name only if they correct the company's name."
+  }
+
+Skills you can load with use_skill:
+${skillList()}
 
 Sections: ${SECTIONS.join(", ")}.
 
@@ -142,12 +196,113 @@ function profileTools({ organization }: Context) {
       toModelOutput: ({ output }) => ({
         type: "text" as const,
         value: output.onboardingComplete
-          ? "Onboarding is marked complete."
+          ? "Onboarding is marked complete. Now reply to them: a three-line summary of what you captured, then one line saying they can tell you anything new at any time or ask you to get work done."
           : `Not complete yet. Missing: ${output.missing.join("; ")}. If you saved this in the same step, call complete_onboarding again. Otherwise ask one short question about it; if someone has no manager, ask where they fit (for example whether the person you're talking to is one of the people already listed).`,
       }),
     }),
   };
 }
+
+function workTools(context: Context) {
+  const orgId = context.organization.id;
+  const by = { name: context.user.name, personId: context.person?.id };
+  return {
+    create_task: tool({
+      description:
+        "Create a task for real work and put people and agents on it. The person you're talking to is added automatically. Agents on it start straight away.",
+      inputSchema: z.object({
+        title: z.string().min(1).max(100).describe("The outcome, starting with a verb."),
+        description: z.string().describe("Goal, inputs or sources, what done looks like, and any deadline."),
+        priority: z.enum(PRIORITIES).optional(),
+        people: z.array(z.string()).optional().describe("Exact names of other people to put on it."),
+        agents: z.array(z.string()).optional().describe("Exact names of defined agents to put on it."),
+        workerRole: z
+          .string()
+          .optional()
+          .describe("Add a new worker agent with this role, e.g. 'Financial analysis', when no defined agent fits."),
+      }),
+      execute: async ({ title, description, priority, people, agents, workerRole }) => {
+        try {
+          const team = await resolveTeam(orgId, { people, agents });
+          const task = await createTaskWithTeam(orgId, {
+            title,
+            description,
+            priority,
+            personIds: team.people.map((p) => p.id),
+            agentIds: team.agents.map((a) => a.id),
+            workerRole,
+            by,
+          });
+          return {
+            task: { id: task.id, number: task.number, title: task.title },
+            members: task.members.map((m) => m.name),
+          };
+        } catch (error) {
+          if (error instanceof WorkError) return { error: error.message };
+          throw error;
+        }
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value:
+          "error" in output
+            ? `Not created: ${output.error}`
+            : `Created task #${output.task.number} with ${output.members.join(", ")}.`,
+      }),
+    }),
+    create_agent: tool({
+      description: "Create a defined agent: one with a standing role that does the same kind of work again and again.",
+      inputSchema: z.object({
+        name: z.string().min(1).max(40),
+        role: z.string().describe("A few words, like a job title."),
+        description: z.string().describe("What it is responsible for and what good work looks like."),
+        instructions: z.string().describe("Specific do's and don'ts, sources, tone and formats."),
+      }),
+      execute: async (input) => {
+        try {
+          const agent = await createAgent(orgId, input);
+          return { agent: { id: agent.id, name: agent.name } };
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Couldn't create the agent." };
+        }
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value: "error" in output ? `Not created: ${output.error}` : `Created ${output.agent.name}.`,
+      }),
+    }),
+    suggest_profile_update: tool({
+      description:
+        "Suggest a change to one section of the company profile. They see it as a card and apply or dismiss it.",
+      inputSchema: z.object({
+        section: z.enum(sectionNames),
+        content: z.string().describe("Full markdown body for the section, without the '## ' heading."),
+        reason: z
+          .string()
+          .max(140)
+          .describe("One sentence they read in their inbox, e.g. 'You use Masttro for reporting. Add it to How We Work?'"),
+      }),
+      execute: async ({ section, content, reason }) => {
+        if (!context.person) return { error: "No signed-in person to review it." };
+        try {
+          const task = await suggestProfileUpdate(orgId, { personId: context.person.id }, { section, content, reason });
+          return { suggestion: { id: task.id, number: task.number, section, content, reason } };
+        } catch (error) {
+          if (error instanceof WorkError) return { error: error.message };
+          throw error;
+        }
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value: "error" in output ? `Not suggested: ${output.error}` : "Suggested. It's waiting for them to apply.",
+      }),
+    }),
+    use_skill: skillTool(),
+  } satisfies ToolSet;
+}
+
+const ONBOARDING_ONLY = ["set_company_name", "update_section", "complete_onboarding"] as const;
+const AFTER_ONBOARDING_ONLY = ["suggest_profile_update"] as const;
 
 // Run by AI Gateway and billed to its credits: a few dollars per thousand calls.
 const researchTools = {
@@ -163,10 +318,19 @@ export function createChiefOfStaff(
   if (!model) {
     throw new Error("Set CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).");
   }
+  const tools = {
+    ...profileTools(context),
+    ...workTools(context),
+    ...(options.research === false ? {} : researchTools),
+  };
+  // Every tool stays in the type (and in stored chats); only the ones that fit
+  // the moment are offered to the model.
+  const hidden: readonly string[] = context.organization.onboardingCompletedAt ? ONBOARDING_ONLY : AFTER_ONBOARDING_ONLY;
   return new ToolLoopAgent({
     model,
     instructions: chiefOfStaffInstructions(context),
-    tools: { ...profileTools(context), ...(options.research === false ? {} : researchTools) },
+    tools,
+    activeTools: (Object.keys(tools) as (keyof typeof tools)[]).filter((name) => !hidden.includes(name)),
   });
 }
 

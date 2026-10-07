@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft v0.4. Launch channels: WhatsApp (Twilio) and email |
-| **Date** | 2026-10-06 (v0.4) |
+| **Status** | Draft v0.5. Launch channels: WhatsApp (Twilio) and email |
+| **Date** | 2026-10-07 (v0.5) |
 | **Owner** | TBD |
 
 > Everything here is a proposal to react to. Items marked **[Decision Dn]** need a call before we build; they are collected in [§14 Open questions](#14-open-questions-and-decisions).
@@ -239,7 +239,11 @@ Responsibilities:
 
 #### F3.2 Worker agents
 
-Each agent is defined on an Agent Settings page. Every field is editable, and each change creates a new version:
+There are two kinds:
+- **Defined agents** have a standing profile and do similar work again and again (sales outbound, financial analysis, bookkeeping).
+- **Worker agents** are made for one task, with a role (e.g. "Financial analysis"), and archived when the task closes. Anyone (or the Chief of Staff) can add one to a task.
+
+Each defined agent is configured on an Agent Settings page. Every field is editable, and each change creates a new version:
 
 | Field | Notes |
 |---|---|
@@ -316,7 +320,7 @@ stateDiagram-v2
 |---|---|---|
 | BRD-1 | P0 | One default company board. P1: several boards (per team or project) and saved views (by assignee, label, human vs. agent). |
 | BRD-2 | P0 | Columns map to canonical statuses (above). |
-| BRD-3 | P0 | **Task fields:** title; description (markdown); assignee (exactly one member, or unassigned); creator; reviewer (optional, defaults to the creator for agent-assigned tasks); status; priority; due date; start-after date; labels; parent; blocked-by dependencies; acceptance criteria; attachments; comments and activity; outputs (files, links, summaries); linked runs; cost so far. |
+| BRD-3 | P0 | **Task fields:** title; description (markdown); members (any mix of people and agents; every agent on a task sees all of it: description, summary, thread, files and members); creator; reviewer (optional, defaults to the creator for agent-assigned tasks); status; priority; due date; start-after date; labels; parent; blocked-by dependencies; acceptance criteria; attachments; comments and activity; outputs (files, links, summaries); linked runs; cost so far. |
 | BRD-4 | P0 | **Subtasks** are tasks with a parent. The data model allows any depth; the task drawer shows them as a nested list, and parents show rolled-up progress. By default (configurable), a parent can't be Done while it has open subtasks. |
 | BRD-5 | P0 | **Dependencies.** A task becomes dispatchable only when every blocked-by task is Done. |
 | BRD-6 | P0 | **Ways to create tasks:** the board UI; chat with any agent ("make a task for…"); email or WhatsApp to the CoS; agents themselves (delegation). |
@@ -325,6 +329,8 @@ stateDiagram-v2
 | BRD-9 | P1 | **Recurring tasks** (cron-like), e.g. "Every Monday: prepare the weekly sales report". |
 | BRD-10 | P1 | Task templates and checklists. |
 | BRD-11 | P2 | List, calendar and timeline views. |
+| BRD-12 | P0 | **Inbox.** Each person's home screen lists the tasks waiting on them (an agent asked, finished work to review, or no agent is on it), urgent first. Each row is two lines: the title and one sentence saying what happened and what's needed. Agents end a run with up to three options, one recommended, picked with a key; replying or picking sends the task back to the agent. Rows can be put off until later. |
+| BRD-13 | P0 | **Keyboard first.** J/K move, Enter opens, E approves the recommendation or marks done, 1–3 pick an option, R reply, L later, Z undo, N new task, S summary, / search, ⌘K command palette. |
 
 #### F4.2 Dispatcher
 

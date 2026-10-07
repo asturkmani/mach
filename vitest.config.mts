@@ -9,5 +9,6 @@ export default defineConfig({
       "server-only": path.resolve(import.meta.dirname, "test/empty-module.ts"),
     },
   },
-  test: { include: ["**/*.test.ts"], exclude: ["node_modules/**"] },
+  // Each test starts its own in-memory Postgres, which takes a few seconds.
+  test: { include: ["**/*.test.ts"], exclude: ["node_modules/**"], testTimeout: 30_000 },
 });

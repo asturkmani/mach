@@ -2,11 +2,14 @@ import { createAgentUIStreamResponse, createIdGenerator, type UIMessage } from "
 
 import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { prepareHistory } from "@/lib/agents/history";
+import { listAgents } from "@/lib/agents/store";
 import { loadChat, saveChat } from "@/lib/chats";
 import { loadProfile } from "@/lib/profile/store";
 import { getSessionContext } from "@/lib/session";
+import { listTasks } from "@/lib/tasks";
 
-export const maxDuration = 120;
+// Long enough for the conversation, and for agent runs it starts in the background.
+export const maxDuration = 300;
 
 const generateMessageId = createIdGenerator({ prefix: "msg", size: 16 });
 
@@ -35,8 +38,19 @@ export async function POST(request: Request) {
 
   let agent;
   try {
-    const profile = await loadProfile(context.organization.id);
-    agent = createChiefOfStaff({ organization: context.organization, user: context.user, profile });
+    const [profile, agents, tasks] = await Promise.all([
+      loadProfile(context.organization.id),
+      listAgents(context.organization.id),
+      listTasks(context.organization.id, { closedLimit: 0 }),
+    ]);
+    agent = createChiefOfStaff({
+      organization: context.organization,
+      user: context.user,
+      person: context.person,
+      profile,
+      agents,
+      openTasks: tasks,
+    });
   } catch (error) {
     // Configuration problems (e.g. no model set) are shown to the user as-is.
     return new Response(error instanceof Error ? error.message : "Could not start the Chief of Staff.", {
