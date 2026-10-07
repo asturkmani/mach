@@ -9,10 +9,12 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { sendSignInCodeAction } from "@/app/(app)/integrations/actions";
 import { pickOptionAction } from "@/app/(app)/tasks/actions";
 import { CredentialsForm, StatusLine } from "@/components/credentials-form";
 import type { IntegrationStatus } from "@/lib/integrations";
 import type { ChiefOfStaffMessage } from "@/lib/agents/chief-of-staff";
+import type { LoginOutput } from "@/lib/agents/toolkit";
 import type { ChecklistItem } from "@/lib/profile/markdown";
 import type { TaskStatus } from "@/lib/task-words";
 
@@ -154,7 +156,13 @@ export function CosPanel({
                 }
                 if (isToolUIPart(part)) {
                   return (
-                    <ToolPart key={i} part={part as ToolPart} suggestionStatus={suggestionStatus} integrationStatus={integrationStatus} />
+                    <ToolPart
+                      key={i}
+                      part={part as ToolPart}
+                      suggestionStatus={suggestionStatus}
+                      integrationStatus={integrationStatus}
+                      tell={(text) => !busy && sendMessage({ text })}
+                    />
                   );
                 }
                 return null;
@@ -227,10 +235,13 @@ function ToolPart({
   part,
   suggestionStatus,
   integrationStatus,
+  tell,
 }: {
   part: ToolPart;
   suggestionStatus: Record<string, TaskStatus>;
   integrationStatus: IntegrationState;
+  /** Tells the Chief of Staff something happened in a card (credentials saved, a code entered), so it carries on. */
+  tell: (text: string) => void;
 }) {
   const name = getToolName(part);
   const done = part.state === "output-available";
@@ -256,12 +267,14 @@ function ToolPart({
 
   if (part.type === "tool-connect_data_source" && done && part.output.integration) {
     const { integration } = part.output;
-    return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} />;
+    return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} tell={tell} />;
   }
   if (part.type === "tool-connect_login" && done && part.output.integration) {
     const { integration } = part.output;
-    return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} login />;
+    return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} tell={tell} login />;
   }
+  const needsCode = name === "browser_login" && done ? (part.output as unknown as LoginOutput).needsCode : undefined;
+  if (needsCode) return <SignInCodeCard login={needsCode} tell={tell} />;
 
   const input = (part.input ?? {}) as Record<string, string | undefined>;
   const labels: Record<string, string> = {
@@ -284,6 +297,15 @@ function ToolPart({
     use_skill: `Read the ${input.name ?? ""} playbook`,
     web_search: `Searched${input.objective ? `: ${truncate(input.objective, 50)}` : " the web"}`,
     fetch_page: `Read ${input.url ? truncate(input.url.replace(/^https?:\/\//, ""), 50) : "a page"}`,
+    browse: `Opened ${input.url ? truncate(input.url.replace(/^https?:\/\//, ""), 50) : "a page"} in the browser`,
+    browser_login: `Signed in to ${input.login ?? "a site"}`,
+    run_code: `Ran ${input.filename ?? "a script"}`,
+    run_command: `Ran ${truncate(input.command ?? "a command", 40)}`,
+    read_file: `Read ${input.path ?? "a file"}`,
+    write_file: `Wrote ${input.path ?? "a file"}`,
+    list_files: "Listed files",
+    read_integration_guide: `Read the ${input.integration ?? ""} guide`,
+    save_integration_guide: `Updated the ${input.integration ?? ""} guide`,
   };
   const failed =
     part.state === "output-error" ||
@@ -299,10 +321,12 @@ function ToolPart({
 function IntegrationCard({
   integration,
   live,
+  tell,
   login = false,
 }: {
   integration: { id: string; slug: string; name: string; baseUrl: string; fields: { name: string; label: string; secret?: boolean; optional?: boolean }[] };
   live?: { status: IntegrationStatus; detail: string; hasCredentials: boolean };
+  tell: (text: string) => void;
   login?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
@@ -339,7 +363,19 @@ function IntegrationCard({
             </Link>
           </div>
         ) : (
-          <CredentialsForm id={integration.id} fields={integration.fields} hasCredentials={live.hasCredentials} onDone={() => setEditing(false)} />
+          <CredentialsForm
+            id={integration.id}
+            fields={integration.fields}
+            hasCredentials={live.hasCredentials}
+            onDone={(result) => {
+              setEditing(false);
+              tell(
+                `I've entered the ${login ? "sign-in details" : "credentials"} for ${integration.name}${
+                  result.status === "failing" ? ` (the test says: ${result.detail ?? "it failed"})` : ""
+                }.`,
+              );
+            }}
+          />
         )}
       </div>
     </div>
@@ -394,6 +430,58 @@ function SuggestionCard({
         )}
         {error && <span className="text-xs text-danger">{error}</span>}
       </div>
+    </div>
+  );
+}
+
+/** A site sent the Chief of Staff's browser a sign-in code: it goes from here straight to the browser, not into the chat. */
+function SignInCodeCard({ login, tell }: { login: { slug: string; name: string }; tell: (text: string) => void }) {
+  const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  const submit = () =>
+    start(async () => {
+      const result = await sendSignInCodeAction(login.slug, code);
+      if (result.error) return setError(result.error);
+      setSent(true);
+      setCode("");
+      tell(`I've entered the ${login.name} sign-in code.`);
+    });
+  return (
+    <div className="border border-line bg-raised px-3.5 py-3">
+      <p className="label mb-1 flex items-center gap-2">
+        <span className="h-1.5 w-1.5 bg-accent" /> Sign-in code · {login.slug}
+      </p>
+      {sent ? (
+        <p className="text-sm text-muted">Sent to the browser.</p>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+          className="space-y-2"
+          autoComplete="off"
+        >
+          <p className="text-sm text-muted">{login.name} sent a code (by text, email or your authenticator app). It goes straight to the sign-in, not into this chat.</p>
+          <div className="flex gap-2">
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              aria-label="Sign-in code"
+              className="field min-w-0 flex-1 font-mono"
+            />
+            <button type="submit" disabled={pending || !code.trim()} className="btn btn-primary">
+              Send
+            </button>
+          </div>
+          {error && <p className="text-xs text-danger">{error}</p>}
+        </form>
+      )}
     </div>
   );
 }

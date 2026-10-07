@@ -5,7 +5,7 @@ import { JOB_DIR, type JobSandbox, type SandboxProvider } from "@/lib/sandbox";
 // The log records what matters to tests (creates, script runs, other shell
 // commands, stops), not the bookkeeping the steps do.
 
-type Handler = (files: Map<string, Buffer>) => { stdout?: string; stderr?: string; exitCode?: number } | void;
+type Handler = (files: Map<string, Buffer>, args: string[]) => { stdout?: string; stderr?: string; exitCode?: number } | void;
 
 type Machine = {
   files: Map<string, Buffer>;
@@ -47,7 +47,7 @@ export function fakeSandboxes(scripts: Record<string, Handler> = {}) {
           const script = args[0].split("/").pop()!;
           log.push(`run ${script}`);
           const before = new Map(m.files);
-          const result = scripts[script]?.(m.files) ?? {};
+          const result = scripts[script]?.(m.files, args.slice(1)) ?? {};
           for (const [path, content] of m.files) if (before.get(path) !== content) m.written.set(path, ++clock);
           return { exitCode: result.exitCode ?? 0, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
         }
@@ -56,6 +56,10 @@ export function fakeSandboxes(scripts: Record<string, Handler> = {}) {
         if (script.includes("find code")) {
           const listed = under(JOB_DIR).filter((p) => p.startsWith("code/") || /^(run\.sh|config\.\w+|requirements\.txt)$/.test(p));
           return { ...ok, stdout: listed.join("\n") };
+        }
+        if (script.includes("/.logins/*.status")) {
+          const waiting = [...m.files].filter(([p, c]) => /\/\.logins\/[^/]+\.status$/.test(p) && /^(needs_code|signing_in)$/.test(c.toString()));
+          return { ...ok, stdout: waiting.map(([p]) => p).join("\n") };
         }
         if (script.includes("/.logins/*.json")) {
           return { ...ok, stdout: [...m.files.keys()].filter((p) => /\/\.logins\/[^/]+\.json$/.test(p)).join("\n") };

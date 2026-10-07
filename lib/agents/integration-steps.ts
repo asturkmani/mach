@@ -1,4 +1,4 @@
-import type { RunContext } from "@/lib/agents/prompts";
+import type { AgentContext } from "@/lib/agents/prompts";
 import { saveIntoSandbox } from "@/lib/agents/sandbox-steps";
 import { addMessage } from "@/lib/tasks";
 import { callIntegration, getIntegration, IntegrationError, updateIntegration, allowedFor, type ApiConfig, type CallRequest } from "@/lib/integrations";
@@ -10,7 +10,7 @@ import { callIntegration, getIntegration, IntegrationError, updateIntegration, a
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}\n[…${text.length - max} more characters]` : text);
 
 export async function callApi(
-  context: RunContext,
+  context: AgentContext,
   input: CallRequest & { integration: string; save_as?: string },
 ): Promise<string> {
   "use step";
@@ -19,7 +19,7 @@ export async function callApi(
       context.organizationId,
       input.integration,
       { method: input.method, path: input.path, query: input.query, body: input.body },
-      { taskId: context.taskId, agentId: context.agentId },
+      { taskId: context.taskId ?? undefined, agentId: context.agentId ?? undefined, personId: context.personId },
     );
     const head = `${input.method ?? "GET"} ${result.url} → ${result.status}${result.contentType ? ` (${result.contentType})` : ""}, ${result.body.length} bytes`;
     if (input.save_as) {
@@ -34,7 +34,7 @@ export async function callApi(
   }
 }
 
-export async function readIntegrationGuide(context: RunContext, input: { integration: string }): Promise<string> {
+export async function readIntegrationGuide(context: AgentContext, input: { integration: string }): Promise<string> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.integration);
   if (!integration || !allowedFor(integration, context.agentId)) return `There's no integration called ${input.integration} you can use.`;
@@ -55,16 +55,18 @@ export async function readIntegrationGuide(context: RunContext, input: { integra
   }\n\n${integration.guide || "No guide yet. Once you've worked out how it behaves, save one with save_integration_guide."}`;
 }
 
-export async function saveIntegrationGuide(context: RunContext, input: { integration: string; guide: string }): Promise<string> {
+export async function saveIntegrationGuide(context: AgentContext, input: { integration: string; guide: string }): Promise<string> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.integration);
   if (!integration || !allowedFor(integration, context.agentId)) return `There's no integration called ${input.integration} you can use.`;
   await updateIntegration(context.organizationId, integration.id, { guide: input.guide.slice(0, 20_000) });
-  await addMessage(context.taskId, {
-    author: context.agentName,
-    agentId: context.agentId,
-    kind: "event",
-    body: `Updated the ${integration.name} guide.`,
-  });
+  if (context.taskId) {
+    await addMessage(context.taskId, {
+      author: context.agentName,
+      agentId: context.agentId ?? undefined,
+      kind: "event",
+      body: `Updated the ${integration.name} guide.`,
+    });
+  }
   return "Saved. Every agent that uses it will read this guide.";
 }

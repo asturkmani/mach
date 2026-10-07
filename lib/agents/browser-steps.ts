@@ -1,20 +1,32 @@
-import type { RunContext } from "@/lib/agents/prompts";
-import { JOB_DIR, sandboxNameFor, sandboxes, type JobSandbox } from "@/lib/sandbox";
-import { allowedFor, getIntegration, readLogin, saveLoginSession, setLoginStatus, type LoginConfig } from "@/lib/integrations";
-import { seal, unseal } from "@/lib/secrets";
+import type { AgentContext, RunContext } from "@/lib/agents/prompts";
+import { JOB_DIR, sandboxes, sandboxNameOf, workspaceSandboxName, type JobSandbox } from "@/lib/sandbox";
+import {
+  allowedFor,
+  getIntegration,
+  knownSecrets,
+  listIntegrations,
+  matchesDomain,
+  readLogin,
+  saveLoginSession,
+  setLoginStatus,
+  type LoginConfig,
+} from "@/lib/integrations";
+import { redact, seal, unseal } from "@/lib/secrets";
 import { addMessage, getTask, setPendingLogin, takeLoginCode, updateTask } from "@/lib/tasks";
 
-// Website logins for browser work. browser_login signs the job's browser in
-// to a site with the company's saved credentials: a helper in the sandbox
-// fills the form, so the password never reaches the model. If the site asks
-// for a sign-in code, the job asks the people on it; their reply is kept
-// sealed and handed to the waiting helper on the agent's next run. The
+// The browser every agent has in its sandbox. browser_login signs it in to a
+// site with the company's saved credentials: a helper in the sandbox fills the
+// form, so the password never reaches the model. If the site asks for a
+// sign-in code, an agent on a task asks the people on it (their reply is kept
+// sealed and handed to the waiting helper on the agent's next run); the Chief
+// of Staff shows a code card in the chat that hands it over directly. The
 // signed-in session is saved, so later runs (and other jobs) skip the login
-// until the site signs it out.
+// until the site signs it out. browse reads a page in that browser.
 
 export const LOGIN_DIR = `${JOB_DIR}/.logins`;
 const HELPER = `${JOB_DIR}/.mach/login.py`;
 const WAITER = `${JOB_DIR}/.mach/login-wait.sh`;
+const BROWSER = `${JOB_DIR}/.mach/browse.py`;
 
 /** Runs in the sandbox: signs in with Playwright and reports through LOGIN_DIR/<slug>.status. */
 const LOGIN_PY = String.raw`# Signs the job's browser in to a website. Written by Mach; credentials
@@ -179,11 +191,69 @@ done
 cat "$f" 2>/dev/null || echo starting
 `;
 
+/** Runs in the sandbox: opens a page (signed in with a saved session, if given) and writes what it found as JSON. */
+const BROWSE_PY = String.raw`# Opens a page in the agent's browser. Written by Mach.
+import json, os, sys
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+
+url, out_path, state_path, save_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+result = {}
+seen = []
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    context = browser.new_context(
+        storage_state=state_path if state_path and os.path.exists(state_path) else None, viewport={"width": 1366, "height": 900})
+    page = context.new_page()
+
+    def on_response(response):
+        try:
+            kind = response.request.resource_type
+            ctype = (response.headers.get("content-type") or "").split(";")[0]
+            if kind in ("xhr", "fetch") or "json" in ctype or "yaml" in ctype:
+                seen.append({"url": response.url, "status": response.status, "type": ctype})
+        except Exception:
+            pass
+
+    page.on("response", on_response)
+    try:
+        response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    except PlaywrightTimeout:
+        response = None
+    try:
+        page.wait_for_load_state("networkidle", timeout=15000)
+    except PlaywrightTimeout:
+        pass
+    ctype = ((response.headers.get("content-type") if response else "") or "").split(";")[0]
+    result.update({"url": page.url, "status": response.status if response else None, "contentType": ctype})
+    if response and ctype and "html" not in ctype:
+        body = response.body()
+        result["text"] = body.decode("utf-8", "replace")
+        result["bytes"] = len(body)
+        if save_path:
+            with open(save_path, "wb") as f:
+                f.write(body)
+    else:
+        result["title"] = page.title()
+        result["text"] = page.inner_text("body") if page.locator("body").count() else ""
+        result["links"] = page.eval_on_selector_all(
+            "a[href]", "els => els.slice(0, 60).map(a => [a.innerText.trim().slice(0, 80), a.href])")
+        if save_path:
+            with open(save_path, "w") as f:
+                f.write(page.content())
+        result["bytes"] = len(result["text"])
+    result["requests"] = [r for r in seen if r["url"] != page.url][:40]
+    if state_path:
+        context.storage_state(path=state_path)
+    browser.close()
+with open(out_path, "w") as f:
+    json.dump(result, f)
+`;
+
 export type LoginResult = { text: string; needsCode?: { slug: string; name: string } };
 
-async function open(context: RunContext): Promise<JobSandbox> {
+async function open(context: AgentContext): Promise<JobSandbox> {
   // The sandbox was started by the tool wrapper (startSandbox); this resumes it.
-  return sandboxes().open(sandboxNameFor(context.taskId), async () => {});
+  return sandboxes().open(sandboxNameOf(context), async () => {});
 }
 
 async function waitForHelper(sandbox: JobSandbox, slug: string, seconds: number): Promise<string> {
@@ -210,21 +280,21 @@ function signedInText(name: string, slug: string, landing: Landing | null, alrea
   return `${already ? `Already signed in to ${name} in this job.` : `Signed in to ${name}.`}${where} The session is in ${statePath}: open pages with browser.new_context(storage_state="${statePath}"), start from the page you landed on rather than the sign-in page, and save the session back with context.storage_state(path="${statePath}") when you're done, so later runs stay signed in. Only call browser_login again (with again: true) if the site has signed you out.`;
 }
 
-async function finish(context: RunContext, sandbox: JobSandbox, slug: string, name: string, status: string): Promise<LoginResult> {
+async function finish(context: AgentContext, sandbox: JobSandbox, slug: string, name: string, status: string): Promise<LoginResult> {
   const statePath = `${LOGIN_DIR}/${slug}.json`;
   if (status === "ok") {
     const state = await sandbox.readFile(statePath);
     const landing = await readLanding(sandbox, slug);
     if (state) await saveLoginSession(context.organizationId, slug, state.toString("utf8"), landing?.url);
-    await setPendingLogin(context.taskId, null);
+    if (context.taskId) await setPendingLogin(context.taskId, null);
     return { text: signedInText(name, slug, landing) };
   }
   if (status === "needs_code") {
-    await setPendingLogin(context.taskId, slug);
-    return { text: "", needsCode: { slug, name } };
+    if (context.taskId) await setPendingLogin(context.taskId, slug);
+    return { text: `${name} sent a sign-in code.`, needsCode: { slug, name } };
   }
   if (status.startsWith("failed")) {
-    await setPendingLogin(context.taskId, null);
+    if (context.taskId) await setPendingLogin(context.taskId, null);
     await setLoginStatus(context.organizationId, slug, "failing", status.replace(/^failed:\s*/, "Sign-in failed: "));
     return {
       text: `Couldn't sign in to ${name}: ${status.replace(/^failed:\s*/, "")}. A screenshot of the page is at ${LOGIN_DIR}/${slug}.png (look at it with your own Playwright code or attach it). If the credentials are wrong, say so in your report: people update them on the Integrations page.`,
@@ -233,8 +303,8 @@ async function finish(context: RunContext, sandbox: JobSandbox, slug: string, na
   return { text: `The sign-in to ${name} is still going. Call browser_login again in a moment.` };
 }
 
-/** Signs the job's browser in to a website login, or finishes a sign-in that was waiting for a code. */
-export async function browserLogin(context: RunContext, input: { login: string; again?: boolean }): Promise<LoginResult> {
+/** Signs the agent's browser in to a website login, or finishes a sign-in that was waiting for a code. */
+export async function browserLogin(context: AgentContext, input: { login: string; again?: boolean }): Promise<LoginResult> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.login);
   if (!integration || integration.kind !== "login" || !allowedFor(integration, context.agentId)) {
@@ -244,10 +314,16 @@ export async function browserLogin(context: RunContext, input: { login: string; 
   if (!integration.hasCredentials) return { text: `${integration.name}'s credentials haven't been entered yet. Say so in your report.` };
   const sandbox = await open(context);
   const { slug, name } = integration;
-  const task = await getTask(context.organizationId, context.taskId);
+  const task = context.taskId ? await getTask(context.organizationId, context.taskId) : null;
   const current = (await sandbox.readFile(`${LOGIN_DIR}/${slug}.status`))?.toString("utf8").trim();
 
-  if (task?.pendingLogin === slug && current === "needs_code") {
+  if (!context.taskId && !input.again) {
+    // In the workspace, the code goes from the chat's code card straight to the waiting helper.
+    if (current === "needs_code") return { text: `${name} is still waiting for the sign-in code.`, needsCode: { slug, name } };
+    if (current === "signing_in") return finish(context, sandbox, slug, name, await waitForHelper(sandbox, slug, 90));
+  }
+
+  if (context.taskId && task?.pendingLogin === slug && current === "needs_code") {
     const sealed = await takeLoginCode(context.taskId);
     if (!sealed) return { text: `${name} is still waiting for the sign-in code from the people on this task.`, needsCode: { slug, name } };
     const code = unseal<{ code: string }>(sealed).code;
@@ -319,7 +395,7 @@ export function loginCodeFrom(text: string): string | null {
 export const sealLoginCode = (code: string) => seal({ code });
 
 /** Saves sessions the agent's own scripts refreshed, so later runs and jobs reuse them. */
-export async function saveLoginSessions(context: RunContext, sandbox: JobSandbox): Promise<void> {
+export async function saveLoginSessions(context: AgentContext, sandbox: JobSandbox): Promise<void> {
   const listed = await sandbox.run("bash", ["-c", `ls ${LOGIN_DIR}/*.json 2>/dev/null | head -20`]);
   for (const path of listed.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) {
     const slug = path.split("/").pop()!.replace(/\.json$/, "");
@@ -328,4 +404,94 @@ export async function saveLoginSessions(context: RunContext, sandbox: JobSandbox
     const state = await sandbox.readFile(path);
     if (state) await saveLoginSession(context.organizationId, slug, state.toString("utf8"));
   }
+}
+
+/** True while a sign-in in this sandbox waits for someone's code (its browser must keep running). */
+export async function waitingForCode(sandbox: JobSandbox): Promise<boolean> {
+  const result = await sandbox.run("bash", ["-c", `grep -lxE 'needs_code|signing_in' ${LOGIN_DIR}/*.status 2>/dev/null || true`]);
+  return result.stdout.trim().length > 0;
+}
+
+/**
+ * Hands a sign-in code from the chat's code card to the Chief of Staff's
+ * waiting browser, without it passing through the model or the chat.
+ */
+export async function sendWorkspaceLoginCode(organizationId: string, slug: string, code: string): Promise<{ error?: string }> {
+  const clean = loginCodeFrom(code);
+  if (!clean) return { error: "That doesn't look like a sign-in code." };
+  const sandbox = await sandboxes().find(workspaceSandboxName(organizationId));
+  const current = sandbox ? (await sandbox.readFile(`${LOGIN_DIR}/${slug}.status`))?.toString("utf8").trim() : null;
+  if (!sandbox || current !== "needs_code") return { error: "That sign-in isn't waiting for a code any more. Ask the Chief of Staff to sign in again." };
+  await sandbox.writeFiles([
+    { path: `${LOGIN_DIR}/${slug}.status`, content: Buffer.from("signing_in") },
+    { path: `${LOGIN_DIR}/${slug}.code`, content: Buffer.from(clean) },
+  ]);
+  return {};
+}
+
+const BROWSE_TEXT_LIMIT = 15_000;
+
+/**
+ * Opens a page in the agent's browser, signed in with the session of the
+ * company login for that site (if there is one), and returns what's on it:
+ * its text and links, or the body of a JSON or other non-HTML response, plus
+ * the data the page loaded (where a Swagger page's API spec shows up).
+ */
+export async function browsePage(context: AgentContext, input: { url: string; save_as?: string }): Promise<string> {
+  "use step";
+  let url: URL;
+  try {
+    url = new URL(input.url);
+  } catch {
+    return "Give a full URL, starting with https://.";
+  }
+  const sandbox = await open(context);
+  const logins = (await listIntegrations(context.organizationId, { agentId: context.agentId })).filter(
+    (i) => i.kind === "login" && i.status !== "disabled",
+  );
+  const login = logins.find((i) => {
+    const config = i.config as LoginConfig;
+    const hosts = [...config.domains];
+    try {
+      hosts.push(new URL(config.loginUrl).hostname);
+    } catch {}
+    return matchesDomain(url.hostname, hosts);
+  });
+  let statePath = "";
+  if (login) {
+    statePath = `${LOGIN_DIR}/${login.slug}.json`;
+    if (!(await sandbox.readFile(statePath))) {
+      const saved = await readLogin(context.organizationId, login.id);
+      if (saved.session) await sandbox.writeFiles([{ path: statePath, content: Buffer.from(saved.session) }]);
+      else statePath = "";
+    }
+  }
+  const savePath = input.save_as ? `${JOB_DIR}/${input.save_as.replace(/^\/+|\.\.\/?/g, "")}` : "";
+  const out = `/tmp/mach-browse-${crypto.randomUUID()}.json`;
+  await sandbox.run("mkdir", ["-p", `${JOB_DIR}/.mach`, ...(savePath ? [savePath.slice(0, savePath.lastIndexOf("/"))] : [])]);
+  await sandbox.writeFiles([{ path: BROWSER, content: Buffer.from(BROWSE_PY) }]);
+  const run = await sandbox.run("python3", [BROWSER, url.href, out, statePath, savePath], { cwd: JOB_DIR, timeoutMs: 90_000 });
+  const raw = await sandbox.readFile(out);
+  if (!raw) return `Couldn't open ${url.href}: ${(run.stderr || run.stdout).trim().split("\n").slice(-3).join(" ").slice(0, 400) || "the browser failed"}`;
+  const page = JSON.parse(raw.toString("utf8")) as {
+    url: string;
+    status: number | null;
+    contentType: string;
+    title?: string;
+    text: string;
+    bytes?: number;
+    links?: [string, string][];
+    requests: { url: string; status: number; type: string }[];
+  };
+  const text = page.text.length > BROWSE_TEXT_LIMIT ? `${page.text.slice(0, BROWSE_TEXT_LIMIT)}\n[…${page.text.length - BROWSE_TEXT_LIMIT} more characters${savePath ? "" : "; use save_as to keep all of it"}]` : page.text;
+  const lines = [
+    `${page.url} (${page.status ?? "no response"}${page.contentType ? `, ${page.contentType}` : ""}) · ${login ? (statePath ? `with the ${login.slug} session` : `not signed in to ${login.slug} yet: call browser_login first if the page asks you to sign in`) : "no company login for this site"}`,
+    page.title ? `Title: ${page.title}` : "",
+    "",
+    text.trim() || "(no text)",
+    page.links?.length ? `\nLinks:\n${page.links.filter(([, href]) => href.startsWith("http")).slice(0, 40).map(([label, href]) => `- ${label || "(no text)"}: ${href}`).join("\n")}` : "",
+    page.requests.length ? `\nData the page loaded:\n${page.requests.map((r) => `- ${r.status} ${r.type || "?"} ${r.url}`).join("\n")}` : "",
+    savePath ? `\nSaved the full ${page.contentType || "page"} (${page.bytes ?? 0} bytes) to ${savePath}.` : "",
+  ];
+  return redact(lines.filter((l, i) => l || i === 2).join("\n"), await knownSecrets(context.organizationId));
 }

@@ -1,5 +1,5 @@
 import { WorkflowAgent } from "@ai-sdk/workflow";
-import { gateway, hasToolCall, isStepCount, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
+import { hasToolCall, isStepCount, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
 
 import { SUMMARY_MAX, type RunContext, type RunOutcome } from "@/lib/agents/prompts";
@@ -19,19 +19,18 @@ import {
   unscheduleJob,
   type BriefImage,
 } from "@/lib/agents/run-steps";
+import { askForLoginCode } from "@/lib/agents/browser-steps";
+import { attachSandboxFile, closeSandbox } from "@/lib/agents/sandbox-steps";
 import {
-  attachSandboxFile,
-  closeSandbox,
-  listSandboxFiles,
-  readSandboxFile,
-  runCode,
-  runShell,
-  startSandbox,
-  writeSandboxFile,
-} from "@/lib/agents/sandbox-steps";
-import { askForLoginCode, browserLogin } from "@/lib/agents/browser-steps";
-import { callApi, readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
-import { skillTool } from "@/lib/agents/skills";
+  browserTools,
+  integrationTools,
+  researchTools,
+  sandboxTools,
+  sandboxUser,
+  skillTool,
+  type SandboxSession,
+  type SandboxUser,
+} from "@/lib/agents/toolkit";
 
 // Runs agents on a task. The agent sees everything on the task (its
 // description, summary, the people and agents on it, the whole thread and any
@@ -78,58 +77,16 @@ const reportFields = {
     .describe("The steps done so far, one per line, oldest first, at most six lines. Send the whole list."),
 };
 
-type RunState = { outcome?: RunOutcome; usedSandbox?: boolean; started?: Promise<string> };
+type RunState = SandboxSession & { outcome?: RunOutcome };
 
-/**
- * Wraps sandbox work: the first sandbox tool in a run starts (or resumes) the
- * job's sandbox, connects data sources and syncs the company drive into it;
- * it is closed when the run ends.
- */
-function sandboxUser(context: RunContext, state: RunState) {
-  return async <T>(work: () => Promise<T>) => {
-    state.usedSandbox = true;
-    state.started ??= startSandbox(context).catch((error) => {
-      state.started = undefined; // the next sandbox tool tries again
-      throw error;
-    });
-    await state.started;
-    return work();
-  };
-}
-
-function sandboxTools(context: RunContext, using: <T>(work: () => Promise<T>) => Promise<T>) {
+/** The tools of an agent on a task: delivering files, reporting, asking, handing off and scheduling. */
+function taskTools(
+  context: RunContext,
+  otherAgents: { id: string; name: string }[],
+  using: SandboxUser,
+  end: (outcome: RunOutcome) => void,
+) {
   return {
-    run_code: tool({
-      description:
-        "Save a script under code/ in the job's sandbox and run it from the job folder. Returns the exit code, stdout, stderr and the files it created or changed in outputs/.",
-      inputSchema: z.object({
-        filename: z.string().describe("A simple file name, e.g. simulate.py or build_model.py. Reusing a name replaces that script."),
-        language: z.enum(["python", "node", "bash"]),
-        code: z.string().min(1),
-      }),
-      execute: (input) => using(() => runCode(context, input)),
-    }),
-    run_command: tool({
-      description: "Run a shell command in the job folder, e.g. to install a package or run run.sh.",
-      inputSchema: z.object({ command: z.string().min(1) }),
-      execute: (input) => using(() => runShell(context, input)),
-    }),
-    read_file: tool({
-      description: "Read a text file in the job folder (a path relative to /vercel/job) or the company drive (/vercel/drive/…).",
-      inputSchema: z.object({ path: z.string().min(1) }),
-      execute: (input) => using(() => readSandboxFile(context, input)),
-    }),
-    write_file: tool({
-      description:
-        "Write a text file in the job folder, e.g. config.yaml, run.sh or NOTES.md, or on the company drive (/vercel/drive/…).",
-      inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
-      execute: (input) => using(() => writeSandboxFile(context, input)),
-    }),
-    list_files: tool({
-      description: "List the files in the job folder, or on the company drive.",
-      inputSchema: z.object({ folder: z.enum(["job", "drive"]).optional().describe("job (the default) or drive.") }),
-      execute: (input) => using(() => listSandboxFiles(context, input)),
-    }),
     attach_file: tool({
       description:
         "Attach a file from the sandbox (usually in outputs/) to the task as a deliverable people can open. A file with the same name as one already on the task becomes its next version.",
@@ -139,69 +96,6 @@ function sandboxTools(context: RunContext, using: <T>(work: () => Promise<T>) =>
       }),
       execute: (input) => using(() => attachSandboxFile(context, input)),
     }),
-  } satisfies ToolSet;
-}
-
-function integrationTools(context: RunContext, sources: string[], using: <T>(work: () => Promise<T>) => Promise<T>): ToolSet {
-  if (sources.length === 0) return {};
-  const name = z.enum(sources as [string, ...string[]]);
-  return {
-    call_api: tool({
-      description:
-        "Call one of the company's data sources over HTTP. The request is signed for you; you never handle credentials. Read-only sources allow only GET. Pass save_as to write the whole response to a file in your sandbox or on the drive instead of reading it here.",
-      inputSchema: z.object({
-        integration: name,
-        method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-        path: z.string().min(1).describe("A path under the base URL, e.g. /v1/portfolios, or a full URL on its domain."),
-        query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
-        body: z.unknown().optional().describe("A JSON body, for write requests."),
-        save_as: z.string().optional().describe("e.g. inputs/positions.json or /vercel/drive/masttro/positions-2026-10-07.json"),
-      }),
-      execute: (input) => (input.save_as ? using(() => callApi(context, input)) : callApi(context, input)),
-    }),
-    read_integration_guide: tool({
-      description: "Read how to use one of the company's integrations: its base URL, access, and the guide agents keep for it.",
-      inputSchema: z.object({ integration: name }),
-      execute: (input) => readIntegrationGuide(context, input),
-    }),
-    save_integration_guide: tool({
-      description:
-        "Replace an integration's guide with what you've learned (endpoints that work, paging, field meanings, gotchas), so the next agent doesn't have to rediscover it. Read the current guide first and keep what's still true.",
-      inputSchema: z.object({ integration: name, guide: z.string().min(1).describe("Markdown.") }),
-      execute: (input) => saveIntegrationGuide(context, input),
-    }),
-  } satisfies ToolSet;
-}
-
-function browserTools(
-  context: RunContext,
-  logins: string[],
-  using: <T>(work: () => Promise<T>) => Promise<T>,
-  end: (outcome: RunOutcome) => void,
-): ToolSet {
-  if (logins.length === 0) return {};
-  return {
-    browser_login: tool({
-      description:
-        "Sign this job's browser in to one of the company's website logins with its saved credentials (you never see them), or finish a sign-in that was waiting for a code. Returns where the signed-in session is for your Playwright scripts. If the site asks for a sign-in code, the people on the task are asked for it and your run ends; call this again on your next run.",
-      inputSchema: z.object({
-        login: z.enum(logins as [string, ...string[]]),
-        again: z.boolean().optional().describe("Sign in again even though this job already did, because the site signed you out."),
-      }),
-      execute: (input) =>
-        using(async () => {
-          const result = await browserLogin(context, input);
-          if (!result.needsCode) return result.text;
-          const asked = await askForLoginCode(context, result.needsCode);
-          end({ type: "asked" });
-          return asked;
-        }),
-    }),
-  };
-}
-
-function runTools(context: RunContext, otherAgents: { id: string; name: string }[], end: (outcome: RunOutcome) => void) {
-  return {
     post_update: tool({
       description: "Post a short progress note on the task's thread. Doesn't end your run.",
       inputSchema: z.object({ message: z.string().min(1), progress: reportFields.progress }),
@@ -280,12 +174,6 @@ function runTools(context: RunContext, otherAgents: { id: string; name: string }
       : {}),
   } satisfies ToolSet;
 }
-
-// Run by AI Gateway and billed to its credits.
-const researchTools = (): ToolSet => ({
-  web_search: gateway.tools.parallelSearch({ mode: "agentic", maxResults: 5 }),
-  fetch_page: gateway.tools.browserbaseFetch({ format: "markdown", allowRedirects: true, proxies: false }),
-});
 
 const fileName = (path: unknown) => String(path ?? "").split("/").filter(Boolean).pop() ?? "a file";
 const clipped = (text: unknown, max = 48) => {
@@ -384,6 +272,7 @@ export async function runAgentOnTask(
   const { context } = begun;
   const state: RunState = {};
   const using = sandboxUser(context, state);
+  const end = (ended: RunOutcome) => (state.outcome = ended);
   let outcome: RunOutcome | undefined;
 
   try {
@@ -391,10 +280,15 @@ export async function runAgentOnTask(
       model: options.model ?? begun.model,
       instructions: begun.instructions,
       tools: narrated(context, {
-        ...runTools(context, begun.otherAgents, (outcome) => (state.outcome = outcome)),
+        ...taskTools(context, begun.otherAgents, using, end),
         ...sandboxTools(context, using),
-        ...integrationTools(context, begun.sources, using),
-        ...browserTools(context, begun.logins, using, (outcome) => (state.outcome = outcome)),
+        ...integrationTools(context, using, { sources: begun.sources, logins: begun.logins }),
+        ...browserTools(context, using, begun.logins, async (login) => {
+          // The people on the task are asked for the code; their reply finishes the sign-in on the next run.
+          const asked = await askForLoginCode(context, login);
+          end({ type: "asked" });
+          return { text: asked, needsCode: login };
+        }),
         ...(options.research === false ? {} : researchTools()),
         use_skill: skillTool(),
       }),
@@ -413,7 +307,7 @@ export async function runAgentOnTask(
     outcome = await recordFailure(context, error instanceof Error ? error.message : String(error));
     return outcome;
   } finally {
-    if (state.usedSandbox) {
+    if (state.used) {
       try {
         await closeSandbox(context);
       } catch (error) {

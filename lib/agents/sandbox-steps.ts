@@ -2,19 +2,20 @@ import { createHash } from "node:crypto";
 
 import { DRIVE_DIR, drivePath, listDrive, MAX_DRIVE_FILE_BYTES, readDriveFile, writeDriveFile } from "@/lib/drive";
 import { contentTypeFor, isText, listTaskFiles, readTaskFiles, readVersion, saveVersion, type FileKind } from "@/lib/files";
-import { saveLoginSessions } from "@/lib/agents/browser-steps";
+import { saveLoginSessions, waitingForCode } from "@/lib/agents/browser-steps";
 import { knownSecrets, sandboxPolicy } from "@/lib/integrations";
 import { redact } from "@/lib/secrets";
 import { versionPreview } from "@/lib/previews";
-import type { RunContext } from "@/lib/agents/prompts";
-import { JOB_DIR, sandboxes, sandboxNameFor, type CommandResult, type JobSandbox } from "@/lib/sandbox";
+import type { AgentContext, RunContext } from "@/lib/agents/prompts";
+import { JOB_DIR, sandboxes, sandboxNameOf, type CommandResult, type JobSandbox } from "@/lib/sandbox";
 import { getTask, saveMemory, setSandboxName } from "@/lib/tasks";
 
-// The sandbox tools an agent uses on a job, each a durable workflow step. The
-// job's sandbox is created on first use, seeded with the job's files and
-// notes, and stopped (not deleted) at the end of the run. The company drive
-// is synced into it at /vercel/drive: pulled when a run starts, pushed after
-// every command.
+// The sandbox tools every agent uses, each a durable workflow step. An agent
+// on a task works in the job's sandbox, created on first use, seeded with the
+// job's files and notes, and stopped (not deleted) at the end of the run. The
+// Chief of Staff works in the company's workspace sandbox the same way, minus
+// the job. The company drive is synced into both at /vercel/drive: pulled
+// when a run starts, pushed after every command.
 
 /** A single command may run this long; longer work is split into steps. */
 export const COMMAND_TIMEOUT_MS = 240_000;
@@ -24,7 +25,7 @@ const clip = (text: string, max = OUTPUT_LIMIT) =>
   text.length > max ? `${text.slice(0, max / 2)}\n[…${text.length - max} characters cut…]\n${text.slice(-max / 2)}` : text;
 
 /** Removes the company's stored credentials from text an agent reads back from its sandbox. */
-async function scrub(context: RunContext, text: string): Promise<string> {
+async function scrub(context: AgentContext, text: string): Promise<string> {
   return redact(text, await knownSecrets(context.organizationId));
 }
 
@@ -70,8 +71,9 @@ const jobPath = (f: { kind: FileKind; role: "input" | "output"; name: string }) 
 /** Which version of each of the job's files the sandbox has (path → version). */
 const FILES_MANIFEST = `${JOB_DIR}/.files.json`;
 
-async function seed(context: RunContext, sandbox: JobSandbox): Promise<void> {
+async function seed(context: AgentContext, sandbox: JobSandbox): Promise<void> {
   await sandbox.run("mkdir", ["-p", `${JOB_DIR}/code`, `${JOB_DIR}/inputs`, `${JOB_DIR}/outputs`]);
+  if (!context.taskId) return;
   const task = await getTask(context.organizationId, context.taskId);
   const files = await readTaskFiles(context.organizationId, context.taskId);
   const manifest = Object.fromEntries(files.map((f) => [jobPath(f), f.version]));
@@ -108,10 +110,10 @@ async function syncTaskFiles(context: RunContext, sandbox: JobSandbox): Promise<
   return writes.filter((w) => w.path !== FILES_MANIFEST).map((w) => w.path.slice(JOB_DIR.length + 1));
 }
 
-async function open(context: RunContext): Promise<JobSandbox> {
-  const name = sandboxNameFor(context.taskId);
+async function open(context: AgentContext): Promise<JobSandbox> {
+  const name = sandboxNameOf(context);
   const sandbox = await sandboxes().open(name, (created) => seed(context, created));
-  await setSandboxName(context.taskId, name);
+  if (context.taskId) await setSandboxName(context.taskId, name);
   return sandbox;
 }
 
@@ -136,7 +138,7 @@ const writeManifest = (sandbox: JobSandbox, manifest: Record<string, string>) =>
   sandbox.writeFiles([{ path: DRIVE_MANIFEST, content: Buffer.from(JSON.stringify(manifest)) }]);
 
 /** Brings the sandbox's copy of the drive up to date: copies in what changed and removes what was deleted. */
-async function pullDrive(context: RunContext, sandbox: JobSandbox): Promise<string> {
+async function pullDrive(context: AgentContext, sandbox: JobSandbox): Promise<string> {
   await sandbox.run("bash", ["-c", `[ -d ${DRIVE_DIR} ] || { mkdir -p ${DRIVE_DIR} && chown ubuntu:ubuntu ${DRIVE_DIR}; }`], {
     sudo: true,
   });
@@ -188,7 +190,7 @@ async function pullDrive(context: RunContext, sandbox: JobSandbox): Promise<stri
 }
 
 /** Saves the files written under /vercel/drive since the last sync to the company drive. Returns notes for the agent. */
-async function pushDrive(context: RunContext, sandbox: JobSandbox): Promise<{ saved: string[]; problems: string[] }> {
+async function pushDrive(context: AgentContext, sandbox: JobSandbox): Promise<{ saved: string[]; problems: string[] }> {
   await sandbox.mark(DRIVE_SYNCING);
   const changed = await sandbox.changedFiles(DRIVE_DIR, DRIVE_SYNCED);
   const saved: string[] = [];
@@ -211,7 +213,13 @@ async function pushDrive(context: RunContext, sandbox: JobSandbox): Promise<{ sa
       if (!bytes) continue;
       const hash = sha256(bytes);
       if (manifest[path] === hash) continue;
-      await writeDriveFile(context.organizationId, { path, bytes, taskId: context.taskId, agentId: context.agentId });
+      await writeDriveFile(context.organizationId, {
+        path,
+        bytes,
+        taskId: context.taskId ?? undefined,
+        agentId: context.agentId ?? undefined,
+        personId: context.personId,
+      });
       manifest[path] = hash;
       saved.push(path);
     }
@@ -232,7 +240,7 @@ function driveNote({ saved, problems }: { saved: string[]; problems: string[] })
  * Lets this run's code reach the company's data sources: requests to them
  * get their credentials added on the way out of the sandbox.
  */
-async function connectSources(context: RunContext, sandbox: JobSandbox): Promise<string[]> {
+async function connectSources(context: AgentContext, sandbox: JobSandbox): Promise<string[]> {
   const { policy, sources } = await sandboxPolicy(context.organizationId, context.agentId);
   await sandbox.setNetworkPolicy(policy);
   // So the browser accepts the proxy that signs those requests (older templates lack the helper).
@@ -240,11 +248,11 @@ async function connectSources(context: RunContext, sandbox: JobSandbox): Promise
   return sources;
 }
 
-/** Starts (or resumes) the job's sandbox for this run, connects data sources and brings its copy of the drive up to date. */
-export async function startSandbox(context: RunContext): Promise<string> {
+/** Starts (or resumes) the agent's sandbox for this run, connects data sources and brings its copy of the drive up to date. */
+export async function startSandbox(context: AgentContext): Promise<string> {
   "use step";
   const sandbox = await open(context);
-  const added = await syncTaskFiles(context, sandbox);
+  const added = context.taskId ? await syncTaskFiles(context as RunContext, sandbox) : [];
   const sources = await connectSources(context, sandbox);
   const pulled = await pullDrive(context, sandbox);
   return [
@@ -257,7 +265,7 @@ export async function startSandbox(context: RunContext): Promise<string> {
 }
 
 /** Writes bytes to a file in the job folder or on the drive (saved to the drive straight away). */
-export async function saveIntoSandbox(context: RunContext, path: string, bytes: Buffer): Promise<string> {
+export async function saveIntoSandbox(context: AgentContext, path: string, bytes: Buffer): Promise<string> {
   const sandbox = await open(context);
   const target = sandboxPath(path);
   await sandbox.run("mkdir", ["-p", target.slice(0, target.lastIndexOf("/"))]);
@@ -281,7 +289,7 @@ async function changedOutputs(sandbox: JobSandbox): Promise<{ path: string; size
 }
 
 export async function runCode(
-  context: RunContext,
+  context: AgentContext,
   input: { filename: string; language: keyof typeof INTERPRETERS; code: string },
 ): Promise<string> {
   "use step";
@@ -294,22 +302,24 @@ export async function runCode(
   const changed = await changedOutputs(sandbox);
   const drive = await pushDrive(context, sandbox);
   const log = await scrub(context, formatLog(result));
-  // Every script that runs is kept in the library as code, with the output of its latest run.
-  await saveVersion(context.organizationId, {
-    name: input.filename,
-    kind: "code",
-    bytes: Buffer.from(input.code),
-    taskId: context.taskId,
-    agentId: context.agentId,
-    note: clip(log, 4000),
-  });
+  // Every script a job runs is kept in the library as code, with the output of its latest run.
+  if (context.taskId) {
+    await saveVersion(context.organizationId, {
+      name: input.filename,
+      kind: "code",
+      bytes: Buffer.from(input.code),
+      taskId: context.taskId,
+      agentId: context.agentId ?? undefined,
+      note: clip(log, 4000),
+    });
+  }
   const outputs = changed.map((f) => `${f.path} (${f.size} bytes)`).join(", ");
   return `${log}${outputs ? `\nnew or changed in outputs/: ${outputs}` : ""}${driveNote(drive)}${
     timedOut(result) ? `\nThe script may have hit the ${COMMAND_TIMEOUT_MS / 1000}s limit; split the work into smaller steps.` : ""
   }`;
 }
 
-export async function runShell(context: RunContext, input: { command: string }): Promise<string> {
+export async function runShell(context: AgentContext, input: { command: string }): Promise<string> {
   "use step";
   const sandbox = await open(context);
   const result = await sandbox.run("bash", ["-lc", input.command], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
@@ -317,7 +327,7 @@ export async function runShell(context: RunContext, input: { command: string }):
   return `${await scrub(context, formatLog(result))}${driveNote(drive)}`;
 }
 
-export async function readSandboxFile(context: RunContext, input: { path: string }): Promise<string> {
+export async function readSandboxFile(context: AgentContext, input: { path: string }): Promise<string> {
   "use step";
   const sandbox = await open(context);
   const bytes = await sandbox.readFile(sandboxPath(input.path));
@@ -328,7 +338,7 @@ export async function readSandboxFile(context: RunContext, input: { path: string
   return clip(await scrub(context, bytes.toString("utf8")), 20_000);
 }
 
-export async function writeSandboxFile(context: RunContext, input: { path: string; content: string }): Promise<string> {
+export async function writeSandboxFile(context: AgentContext, input: { path: string; content: string }): Promise<string> {
   "use step";
   const sandbox = await open(context);
   const path = sandboxPath(input.path);
@@ -338,7 +348,7 @@ export async function writeSandboxFile(context: RunContext, input: { path: strin
   return `Wrote ${path}.${drive}`;
 }
 
-export async function listSandboxFiles(context: RunContext, input: { folder?: "job" | "drive" } = {}): Promise<string> {
+export async function listSandboxFiles(context: AgentContext, input: { folder?: "job" | "drive" } = {}): Promise<string> {
   "use step";
   const sandbox = await open(context);
   const dir = input.folder === "drive" ? DRIVE_DIR : JOB_DIR;
@@ -346,7 +356,7 @@ export async function listSandboxFiles(context: RunContext, input: { folder?: "j
     "-c",
     `cd ${dir} 2>/dev/null && find . -type f -not -path '*/.*' -printf '%P\\t%s bytes\\t%TY-%Tm-%Td %TH:%TM\\n' | sort | head -300`,
   ]);
-  return result.stdout.trim() || (input.folder === "drive" ? "The company drive is empty." : "The job folder is empty.");
+  return result.stdout.trim() || (input.folder === "drive" ? "The company drive is empty." : `The ${context.taskId ? "job" : "workspace"} folder is empty.`);
 }
 
 /** Saves a sandbox file to the job as a deliverable (xlsx recalculated first), and builds its preview. */
@@ -451,13 +461,25 @@ export async function replayScript(context: RunContext, label: string): Promise<
  * job can be rebuilt if the sandbox is ever lost, then stop the sandbox (its
  * disk is kept).
  */
-export async function closeSandbox(context: RunContext): Promise<void> {
+export async function closeSandbox(context: AgentContext): Promise<void> {
   "use step";
-  const sandbox = await sandboxes().find(sandboxNameFor(context.taskId));
+  const sandbox = await sandboxes().find(sandboxNameOf(context));
   if (!sandbox) return;
   await pushDrive(context, sandbox).catch((error) => console.error("Drive sync failed", error));
   // Credentials only live in the sandbox's network policy while a run is going.
   await sandbox.setNetworkPolicy("allow-all").catch((error) => console.error("Couldn't reset the network policy", error));
+  if (context.taskId) await keepJob(context as RunContext, sandbox);
+  await saveLoginSessions(context, sandbox).catch((error) => console.error("Couldn't save browser sessions", error));
+  // A sign-in waiting for someone's code keeps the sandbox (and its browser) running until it times out.
+  const waiting = context.taskId
+    ? Boolean((await getTask(context.organizationId, context.taskId))?.pendingLogin)
+    : await waitingForCode(sandbox);
+  if (waiting) return;
+  await sandbox.stop();
+}
+
+/** Keeps the job's notes and code in the library. */
+async function keepJob(context: RunContext, sandbox: JobSandbox): Promise<void> {
   const notes = await sandbox.readFile(`${JOB_DIR}/NOTES.md`).catch(() => null);
   if (notes) await saveMemory(context.taskId, notes.toString("utf8").slice(0, 50_000));
 
@@ -472,8 +494,4 @@ export async function closeSandbox(context: RunContext): Promise<void> {
     if (!bytes || bytes.includes(0)) continue;
     await saveVersion(context.organizationId, { name, kind: "code", bytes, taskId: context.taskId, agentId: context.agentId });
   }
-  await saveLoginSessions(context, sandbox).catch((error) => console.error("Couldn't save browser sessions", error));
-  // A sign-in waiting for someone's code keeps the sandbox (and its browser) running until it times out.
-  if ((await getTask(context.organizationId, context.taskId))?.pendingLogin) return;
-  await sandbox.stop();
 }

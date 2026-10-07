@@ -24,8 +24,23 @@ export type RunOutcome =
   | { type: "skipped"; reason: string }
   | { type: "failed"; error: string };
 
-/** What every step of a run needs to know. Plain values, so it can be passed between workflow steps. */
-export type RunContext = { organizationId: string; taskId: string; agentId: string; agentName: string };
+/**
+ * Who an agent is and where it works, for the tools every agent shares
+ * (sandbox, browser, data sources): an agent on a task works in that job's
+ * sandbox; the Chief of Staff (no agent id, no task) works in the company's
+ * own workspace sandbox. Plain values, so it can be passed between workflow steps.
+ */
+export type AgentContext = {
+  organizationId: string;
+  taskId: string | null;
+  agentId: string | null;
+  agentName: string;
+  /** The person the Chief of Staff is talking to. */
+  personId?: string;
+};
+
+/** An agent's run on a task: what every step of the run needs to know. */
+export type RunContext = AgentContext & { taskId: string; agentId: string };
 
 /** Exactly one option is recommended: the one the agent marked, else the first. */
 export function normalizeOptions(options: { label: string; recommended?: boolean }[] = []) {

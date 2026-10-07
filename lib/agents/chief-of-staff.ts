@@ -1,7 +1,6 @@
 import "server-only";
 
 import {
-  gateway,
   ToolLoopAgent,
   tool,
   type InferAgentUIMessage,
@@ -10,11 +9,20 @@ import {
 } from "ai";
 import { z } from "zod";
 
-import { skillList, skillTool } from "@/lib/agents/skills";
+import type { AgentContext } from "@/lib/agents/prompts";
+import { skillList } from "@/lib/agents/skills";
+import {
+  browserTools,
+  integrationTools,
+  researchTools,
+  sandboxTools,
+  sandboxUser,
+  skillTool,
+  type SandboxSession,
+} from "@/lib/agents/toolkit";
 import { createAgent, type Agent } from "@/lib/agents/store";
 import { findFiles, type LibraryFile } from "@/lib/files";
 import {
-  callIntegration,
   IntegrationError,
   saveIntegration,
   type ApiConfig,
@@ -115,7 +123,9 @@ ${agentLines.join("\n") || "(none yet)"}
 Open tasks:
 ${taskLines.join("\n") || "(none)"}
 
-Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and use connect_data_source; they enter the credentials in the card it shows, never in the chat. Answer quick questions from a connected data source with call_api. For a website with no API, or changes its API can't make (data entry in Masttro, say), connect a login with connect_login for the agents who'll do that work (create a defined agent for it first if none fits); they sign in with the browser in their sandbox, and sign-in codes come to the people on the job.
+Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and set it up yourself, in this chat: read the docs (with your browser if they need a sign-in), then connect_data_source; they enter credentials in the cards the tools show, never in the chat. Never create an agent or a task to set up an integration. Answer quick questions from a connected data source with call_api. For a website with no API, or changes its API can't make (data entry in Masttro, say), connect a login with connect_login for the agents who'll do that work (a defined agent for that recurring work); they sign in with the browser in their sandbox, and sign-in codes come to the people on the job.
+
+Your sandbox: like every agent, you have a Linux sandbox for the company with a browser in it. Use browse to read pages fetch_page can't (JavaScript apps, pages behind one of the company's logins), browser_login to sign in to a login, and run_code to work through what you saved (an API spec, say). It's for looking things up while you set things up or answer a question; real work still goes to a task.
 ${integrationLines.join("\n") || "(none yet)"}
 
 Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in create_task's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
@@ -415,7 +425,7 @@ function workTools(context: Context) {
     }),
     connect_login: tool({
       description:
-        "Connect (or reconfigure) a website account that chosen agents use in their sandbox's browser, for sites without an API or changes the API can't make. Shows the person a secure card for the username, password and, optionally, an authenticator setup key. Never put credentials in this call.",
+        "Connect (or reconfigure) a website account used in a sandbox's browser: by you (e.g. to read API docs behind a sign-in) and by the agents you name, for sites without an API or changes the API can't make. Shows the person a secure card for the username, password and, optionally, an authenticator setup key. Never put credentials in this call.",
       inputSchema: z.object({
         name: z.string().min(1).max(60).describe("e.g. Masttro (web)"),
         slug: z.string().optional().describe("Short handle, e.g. masttro-web. Reuse it to reconfigure."),
@@ -423,7 +433,10 @@ function workTools(context: Context) {
         loginUrl: z.string().describe("The sign-in page, e.g. https://app.masttro.com/login"),
         checkUrl: z.string().optional().describe("A page that only shows when signed in, e.g. the dashboard."),
         domains: z.array(z.string()).optional(),
-        agents: z.array(z.string()).min(1).describe("Exact names of the agents allowed to use it."),
+        agents: z
+          .array(z.string())
+          .optional()
+          .describe("Exact names of the agents allowed to use it besides you. Leave out when only you need it."),
         selectors: z
           .object({ username: z.string().optional(), password: z.string().optional(), submit: z.string().optional(), code: z.string().optional() })
           .optional()
@@ -432,7 +445,7 @@ function workTools(context: Context) {
       }),
       execute: async ({ agents: agentNames, ...input }) => {
         try {
-          const team = await resolveTeam(orgId, { agents: agentNames });
+          const team = await resolveTeam(orgId, { agents: agentNames ?? [] });
           const config: LoginConfig = {
             loginUrl: input.loginUrl,
             checkUrl: input.checkUrl,
@@ -482,32 +495,11 @@ function workTools(context: Context) {
         value:
           "error" in output
             ? `Not saved: ${output.error}`
-            : `Saved ${output.integration.name} (${output.integration.slug}) for ${output.agents.join(", ")}. ${
+            : `Saved ${output.integration.name} (${output.integration.slug}) for ${output.agents.length ? `you and ${output.agents.join(", ")}` : "you only"}. ${
                 output.integration.hasCredentials
                   ? "Its saved credentials were kept."
                   : "They now see a card to enter the username and password. Don't ask for them in the chat."
               }`,
-      }),
-    }),
-    call_api: tool({
-      description: "Read from one of the company's connected data sources (GET), to answer a question. Credentials are added for you.",
-      inputSchema: z.object({
-        integration: z.string().describe("Its slug."),
-        path: z.string().describe("A path under the base URL."),
-        query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
-      }),
-      execute: async ({ integration, path, query }) => {
-        try {
-          const result = await callIntegration(orgId, integration, { path, query }, { personId: context.person?.id });
-          return { status: result.status, body: result.text.slice(0, 12_000) || `(${result.body.length} bytes of ${result.contentType})` };
-        } catch (error) {
-          if (error instanceof IntegrationError) return { error: error.message };
-          return { error: `The request failed: ${error instanceof Error ? error.message : String(error)}` };
-        }
-      },
-      toModelOutput: ({ output }) => ({
-        type: "text" as const,
-        value: "error" in output ? `Failed: ${output.error}` : `Status ${output.status}\n${output.body}`,
       }),
     }),
     create_agent: tool({
@@ -557,31 +549,45 @@ function workTools(context: Context) {
         value: "error" in output ? `Not suggested: ${output.error}` : "Suggested. It's waiting for them to apply.",
       }),
     }),
-    use_skill: skillTool(),
   } satisfies ToolSet;
 }
 
 const ONBOARDING_ONLY = ["set_company_name", "update_section", "complete_onboarding"] as const;
 const AFTER_ONBOARDING_ONLY = ["suggest_profile_update"] as const;
 
-// Run by AI Gateway and billed to its credits: a few dollars per thousand calls.
-const researchTools = {
-  web_search: gateway.tools.parallelSearch({ mode: "agentic", maxResults: 5 }),
-  fetch_page: gateway.tools.browserbaseFetch({ format: "markdown", allowRedirects: true, proxies: false }),
-} satisfies ToolSet;
+/** Where the Chief of Staff works: no task, no agent record; its own workspace sandbox for the company. */
+export function workspaceOf(context: Pick<Context, "organization" | "person">): AgentContext {
+  return { organizationId: context.organization.id, taskId: null, agentId: null, agentName: "Chief of Staff", personId: context.person?.id };
+}
 
+/**
+ * The Chief of Staff: the same agent toolkit as every agent (research, data
+ * sources, a sandbox and its browser), working in the company's workspace,
+ * plus its own tools for the company: the profile, people, tasks, agents and
+ * integrations. Pass a sandbox session to close its sandbox when the turn ends.
+ */
 export function createChiefOfStaff(
   context: Context,
-  options: { model?: LanguageModel; research?: boolean } = {},
+  options: { model?: LanguageModel; research?: boolean; sandbox?: SandboxSession } = {},
 ) {
   const model = options.model ?? process.env.CHIEF_OF_STAFF_MODEL;
   if (!model) {
     throw new Error("Set CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).");
   }
+  const workspace = workspaceOf(context);
+  const using = sandboxUser(workspace, options.sandbox ?? {});
   const tools = {
     ...profileTools(context),
     ...workTools(context),
-    ...(options.research === false ? {} : researchTools),
+    ...integrationTools(workspace, using, null),
+    ...sandboxTools(workspace, using),
+    // A sign-in code goes from a card in the chat straight to the waiting browser.
+    ...browserTools(workspace, using, null, (login) => ({
+      text: `${login.name} sent a sign-in code. They now see a card to enter it, which hands it straight to your browser. Tell them, then wait until they say it's entered and call browser_login again.`,
+      needsCode: login,
+    })),
+    ...(options.research === false ? {} : researchTools()),
+    use_skill: skillTool(),
   };
   // Every tool stays in the type (and in stored chats); only the ones that fit
   // the moment are offered to the model.

@@ -146,7 +146,7 @@ export const allowedFor = (integration: Pick<Integration, "agentIds">, agentId?:
 // ---------------------------------------------------------------------------
 // Reading
 
-export async function listIntegrations(organizationId: string, { agentId }: { agentId?: string } = {}): Promise<Integration[]> {
+export async function listIntegrations(organizationId: string, { agentId }: { agentId?: string | null } = {}): Promise<Integration[]> {
   const rows = await getDb().query<Row>(`select ${COLUMNS} from integrations where organization_id = $1 order by name`, [
     organizationId,
   ]);
@@ -519,7 +519,7 @@ async function signing(organizationId: string, integration: Integration) {
   };
 }
 
-const matchesDomain = (host: string, domains: string[]) =>
+export const matchesDomain = (host: string, domains: string[]) =>
   domains.some((d) => (d.startsWith("*.") ? host.endsWith(d.slice(1)) || host === d.slice(2) : host === d));
 
 export type CallRequest = {
@@ -667,7 +667,7 @@ export async function knownSecrets(organizationId: string): Promise<string[]> {
  * before. Credentials never enter the sandbox. Query-parameter keys can't be
  * added this way; those sources work through call_api only.
  */
-export async function sandboxPolicy(organizationId: string, agentId: string): Promise<{ policy: NetworkPolicy; sources: string[] }> {
+export async function sandboxPolicy(organizationId: string, agentId: string | null): Promise<{ policy: NetworkPolicy; sources: string[] }> {
   const sources = (await listIntegrations(organizationId, { agentId })).filter(
     (i) => i.kind === "api" && i.status !== "disabled" && i.hasCredentials,
   );

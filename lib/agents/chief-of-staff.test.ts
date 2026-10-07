@@ -92,7 +92,7 @@ describe("Chief of Staff", () => {
 
     const done = { ...organization, onboardingCompletedAt: new Date() };
     expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).toContain("Onboarding is complete");
-    expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).not.toContain("fetch_page");
+    expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).not.toContain("read it with fetch_page");
   });
 
   it("refuses to start without a model", async () => {

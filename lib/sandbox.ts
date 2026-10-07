@@ -46,6 +46,14 @@ export interface SandboxProvider {
 
 export const sandboxNameFor = (taskId: string) => `mach-task-${taskId}`;
 
+/** The Chief of Staff's own sandbox for the company: for reading sites that need a sign-in, and quick code. */
+export const workspaceSandboxName = (organizationId: string) =>
+  `mach-workspace-${organizationId.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`;
+
+/** Where an agent works: its task's job sandbox, or the company workspace. */
+export const sandboxNameOf = (where: { organizationId: string; taskId: string | null }) =>
+  where.taskId ? sandboxNameFor(where.taskId) : workspaceSandboxName(where.organizationId);
+
 /** How long a sandbox may sit running before Vercel stops it (it is also stopped at the end of every run). */
 const SESSION_TIMEOUT_MS = 30 * 60_000;
 
