@@ -7,7 +7,7 @@ import { createCompany, type CreateCompanyState } from "./actions";
 const inputClass =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900";
 
-export function CreateCompanyForm({ defaultWebsite }: { defaultWebsite: string }) {
+export function CreateCompanyForm({ defaultWebsite, domain }: { defaultWebsite: string; domain: string | null }) {
   const [state, action, pending] = useActionState<CreateCompanyState, FormData>(createCompany, {});
 
   return (
@@ -22,6 +22,11 @@ export function CreateCompanyForm({ defaultWebsite }: { defaultWebsite: string }
         </span>
         <input name="website" defaultValue={defaultWebsite} className={inputClass} placeholder="cedarlegacy.com" />
       </label>
+      {domain && (
+        <p className="text-sm text-zinc-500">
+          Colleagues who sign in with an @{domain} email will be pointed to this company.
+        </p>
+      )}
       {state.error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           {state.error}

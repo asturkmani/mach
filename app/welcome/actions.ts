@@ -2,9 +2,9 @@
 
 import { getWorkOS, switchToOrganization } from "@workos-inc/authkit-nextjs";
 
-import { createOrganization } from "@/lib/orgs";
+import { createOrganization, findOrganizationByDomain } from "@/lib/orgs";
 import { linkMember, syncPeopleSection } from "@/lib/people";
-import { getSessionContext } from "@/lib/session";
+import { getCompanyDomain, getSessionContext } from "@/lib/session";
 import { normalizeWebsite } from "@/lib/website";
 
 export type CreateCompanyState = { error?: string };
@@ -18,6 +18,14 @@ export async function createCompany(_: CreateCompanyState, form: FormData): Prom
   if (websiteInput && !website) return { error: "That website doesn't look like a valid address." };
 
   const { user } = await getSessionContext();
+
+  // One company per work email domain: colleagues join the existing one by invitation.
+  const domain = await getCompanyDomain();
+  if (domain) {
+    const existing = await findOrganizationByDomain(domain);
+    if (existing) return { error: `${existing.name} already uses Mach for @${domain} emails. Ask someone there to invite you.` };
+  }
+
   const workos = getWorkOS();
 
   // The creator becomes the organization's admin in WorkOS.
@@ -34,7 +42,7 @@ export async function createCompany(_: CreateCompanyState, form: FormData): Prom
     return { error: "Could not set up your company in WorkOS. Check that an 'admin' role exists, then try again." };
   }
 
-  await createOrganization({ id: org.id, name, website });
+  await createOrganization({ id: org.id, name, website, domain });
   await linkMember(org.id, user);
   await syncPeopleSection(org.id);
 

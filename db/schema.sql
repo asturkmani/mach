@@ -10,6 +10,12 @@ create table if not exists organizations (
   created_at timestamptz not null default now()
 );
 
+-- The creator's work email domain (e.g. cedarlegacy.com), so colleagues who
+-- sign up later are pointed to the existing company instead of creating a
+-- duplicate. Null when the creator used a personal address like gmail.com.
+alter table organizations add column if not exists domain text;
+create unique index if not exists organizations_domain on organizations (lower(domain)) where domain is not null;
+
 -- The company profile is one markdown document per organization.
 create table if not exists company_profiles (
   organization_id text primary key references organizations (id) on delete cascade,
