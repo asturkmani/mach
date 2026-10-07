@@ -187,7 +187,7 @@ export function TaskDetail({
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/" className="flex items-center gap-2 text-muted hover:text-ink" title="Back (Esc)">
             <ArrowLeft size={16} />
-            <span className="label">Inbox</span>
+            <span className="label">Home</span>
           </Link>
           <span className="label text-faint">/</span>
           <span className="label">#{task.number}</span>
@@ -226,7 +226,7 @@ export function TaskDetail({
             {task.running && (
               <div className="mb-6 flex items-center gap-2 border border-accent/40 bg-accent-soft px-3 py-2 text-sm">
                 <LoaderCircle size={14} className="spin-slow text-accent" />
-                {task.runAgent ?? "An agent"} is working on this. It comes back to your inbox when it&apos;s done.
+                {task.runAgent ?? "An agent"} is working on this. It comes back to the top of Home when it&apos;s done.
               </div>
             )}
 

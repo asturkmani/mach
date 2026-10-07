@@ -3,17 +3,15 @@
 import { Bell, BellOff,
   Bot,
   Building,
-  CircleDashed,
   Command as CommandIcon,
   FolderOpen,
-  Inbox,
+  House,
   LogOut,
   Monitor,
   Moon,
   PanelRight,
   Plus,
   Search,
-  SquareKanban,
   Sun,
   Users,
   type LucideIcon,
@@ -43,9 +41,7 @@ export function Rail() {
   const notifications = useNotificationPermission();
 
   const workspace: Item[] = [
-    { href: "/", label: "Inbox", icon: Inbox, count: data.inboxCount, accent: true },
-    { href: "/in-progress", label: "In progress", icon: CircleDashed, count: data.inProgressCount },
-    { href: "/board", label: "Board", icon: SquareKanban },
+    { href: "/", label: "Home", icon: House, count: data.inboxCount, accent: true },
   ];
   const company: Item[] = [
     { href: "/agents", label: "Agents", icon: Bot },
@@ -132,7 +128,7 @@ export function Rail() {
                 const result = await notifications.request();
                 toast(
                   result === "granted"
-                    ? "You'll get a notification when something lands in your inbox."
+                    ? "You'll get a notification when something needs you."
                     : "Notifications are blocked. Allow them for this site in your browser's settings.",
                 );
               },

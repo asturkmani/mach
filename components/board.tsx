@@ -14,7 +14,14 @@ import { BOARD_COLUMNS, STATUS_WORDS, type TaskStatus } from "@/lib/task-words";
 // The company board: one column per status. Drag a card to move it, or use
 // J/K to move through a column, H/L to move between columns and Enter to open.
 
-export function Board({ tasks }: { tasks: TaskView[] }) {
+export function Board({
+  tasks,
+  keyboard = true,
+}: {
+  tasks: TaskView[];
+  /** Whether J/K/H/L and Enter move around the board. */
+  keyboard?: boolean;
+}) {
   const router = useRouter();
   const { pushUndo, toast } = useShell();
   const [moved, setMoved] = useState<Record<string, TaskStatus>>({});
@@ -53,18 +60,22 @@ export function Board({ tasks }: { tasks: TaskView[] }) {
     setCursor({ column: c, row: dc ? 0 : Math.max(0, row + dr) });
   };
 
-  useKeys({
-    j: () => go(0, 1),
-    down: () => go(0, 1),
-    k: () => go(0, -1),
-    up: () => go(0, -1),
-    h: () => go(-1, 0),
-    arrowleft: () => go(-1, 0),
-    arrowright: () => go(1, 0),
-    enter: () => selected && router.push(`/tasks/${selected.number}`),
-    "[": () => selected && column > 0 && move(selected, BOARD_COLUMNS[column - 1]),
-    "]": () => selected && column < BOARD_COLUMNS.length - 1 && move(selected, BOARD_COLUMNS[column + 1]),
-  });
+  useKeys(
+    keyboard
+      ? {
+          j: () => go(0, 1),
+          down: () => go(0, 1),
+          k: () => go(0, -1),
+          up: () => go(0, -1),
+          h: () => go(-1, 0),
+          arrowleft: () => go(-1, 0),
+          arrowright: () => go(1, 0),
+          enter: () => selected && router.push(`/tasks/${selected.number}`),
+          "[": () => selected && column > 0 && move(selected, BOARD_COLUMNS[column - 1]),
+          "]": () => selected && column < BOARD_COLUMNS.length - 1 && move(selected, BOARD_COLUMNS[column + 1]),
+        }
+      : {},
+  );
 
   return (
     <div className="scroll-quiet flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">

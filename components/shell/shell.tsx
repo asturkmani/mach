@@ -266,9 +266,9 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
 
   const globalCommands = useMemo<Command[]>(
     () => [
-      { id: "go-inbox", group: "Go to", label: "Inbox", run: () => router.push("/") },
-      { id: "go-progress", group: "Go to", label: "In progress", run: () => router.push("/in-progress") },
-      { id: "go-board", group: "Go to", label: "Board", run: () => router.push("/board") },
+      { id: "go-home", group: "Go to", label: "Home", run: () => router.push("/") },
+      { id: "go-board", group: "Go to", label: "Home as a board", run: () => router.push("/?view=board") },
+      { id: "go-list", group: "Go to", label: "Home as a list", run: () => router.push("/?view=list") },
       { id: "go-agents", group: "Go to", label: "Agents", run: () => router.push("/agents") },
       { id: "go-files", group: "Go to", label: "Files", run: () => router.push("/files") },
       { id: "go-team", group: "Go to", label: "Team", run: () => router.push("/team") },

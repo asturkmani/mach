@@ -22,10 +22,13 @@ export function TaskList({
   sections,
   empty,
   showStatus = false,
+  hints = true,
 }: {
   sections: Section[];
   empty: React.ReactNode;
   showStatus?: boolean;
+  /** The strip of key hints along the bottom. */
+  hints?: boolean;
 }) {
   const router = useRouter();
   const { openLater, pushUndo, toast } = useShell();
@@ -191,17 +194,20 @@ export function TaskList({
           </section>
         ))}
       </div>
-      <KeyHints
-        hints={[
-          [["J", "K"], "Move"],
-          [["↵"], "Open"],
-          [["E"], "Done"],
-          [["1", "2", "3"], "Pick"],
-          [["R"], "Reply"],
-          [["L"], "Later"],
-          [["⌘K"], "More"],
-        ]}
-      />
+      {hints && (
+        <KeyHints
+          hints={[
+            [["J", "K"], "Move"],
+            [["↵"], "Open"],
+            [["E"], "Done"],
+            [["1", "2", "3"], "Pick"],
+            [["R"], "Reply"],
+            [["L"], "Later"],
+            [["V"], "Board or list"],
+            [["⌘K"], "More"],
+          ]}
+        />
+      )}
     </>
   );
 }

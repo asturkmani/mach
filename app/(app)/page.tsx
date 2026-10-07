@@ -1,38 +1,34 @@
-import { PageHeader } from "@/components/page-header";
+import { cookies } from "next/headers";
+
+import { Home, type HomeScope, type HomeView } from "@/components/home";
 import { OnboardingNote } from "@/components/onboarding-note";
-import { TaskList, type Section } from "@/components/task-list";
 import { requireAppContext } from "@/lib/session";
 import { toView } from "@/lib/task-view";
-import { listInbox } from "@/lib/tasks";
+import { listInbox, listTasks } from "@/lib/tasks";
 
-export default async function InboxPage() {
+// Home: what needs this person, then all the company's work as a board or a
+// list. The view and scope are remembered in cookies; ?view= overrides.
+export default async function HomePage({ searchParams }: PageProps<"/">) {
   const { organization, person } = await requireAppContext();
-  const tasks = (await listInbox(organization.id, person.id)).map((t) => toView(t));
-  const urgent = tasks.filter((t) => t.priority === "urgent");
-  const rest = tasks.filter((t) => t.priority !== "urgent");
-  const sections: Section[] = urgent.length
-    ? [
-        { title: "Urgent", tasks: urgent },
-        { title: "Everything else", tasks: rest },
-      ]
-    : [{ title: null, tasks: rest }];
+  const [params, jar] = await Promise.all([searchParams, cookies()]);
+  const asked = typeof params.view === "string" ? params.view : jar.get("mach-home-view")?.value;
+  const view: HomeView = asked === "list" ? "list" : "board";
+  const scope: HomeScope = jar.get("mach-home-scope")?.value === "mine" ? "mine" : "everyone";
+
+  const [inbox, tasks] = await Promise.all([
+    listInbox(organization.id, person.id),
+    listTasks(organization.id, { closedLimit: 25 }),
+  ]);
+  // Profile suggestions are approvals, not work: they only show under Needs you.
+  const work = tasks.filter((t) => t.kind === "task" && t.status !== "cancelled");
 
   return (
-    <>
-      <PageHeader title="Inbox" count={tasks.length} />
-      {!organization.onboardingCompletedAt && <OnboardingNote />}
-      <TaskList
-        sections={sections}
-        empty={
-          <div className="max-w-sm space-y-2 text-center">
-            <p className="text-[17px]">Nothing needs you.</p>
-            <p className="text-sm text-muted">
-              Work comes back here when an agent finishes or needs a decision. Press <kbd className="kbd">N</kbd> for a new
-              task, or <kbd className="kbd">C</kbd> to ask the Chief of Staff.
-            </p>
-          </div>
-        }
-      />
-    </>
+    <Home
+      view={view}
+      scope={scope}
+      needsYou={inbox.map((t) => toView(t))}
+      work={work.map((t) => toView(t))}
+      notice={!organization.onboardingCompletedAt ? <OnboardingNote /> : undefined}
+    />
   );
 }
