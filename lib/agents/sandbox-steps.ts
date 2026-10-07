@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 
 import { DRIVE_DIR, drivePath, listDrive, MAX_DRIVE_FILE_BYTES, readDriveFile, writeDriveFile } from "@/lib/drive";
 import { contentTypeFor, isText, listTaskFiles, readTaskFiles, saveVersion } from "@/lib/files";
-import { sandboxPolicy } from "@/lib/integrations";
+import { knownSecrets, sandboxPolicy } from "@/lib/integrations";
+import { redact } from "@/lib/secrets";
 import { versionPreview } from "@/lib/previews";
 import type { RunContext } from "@/lib/agents/prompts";
 import { JOB_DIR, sandboxes, sandboxNameFor, type CommandResult, type JobSandbox } from "@/lib/sandbox";
@@ -20,6 +21,11 @@ export const COMMAND_TIMEOUT_MS = 240_000;
 const OUTPUT_LIMIT = 6000;
 const clip = (text: string, max = OUTPUT_LIMIT) =>
   text.length > max ? `${text.slice(0, max / 2)}\n[…${text.length - max} characters cut…]\n${text.slice(-max / 2)}` : text;
+
+/** Removes the company's stored credentials from text an agent reads back from its sandbox. */
+async function scrub(context: RunContext, text: string): Promise<string> {
+  return redact(text, await knownSecrets(context.organizationId));
+}
 
 const SAFE_NAME = /^[\w][\w.-]{0,79}$/;
 const INTERPRETERS = { python: "python3", node: "node", bash: "bash" } as const;
@@ -246,7 +252,7 @@ export async function runCode(
   const result = await sandbox.run(INTERPRETERS[input.language], [path], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
   const changed = await changedOutputs(sandbox);
   const drive = await pushDrive(context, sandbox);
-  const log = formatLog(result);
+  const log = await scrub(context, formatLog(result));
   // Every script that runs is kept in the library as code, with the output of its latest run.
   await saveVersion(context.organizationId, {
     name: input.filename,
@@ -267,7 +273,7 @@ export async function runShell(context: RunContext, input: { command: string }):
   const sandbox = await open(context);
   const result = await sandbox.run("bash", ["-lc", input.command], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
   const drive = await pushDrive(context, sandbox);
-  return `${formatLog(result)}${driveNote(drive)}`;
+  return `${await scrub(context, formatLog(result))}${driveNote(drive)}`;
 }
 
 export async function readSandboxFile(context: RunContext, input: { path: string }): Promise<string> {
@@ -278,7 +284,7 @@ export async function readSandboxFile(context: RunContext, input: { path: string
   if (!isText(contentTypeFor(input.path)) || bytes.includes(0)) {
     return `${input.path} is a binary file (${bytes.length} bytes). Read it with code instead.`;
   }
-  return clip(bytes.toString("utf8"), 20_000);
+  return clip(await scrub(context, bytes.toString("utf8")), 20_000);
 }
 
 export async function writeSandboxFile(context: RunContext, input: { path: string; content: string }): Promise<string> {
@@ -379,7 +385,7 @@ export async function replayScript(context: RunContext, label: string): Promise<
   await sandbox.mark(RUN_MARK);
   const result = await sandbox.run("bash", [`${JOB_DIR}/run.sh`], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
   const drive = await pushDrive(context, sandbox);
-  const log = `${formatLog(result)}${driveNote(drive)}${timedOut(result) ? `\nrun.sh may have hit the ${COMMAND_TIMEOUT_MS / 1000}s limit.` : ""}`;
+  const log = `${await scrub(context, formatLog(result))}${driveNote(drive)}${timedOut(result) ? `\nrun.sh may have hit the ${COMMAND_TIMEOUT_MS / 1000}s limit.` : ""}`;
   if (result.exitCode !== 0) return { ok: false, reason: "failed", log };
 
   const deliverables = new Set(
@@ -395,7 +401,7 @@ export async function replayScript(context: RunContext, label: string): Promise<
     const saved = await attach(context, sandbox, `${JOB_DIR}/outputs/${file.path}`, label);
     if (typeof saved !== "string" && !saved.unchanged) attached.push(`${saved.name} (v${saved.version})`);
   }
-  return { ok: true, summary: summaryLine(result.stdout), attached, unattached, drive: drive.saved, log };
+  return { ok: true, summary: summaryLine(await scrub(context, result.stdout)), attached, unattached, drive: drive.saved, log };
 }
 
 /**

@@ -189,6 +189,7 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
           <summary className="label cursor-pointer">
             Recent activity{i.lastUsedAt ? <> · last <When date={i.lastUsedAt} /></> : null}
           </summary>
+          <p className="mt-2 text-xs text-faint">Requests made with call_api. Code in job sandboxes calls the API directly and isn&apos;t listed.</p>
           <ul className="mt-2 space-y-1 font-mono text-xs">
             {i.calls.map((c, n) => (
               <li key={n} className="flex items-center gap-3">

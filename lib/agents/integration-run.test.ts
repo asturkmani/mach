@@ -4,6 +4,7 @@ import { setScheduler } from "@/lib/agents/dispatch";
 import { runAgentOnTask, taskBrief } from "@/lib/agents/runner";
 import { createAgent } from "@/lib/agents/store";
 import { readDriveFile } from "@/lib/drive";
+import { listTaskFiles } from "@/lib/files";
 import { getIntegration, saveCredentials, saveIntegration } from "@/lib/integrations";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
@@ -49,7 +50,8 @@ describe("agents with data sources", () => {
         Response.json({ url: String(input), positions: [{ ticker: "MU", value: 1_200_000 }], note: `signed with ${KEY}` }),
       ),
     );
-    const sandboxes = fakeSandboxes({ "summarise.py": () => ({ stdout: "MU 1.2m" }) });
+    // A careless script that prints what the API echoed, key included.
+    const sandboxes = fakeSandboxes({ "summarise.py": () => ({ stdout: `MU 1.2m (server saw: Bearer ${KEY})` }) });
     setSandboxProvider(sandboxes.provider);
 
     const outcome = await runAgentOnTask(ORG, task.id, analyst.id, {
@@ -73,6 +75,9 @@ describe("agents with data sources", () => {
     const saved = await readDriveFile(ORG, "masttro/positions-2026-10-06.json");
     expect(saved?.bytes.toString()).toContain('"ticker":"MU"');
     expect(saved?.bytes.toString()).not.toContain(KEY);
+    // What the script printed reached the agent (and the script's notes) scrubbed.
+    const script = (await listTaskFiles(ORG, task.id)).find((f) => f.name === "summarise.py")!;
+    expect(script.versions[0].note).toContain("server saw: Bearer [secret]");
     // Nothing the agent wrote or saw on the task holds the key.
     const thread = JSON.stringify([await listMessages(task.id), await getTask(ORG, task.id)]);
     expect(thread).not.toContain(KEY);

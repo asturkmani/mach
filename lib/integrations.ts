@@ -577,6 +577,31 @@ export async function testIntegration(organizationId: string, id: string): Promi
   return (await getIntegration(organizationId, integration.id))!;
 }
 
+/**
+ * Every credential value (and cached token) the company has stored, so
+ * anything an agent reads back from its sandbox can be scrubbed: an API that
+ * echoes its key would otherwise put it in front of the model.
+ */
+export async function knownSecrets(organizationId: string): Promise<string[]> {
+  const rows = await getDb().query<{ secrets: Uint8Array | null; session: Uint8Array | null }>(
+    "select secrets, session from integrations where organization_id = $1 and (secrets is not null or session is not null)",
+    [organizationId],
+  );
+  const values: string[] = [];
+  for (const row of rows) {
+    try {
+      if (row.secrets) values.push(...Object.values(unseal<Secrets>(row.secrets)));
+      if (row.session) {
+        const session = unseal<{ token?: string }>(row.session);
+        if (typeof session.token === "string") values.push(session.token);
+      }
+    } catch (error) {
+      console.error("Couldn't read stored credentials", error);
+    }
+  }
+  return values.filter((v) => typeof v === "string" && v.length >= 6);
+}
+
 // ---------------------------------------------------------------------------
 // Sandboxes
 
