@@ -189,3 +189,48 @@ create table if not exists sandbox_templates (
   snapshot_id text not null,
   created_at timestamptz not null default now()
 );
+
+-- The company's timezone (IANA name, e.g. Europe/London), for schedules. Set
+-- from the first browser that opens the app; people can change it.
+alter table organizations add column if not exists timezone text;
+
+-- Recurring jobs: a schedule on the card. Each run lands on the same card and
+-- works in the same sandbox. "script" replays the job's run.sh (the agent is
+-- woken only if it fails, or when there is no run.sh yet); "agent" has the
+-- agent do the job each time.
+create table if not exists task_schedules (
+  task_id uuid primary key references tasks (id) on delete cascade,
+  cron text not null, -- five fields, in the schedule's timezone
+  timezone text not null,
+  mode text not null default 'script' check (mode in ('script', 'agent')),
+  paused boolean not null default false,
+  next_run_at timestamptz,
+  last_run_at timestamptz,
+  created_by_person_id uuid references people (id) on delete set null,
+  created_by_agent_id uuid references agents (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists task_schedules_due on task_schedules (next_run_at) where not paused;
+
+-- The company data drive: shared datasets every job's sandbox sees at
+-- /vercel/drive. Content lives in Vercel Blob (or here, without a store);
+-- each path holds its latest content.
+create table if not exists drive_files (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  path text not null, -- e.g. option-flow/2026-10-07.parquet
+  content_type text not null,
+  size integer not null,
+  sha256 text not null,
+  blob_pathname text,
+  content bytea,
+  task_id uuid references tasks (id) on delete set null, -- the job that last wrote it
+  agent_id uuid references agents (id) on delete set null,
+  person_id uuid references people (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists drive_files_path on drive_files (organization_id, path);

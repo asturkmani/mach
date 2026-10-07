@@ -21,6 +21,14 @@ export interface JobSandbox {
   writeFiles(files: { path: string; content: Buffer }[]): Promise<void>;
   /** The file's bytes, or null if it doesn't exist. */
   readFile(path: string): Promise<Buffer | null>;
+  /** Sets a marker file's time to now (creating it), for changedFiles. */
+  mark(marker: string): Promise<void>;
+  /**
+   * Files under `dir` (relative to it, hidden ones skipped) modified since
+   * `marker` was set, or every file when there is no marker. Empty if `dir`
+   * doesn't exist.
+   */
+  changedFiles(dir: string, marker: string): Promise<{ path: string; size: number }[]>;
   stop(): Promise<void>;
 }
 
@@ -66,6 +74,27 @@ function wrap(sandbox: Sandbox): JobSandbox {
     },
     async readFile(path) {
       return sandbox.readFileToBuffer({ path });
+    },
+    async mark(marker) {
+      await sandbox.runCommand({ cmd: "touch", args: [marker] });
+    },
+    async changedFiles(dir, marker) {
+      // Our folders and markers are fixed paths without spaces.
+      const list = (newer: string) => `find . -type f ${newer} -not -path '*/.*' -printf '%P\\t%s\\n'`;
+      const result = await sandbox.runCommand({
+        cmd: "bash",
+        args: [
+          "-c",
+          `cd ${dir} 2>/dev/null || exit 0; if [ -e ${marker} ]; then ${list(`-newer ${marker}`)}; else ${list("")}; fi | head -1000`,
+        ],
+      });
+      return (await result.stdout())
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [path, size] = line.split("\t");
+          return { path, size: Number(size) };
+        });
     },
     async stop() {
       await sandbox.stop();

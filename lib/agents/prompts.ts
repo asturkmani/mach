@@ -1,6 +1,8 @@
 import type { Agent } from "@/lib/agents/store";
 import { skillList } from "@/lib/agents/skills";
+import type { DriveFile } from "@/lib/drive";
 import type { Organization } from "@/lib/orgs";
+import type { Schedule } from "@/lib/schedules";
 import type { Task, TaskMessage } from "@/lib/tasks";
 
 // What an agent reads when it works a task: its instructions, the company
@@ -38,6 +40,21 @@ export function lastLines(text: string | undefined, max: number): string | undef
 }
 
 const time = (date: Date) => new Date(date).toISOString().slice(0, 16).replace("T", " ");
+
+/** e.g. "Thu 8 Oct, 16:00" in the given timezone. */
+export function timeIn(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(date));
+}
+
+const size = (bytes: number) =>
+  bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}\n[…cut, ${text.length - max} more characters]` : text);
 
 /** A file on the task, as the agent sees it: text files include their (latest) content. */
@@ -51,16 +68,43 @@ export type BriefFile = {
   size: number;
 };
 
+/** What the agent is told about the company drive. */
+export type BriefDrive = { files: DriveFile[]; count: number; bytes: number };
+
+function scheduleLine(schedule: Schedule | null | undefined): string {
+  if (!schedule) return "Repeats: no (set_schedule makes it repeat)";
+  const when = schedule.paused
+    ? "paused"
+    : schedule.nextRunAt
+      ? `next run ${timeIn(schedule.nextRunAt, schedule.timezone)}`
+      : "no further runs";
+  const how = schedule.mode === "script" ? "each run replays run.sh; you're woken if it fails or there is none" : "you do the job each run";
+  return `Repeats: ${schedule.description} · ${when} · ${how}`;
+}
+
+function driveListing(drive: BriefDrive | undefined): string {
+  if (!drive || drive.count === 0) return "The company drive (/vercel/drive) is empty.";
+  const lines = drive.files
+    .slice(0, 40)
+    .map((f) => `- ${f.path} (${size(f.size)}, updated ${time(f.updatedAt)}${f.taskNumber ? ` by #${f.taskNumber}` : f.personName ? ` by ${f.personName}` : ""})`);
+  const more = drive.count > lines.length ? `\n…and ${drive.count - lines.length} more (list_files with folder "drive")` : "";
+  return `The company drive (/vercel/drive), ${drive.count} file${drive.count === 1 ? "" : "s"}, ${size(drive.bytes)}, newest first:\n${lines.join("\n")}${more}`;
+}
+
 export function taskBrief({
   task,
   messages,
   files,
   agent,
+  schedule,
+  drive,
 }: {
   task: Task;
   messages: TaskMessage[];
   files: BriefFile[];
   agent: Agent;
+  schedule?: Schedule | null;
+  drive?: BriefDrive;
 }): string {
   const members = task.members
     .map((m) =>
@@ -85,6 +129,7 @@ export function taskBrief({
 Title: ${task.title}
 Status: ${task.status} · Priority: ${task.priority}
 Created: ${time(task.createdAt)}
+${scheduleLine(schedule)}
 
 Description:
 ${task.description || "(none)"}
@@ -101,7 +146,11 @@ Thread (oldest first):
 ${thread || "(empty)"}
 ${fileList ? `\nFiles on this task (latest versions):\n${fileList}` : ""}
 ${task.memory ? `\nJob notes (NOTES.md, kept from earlier runs):\n${clip(task.memory, 8000)}` : ""}
-</task>`;
+</task>
+
+<drive>
+${driveListing(drive)}
+</drive>`;
 }
 
 export function agentInstructions({
@@ -138,6 +187,16 @@ Your sandbox (for calculations, models, data and code):
 - Excel models: put assumptions on their own sheet as input cells and use real formulas that reference them, so people can change an input and see the model update. Charts as PNG files. Save deliverables in outputs/ and attach each one with attach_file; attaching a file with the same name as one on the task saves a new version of it. Name deliverables for what they are, not for the variant (portfolio-model.xlsx, not portfolio_6040.xlsx), and keep the name when you update one, so each change becomes the next version of the same file; put a variant's label in attach_file's note. Attach only what people will open (the model, charts, a requested document). Don't attach code, zips of code or READMEs: your scripts, config and run.sh are kept with the job automatically, and your explanation belongs in your report.
 - Keep NOTES.md current before you finish: what each script does, how to rerun it, the variants you tried with their key results, and decisions people made.
 
+The company drive (/vercel/drive):
+- A folder every job in the company shares, kept in storage, so data one run collects is there for the next run and for other jobs. Put datasets worth reusing there, in folders named for what they hold (/vercel/drive/option-flow/2026-10-07.csv, /vercel/drive/prices/mu.parquet). Read what other jobs left before fetching it again. Deliverables for people still go in outputs/ with attach_file.
+- It syncs by itself: what changed on the drive is copied in when your sandbox starts, and files you write there are saved after each command. Files over 100 MB stay in this sandbox only. Deleting a file here doesn't remove it from the drive; never overwrite another job's data unless that's the point.
+
+Recurring jobs:
+- When people want something done regularly ("every weekday at 4pm", "each Monday"), call set_schedule, then do the first run now. Each run lands on this same task and works in this same sandbox with the same files, notes and drive. Use the timezone they mention, else the company's (${organization.timezone ?? "not known yet, so ask"}).
+- For work code can do, use mode script and make run.sh do the whole job end to end: fetch fresh data, compute, and write the deliverables under fixed names in outputs/ (option-flow.png, not option-flow-2026-10-07.png) so each run becomes their next version. Make it print one line starting with "SUMMARY:" that states this run's result in a sentence; it becomes the inbox line. Test it with run_command ("bash run.sh") before you finish. Later runs replay run.sh without you; you're woken only when it fails.
+- Use mode agent for work that needs judgment each time (a weekly news digest).
+- When the newest thread entry is a scheduled run, do that run's work and report that run's result. If you were woken because run.sh failed, fix it, run it, and report the result.
+
 How to end your run (call exactly one of these):
 - finish: the work is done, or done as far as you can take it. Report the result.
 - ask: you need a decision only a person can make (taste, money, anything outward-facing or hard to undo). Decide everything else yourself and say what you decided. Ask everything you need in one go, and never ask again what the thread already answers.
@@ -152,7 +211,7 @@ How to write it. People see your task as one row among many in their inbox and u
 Skills you can load with use_skill:
 ${skillList()}
 
-Today's date: ${today}.
+Today's date: ${today}.${organization.timezone ? ` Company timezone: ${organization.timezone}.` : ""}
 
 <company_profile>
 ${profile}

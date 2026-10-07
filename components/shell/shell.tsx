@@ -22,7 +22,7 @@ import { Palette, type Command } from "./palette";
 
 export type ShellData = {
   me: { personId: string; name: string; email: string; isAdmin: boolean };
-  organization: { name: string; onboarded: boolean };
+  organization: { name: string; onboarded: boolean; timezone: string | null };
   people: { id: string; name: string; role: string }[];
   agents: { id: string; name: string; role: string }[];
   inboxCount: number;

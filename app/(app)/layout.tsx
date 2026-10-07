@@ -26,7 +26,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <AppFrame
       data={{
         me: { personId: person.id, name: person.name, email: user.email, isAdmin },
-        organization: { name: organization.name, onboarded: Boolean(organization.onboardingCompletedAt) },
+        organization: {
+          name: organization.name,
+          onboarded: Boolean(organization.onboardingCompletedAt),
+          timezone: organization.timezone,
+        },
         people: people.map((p) => ({ id: p.id, name: p.name, role: p.role })),
         agents: agents.filter((a) => a.kind === "defined" && a.status === "active").map((a) => ({ id: a.id, name: a.name, role: a.role })),
         inboxCount,

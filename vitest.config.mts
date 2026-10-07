@@ -10,5 +10,11 @@ export default defineConfig({
     },
   },
   // Each test starts its own in-memory Postgres, which takes a few seconds.
-  test: { include: ["**/*.test.ts"], exclude: ["node_modules/**"], testTimeout: 30_000 },
+  // File content stays in that database, never in a real Blob store.
+  test: {
+    include: ["**/*.test.ts"],
+    exclude: ["node_modules/**"],
+    testTimeout: 30_000,
+    env: { BLOB_READ_WRITE_TOKEN: "", BLOB_STORE_ID: "" },
+  },
 });

@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 
 import { TaskDetail, type FileView } from "@/components/task-detail";
+import { timeIn } from "@/lib/agents/prompts";
 import { listAgents } from "@/lib/agents/store";
 import { listLibrary, listTaskFiles, type FileVersion } from "@/lib/files";
 import { listPeople } from "@/lib/people";
+import { getSchedule } from "@/lib/schedules";
 import { requireAppContext } from "@/lib/session";
 import { toView } from "@/lib/task-view";
 import { getTaskByNumber, listInbox, listMessages } from "@/lib/tasks";
@@ -26,13 +28,14 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
   const task = await getTaskByNumber(organization.id, Number(number));
   if (!task) notFound();
 
-  const [messages, taskFiles, library, people, agents, inbox] = await Promise.all([
+  const [messages, taskFiles, library, people, agents, inbox, schedule] = await Promise.all([
     listMessages(task.id),
     listTaskFiles(organization.id, task.id),
     listLibrary(organization.id),
     listPeople(organization.id),
     listAgents(organization.id),
     listInbox(organization.id, person.id),
+    getSchedule(task.id),
   ]);
   // After answering, the next row in the inbox opens, like moving down the list.
   const position = inbox.findIndex((t) => t.id === task.id);
@@ -59,6 +62,16 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
         memory: task.memory,
         archived: Boolean(task.archivedAt),
         hasSandbox: Boolean(task.sandboxName),
+        schedule: schedule && {
+          cron: schedule.cron,
+          timezone: schedule.timezone,
+          mode: schedule.mode,
+          paused: schedule.paused,
+          description: schedule.description,
+          nextRun: schedule.nextRunAt ? timeIn(schedule.nextRunAt, schedule.timezone) : null,
+        },
+        canRerun: taskFiles.some((f) => f.kind === "code" && f.name === "run.sh"),
+        timezone: organization.timezone,
         createdAt: new Date(task.createdAt).toISOString(),
         members: task.members,
       }}

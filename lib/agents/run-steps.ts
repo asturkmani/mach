@@ -1,4 +1,5 @@
 import { getAgent } from "@/lib/agents/store";
+import { driveStats, listDrive } from "@/lib/drive";
 import { contentTypeFor, isText, listTaskFiles, readVersion, saveVersion } from "@/lib/files";
 import {
   agentInstructions,
@@ -7,12 +8,15 @@ import {
   MAX_AGENT_TURNS,
   normalizeOptions,
   taskBrief,
+  timeIn,
+  type BriefDrive,
   type BriefFile,
   type RunContext,
   type RunOutcome,
 } from "@/lib/agents/prompts";
 import { getOrganization } from "@/lib/orgs";
 import { loadProfile } from "@/lib/profile/store";
+import { deleteSchedule, getSchedule, saveSchedule, scheduleProblem, type ScheduleMode } from "@/lib/schedules";
 import {
   addMessage,
   agentsOn,
@@ -79,17 +83,19 @@ export async function beginRun(
   }
   if (!(await claimRun(organizationId, task.id, agent.id))) return { ok: false, outcome: { type: "busy" } };
 
-  const [profile, messages, files] = await Promise.all([
+  const [profile, messages, files, schedule, drive] = await Promise.all([
     loadProfile(organizationId),
     listMessages(task.id),
     briefFiles(organizationId, task.id),
+    getSchedule(task.id),
+    briefDrive(organizationId),
   ]);
   const others = agentsOn(task).filter((m) => m.id !== agent.id);
   return {
     ok: true,
     context,
     model,
-    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent }) }),
+    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent, schedule, drive }) }),
     prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
   };
@@ -118,7 +124,34 @@ async function briefFiles(organizationId: string, taskId: string): Promise<Brief
   );
 }
 
+async function briefDrive(organizationId: string): Promise<BriefDrive> {
+  const [files, stats] = await Promise.all([listDrive(organizationId, { limit: 40 }), driveStats(organizationId)]);
+  return { files, ...stats };
+}
+
 const by = (context: RunContext) => ({ author: context.agentName, agentId: context.agentId });
+
+export async function scheduleJob(
+  context: RunContext,
+  input: { cron: string; timezone: string; mode: ScheduleMode },
+): Promise<string> {
+  "use step";
+  const problem = scheduleProblem(input.cron, input.timezone);
+  if (problem) return `Not scheduled: ${problem}`;
+  const schedule = await saveSchedule(context.taskId, { ...input, by: { agentId: context.agentId } });
+  await addMessage(context.taskId, { ...by(context), kind: "event", body: `Set this job to repeat: ${schedule.description}.` });
+  const next = schedule.nextRunAt ? timeIn(schedule.nextRunAt, schedule.timezone) : "never";
+  return `Scheduled: ${schedule.description}. Next run ${next}.${
+    input.mode === "script" ? " Make sure run.sh does the whole job and prints a SUMMARY: line." : ""
+  }`;
+}
+
+export async function unscheduleJob(context: RunContext): Promise<string> {
+  "use step";
+  if (!(await deleteSchedule(context.taskId))) return "This job doesn't repeat.";
+  await addMessage(context.taskId, { ...by(context), kind: "event", body: "Stopped this job repeating." });
+  return "Stopped.";
+}
 
 export async function postUpdate(context: RunContext, input: { message: string; progress?: string }): Promise<string> {
   "use step";

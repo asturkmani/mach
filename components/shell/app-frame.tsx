@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
+
+import { rememberTimezoneAction } from "@/app/(app)/actions";
+
 import { CosPanel } from "./cos-panel";
 import { Rail } from "./rail";
 import { ShellProvider, useShell, type ShellData } from "./shell";
@@ -24,6 +28,10 @@ function Layout({ children, cos }: { children: React.ReactNode; cos: CosProps })
 }
 
 export function AppFrame({ data, cos, children }: { data: ShellData; cos: CosProps; children: React.ReactNode }) {
+  const knowsTimezone = Boolean(data.organization.timezone);
+  useEffect(() => {
+    if (!knowsTimezone) void rememberTimezoneAction(Intl.DateTimeFormat().resolvedOptions().timeZone).catch(() => {});
+  }, [knowsTimezone]);
   return (
     <ShellProvider data={data}>
       <Layout cos={cos}>{children}</Layout>

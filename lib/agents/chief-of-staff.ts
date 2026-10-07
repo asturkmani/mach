@@ -24,6 +24,7 @@ import {
   setSection,
 } from "@/lib/profile/markdown";
 import { updateProfile } from "@/lib/profile/store";
+import { describeSchedule } from "@/lib/schedules";
 import type { SessionUser } from "@/lib/session";
 import { PRIORITIES, type Task } from "@/lib/tasks";
 import { createTaskWithTeam, resolveTeam, suggestProfileUpdate, WorkError } from "@/lib/work";
@@ -70,7 +71,8 @@ Keeping the profile current:
 - Don't start an interview. Ask at most one short question when something important is missing.`;
 }
 
-function workInstructions({ agents = [], openTasks = [], files = [] }: Context): string {
+function workInstructions(context: Context): string {
+  const { agents = [], openTasks = [], files = [] } = context;
   const agentLines = agents
     .filter((a) => a.kind === "defined" && a.status === "active")
     .map((a) => `- ${a.name}${a.role ? ` (${a.role})` : ""}${a.description ? `: ${a.description}` : ""}`);
@@ -88,6 +90,8 @@ function workInstructions({ agents = [], openTasks = [], files = [] }: Context):
 - When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
 - Answer quick questions yourself. Create a task only for real work.
 - If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
+- For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on create_task. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the agent builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
+- Jobs share a company data drive: datasets one job saves there are available to every other job.
 
 Defined agents:
 ${agentLines.join("\n") || "(none yet)"}
@@ -234,8 +238,16 @@ function workTools(context: Context) {
           .optional()
           .describe("Add a new worker agent with this role, e.g. 'Financial analysis', when no defined agent fits."),
         files: z.array(z.string()).optional().describe("Exact names of company files the job should start from."),
+        repeat: z
+          .object({
+            cron: z.string().describe("Five-field cron in the timezone, e.g. '0 16 * * 1-5' for weekdays at 16:00."),
+            timezone: z.string().describe("IANA timezone, e.g. Europe/London."),
+            mode: z.enum(["script", "agent"]).describe("script: replay the job's run.sh each time. agent: the agent does the job each time."),
+          })
+          .optional()
+          .describe("Makes it a recurring job. The first run starts now."),
       }),
-      execute: async ({ title, description, priority, people, agents, workerRole, files }) => {
+      execute: async ({ title, description, priority, people, agents, workerRole, files, repeat }) => {
         try {
           const found = await findFiles(orgId, files ?? []);
           const missing = (files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
@@ -249,11 +261,13 @@ function workTools(context: Context) {
             agentIds: team.agents.map((a) => a.id),
             workerRole,
             inputFileIds: found.map((f) => f.id),
+            schedule: repeat,
             by,
           });
           return {
             task: { id: task.id, number: task.number, title: task.title },
             members: task.members.map((m) => m.name),
+            repeats: repeat ? describeSchedule(repeat.cron, repeat.timezone) : null,
           };
         } catch (error) {
           if (error instanceof WorkError) return { error: error.message };
@@ -265,7 +279,7 @@ function workTools(context: Context) {
         value:
           "error" in output
             ? `Not created: ${output.error}`
-            : `Created task #${output.task.number} with ${output.members.join(", ")}.`,
+            : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
       }),
     }),
     create_agent: tool({

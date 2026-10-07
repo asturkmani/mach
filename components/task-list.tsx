@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -149,8 +149,9 @@ export function TaskList({
                       className={`block border-b border-line-soft px-5 py-4 ${isSelected ? "bg-selected" : "hover:bg-hover"}`}
                     >
                       <div className="flex items-baseline justify-between gap-6">
-                        <p className={`min-w-0 truncate text-[17px] ${task.priority === "urgent" ? "urgent-title" : ""}`}>
-                          {task.title}
+                        <p className={`flex min-w-0 items-center gap-2 text-[17px] ${task.priority === "urgent" ? "urgent-title" : ""}`}>
+                          <span className="truncate">{task.title}</span>
+                          {task.repeats && <Repeat size={13} className="shrink-0 text-faint" aria-label="Repeats" />}
                         </p>
                         <span className="label flex shrink-0 items-center gap-3">
                           {task.running && (

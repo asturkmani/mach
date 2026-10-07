@@ -31,6 +31,6 @@ mv "$out/$(basename "$file")" "$file"
 rm -rf "$out"
 SH
 chmod +x /usr/local/bin/recalc
-mkdir -p ${JOB_DIR} && chown ubuntu:ubuntu ${JOB_DIR}
+mkdir -p ${JOB_DIR} /vercel/drive && chown ubuntu:ubuntu ${JOB_DIR} /vercel/drive
 `;
 }

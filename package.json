@@ -22,6 +22,8 @@
     "@workos-inc/authkit-nextjs": "^4.4.0",
     "@workos-inc/node": "^10.14.0",
     "ai": "^7.0.130",
+    "croner": "^10.0.1",
+    "cronstrue": "^3.30.0",
     "exceljs": "^4.4.0",
     "lucide-react": "^1.52.0",
     "next": "16.3.8",

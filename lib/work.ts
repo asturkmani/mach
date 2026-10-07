@@ -1,12 +1,23 @@
 import "server-only";
 
-import { agentToWake, dispatchRun, startIfReady } from "@/lib/agents/dispatch";
+import { agentToWake, dispatchRun, dispatchScheduled, startIfReady } from "@/lib/agents/dispatch";
 import { createWorker, findAgentByName, listAgents, updateAgent, type Agent } from "@/lib/agents/store";
-import { attachToTask } from "@/lib/files";
+import { attachToTask, listTaskFiles } from "@/lib/files";
+import { rememberTimezone } from "@/lib/orgs";
 import { listPeople, type Person } from "@/lib/people";
 import { PEOPLE_SECTION, SECTIONS, setSection } from "@/lib/profile/markdown";
 import { updateProfile } from "@/lib/profile/store";
 import { sandboxes } from "@/lib/sandbox";
+import {
+  deleteSchedule,
+  rescheduleFromNow,
+  saveSchedule,
+  scheduleProblem,
+  setPaused,
+  takeDueRuns,
+  type Schedule,
+  type ScheduleMode,
+} from "@/lib/schedules";
 import { STATUS_WORDS } from "@/lib/task-words";
 import {
   addMember,
@@ -79,9 +90,12 @@ export async function createTaskWithTeam(
     workerRole?: string;
     /** Library files the job starts from. */
     inputFileIds?: string[];
+    /** Makes it a recurring job. Its first run starts now. */
+    schedule?: ScheduleInput;
     by: Actor;
   },
 ): Promise<Task> {
+  if (input.schedule) checkSchedule(input.schedule);
   const own = await ownIds(organizationId, input);
   const agentIds = [...own.agentIds];
   if (input.workerRole !== undefined) agentIds.push((await createWorker(organizationId, input.workerRole)).id);
@@ -96,6 +110,7 @@ export async function createTaskWithTeam(
   });
   for (const fileId of input.inputFileIds ?? []) await attachToTask(organizationId, task.id, fileId, "input");
   await addMessage(task.id, { author: input.by.name, personId: input.by.personId, kind: "event", body: "Created this task." });
+  if (input.schedule) await scheduleTask(organizationId, task.id, input.by, input.schedule);
   await startIfReady(organizationId, task.id);
   return (await getTask(organizationId, task.id))!;
 }
@@ -197,6 +212,8 @@ export async function unarchiveTask(organizationId: string, taskId: string, by: 
     if (agent.kind === "worker") await updateAgent(organizationId, agent.id, { status: "active" });
   }
   await setArchived(organizationId, task.id, false);
+  // A recurring job picks up at its next run from now, not the runs it missed.
+  await rescheduleFromNow(task.id);
   await addMessage(task.id, { author: by.name, personId: by.personId, kind: "event", body: "Brought this job back." });
   return (await getTask(organizationId, task.id))!;
 }
@@ -237,6 +254,71 @@ export async function runNow(organizationId: string, taskId: string, agentId: st
   await updateTask(organizationId, task.id, { status: "ready" });
   await addMessage(task.id, { author: by.name, personId: by.personId, kind: "event", body: "Started a run." });
   await dispatchRun(organizationId, task.id, agentId);
+}
+
+// ---------------------------------------------------------------------------
+// Recurring jobs
+
+export type ScheduleInput = { cron: string; timezone: string; mode?: ScheduleMode };
+
+function checkSchedule(input: ScheduleInput): void {
+  const problem = scheduleProblem(input.cron, input.timezone);
+  if (problem) throw new WorkError(problem);
+}
+
+/** Makes a job repeat (or changes how). Each run lands on the same card and works in the same sandbox. */
+export async function scheduleTask(organizationId: string, taskId: string, by: Actor, input: ScheduleInput): Promise<Schedule> {
+  const task = await mustGet(organizationId, taskId);
+  if (task.kind !== "task") throw new WorkError("Only jobs can repeat.");
+  checkSchedule(input);
+  const schedule = await saveSchedule(task.id, { ...input, by: { personId: by.personId } });
+  // The first schedule someone sets tells us the company's timezone.
+  await rememberTimezone(organizationId, input.timezone);
+  await addMessage(task.id, { author: by.name, personId: by.personId, kind: "event", body: `Set this job to repeat: ${schedule.description}.` });
+  return schedule;
+}
+
+export async function pauseTaskSchedule(organizationId: string, taskId: string, by: Actor, paused: boolean): Promise<void> {
+  const task = await mustGet(organizationId, taskId);
+  const schedule = await setPaused(task.id, paused);
+  if (!schedule) throw new WorkError("This job doesn't repeat.");
+  await addMessage(task.id, {
+    author: by.name,
+    personId: by.personId,
+    kind: "event",
+    body: paused ? "Paused this job's schedule." : "Resumed this job's schedule.",
+  });
+}
+
+export async function unscheduleTask(organizationId: string, taskId: string, by: Actor): Promise<void> {
+  const task = await mustGet(organizationId, taskId);
+  if (await deleteSchedule(task.id)) {
+    await addMessage(task.id, { author: by.name, personId: by.personId, kind: "event", body: "Stopped this job repeating." });
+  }
+}
+
+/** "Run again": replays the job's run.sh now, without a model; the agent is woken only if it fails. */
+export async function rerunScript(organizationId: string, taskId: string, by: Actor): Promise<void> {
+  const task = await mustGet(organizationId, taskId);
+  if (task.archivedAt) throw new WorkError("Bring the job back from the archive first.");
+  if (isRunning(task)) throw new WorkError("A run is going. Try again when it's done.");
+  const files = await listTaskFiles(organizationId, task.id);
+  if (!files.some((f) => f.kind === "code" && f.name === "run.sh")) throw new WorkError("This job has no run.sh to run again.");
+  if (!agentsOn(task).some((a) => a.status === "active")) throw new WorkError("Put an agent on the job first.");
+  await dispatchScheduled(organizationId, task.id, { kind: "rerun", by: by.name, personId: by.personId });
+}
+
+/** The cron tick: starts every recurring job that is due. Returns how many started. */
+export async function fireDueSchedules(now = new Date()): Promise<number> {
+  const due = await takeDueRuns(now);
+  for (const run of due) {
+    try {
+      await dispatchScheduled(run.organizationId, run.taskId, { kind: "schedule", dueAt: run.dueAt.toISOString() });
+    } catch (error) {
+      console.error(`Couldn't start the scheduled run of task ${run.taskId}`, error);
+    }
+  }
+  return due.length;
 }
 
 // ---------------------------------------------------------------------------

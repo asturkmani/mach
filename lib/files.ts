@@ -2,9 +2,8 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { get as getBlob, put as putBlob } from "@vercel/blob";
-
 import { getDb } from "@/lib/db";
+import { loadBytes, storeBytes } from "@/lib/storage";
 
 // The company file library. Every deliverable an agent attaches and every
 // script it runs is a file with versions; jobs list the files they work with
@@ -47,6 +46,10 @@ const TYPES: Record<string, string> = {
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   pdf: "application/pdf",
   csv: "text/csv",
+  tsv: "text/tab-separated-values",
+  parquet: "application/vnd.apache.parquet",
+  zip: "application/zip",
+  xml: "application/xml",
   md: "text/markdown",
   txt: "text/plain",
   json: "application/json",
@@ -72,37 +75,6 @@ export function contentTypeFor(name: string): string {
 
 export function isText(contentType: string): boolean {
   return contentType.startsWith("text/") || ["application/json"].includes(contentType);
-}
-
-// ---------------------------------------------------------------------------
-// Content storage
-
-const blobConnected = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN);
-
-async function storeContent(
-  organizationId: string,
-  fileId: string,
-  version: number,
-  name: string,
-  bytes: Buffer,
-  contentType: string,
-): Promise<{ blobPathname: string | null; content: Buffer | null }> {
-  if (!blobConnected()) return { blobPathname: null, content: bytes };
-  const blob = await putBlob(`orgs/${organizationId}/files/${fileId}/v${version}/${name}`, bytes, {
-    access: "private",
-    contentType,
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  });
-  return { blobPathname: blob.pathname, content: null };
-}
-
-async function loadContent(row: { blob_pathname: string | null; content: Uint8Array | null }): Promise<Buffer> {
-  if (row.content) return Buffer.from(row.content);
-  if (!row.blob_pathname) return Buffer.alloc(0);
-  const blob = await getBlob(row.blob_pathname, { access: "private" });
-  if (!blob) throw new Error(`File content is missing from Blob storage (${row.blob_pathname}).`);
-  return Buffer.from(await new Response(blob.stream).arrayBuffer());
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +174,7 @@ export async function readVersion(
     [versionId, organizationId],
   );
   if (!row) return null;
-  return { name: row.name, kind: row.kind, version: row.version, contentType: row.content_type, bytes: await loadContent(row) };
+  return { name: row.name, kind: row.kind, version: row.version, contentType: row.content_type, bytes: await loadBytes(row) };
 }
 
 /** The latest version of each of a job's files, with content: what a fresh sandbox is seeded with. */
@@ -283,7 +255,8 @@ export async function saveVersion(organizationId: string, input: SaveVersionInpu
   }
 
   const version = (latest?.version ?? 0) + 1;
-  const stored = await storeContent(organizationId, fileId, version, name, input.bytes, contentType);
+  // Versions never change, so each has its own fixed pathname.
+  const stored = await storeBytes(`orgs/${organizationId}/files/${fileId}/v${version}/${name}`, input.bytes, contentType);
   const [row] = await db.query<{ id: string }>(
     `insert into file_versions (file_id, version, content_type, size, sha256, blob_pathname, content, task_id, agent_id,
                                 person_id, based_on, note)

@@ -44,6 +44,8 @@ export type Task = {
   memory: string;
   sandboxName: string | null;
   archivedAt: Date | null;
+  /** It has an active (unpaused) schedule. */
+  repeats: boolean;
   createdAt: Date;
   updatedAt: Date;
   closedAt: Date | null;
@@ -84,6 +86,7 @@ type TaskRow = {
   memory: string;
   sandbox_name: string | null;
   archived_at: Date | null;
+  repeats: boolean;
   created_at: Date;
   updated_at: Date;
   closed_at: Date | null;
@@ -103,7 +106,9 @@ type MemberRow = {
 
 const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary, t.context, t.progress, t.status,
   t.priority, t.options, t.payload, t.later_until, t.created_by_person_id, t.created_by_agent_id, t.run_agent_id,
-  t.run_started_at, t.agent_turns, t.memory, t.sandbox_name, t.archived_at, t.created_at, t.updated_at, t.closed_at`;
+  t.run_started_at, t.agent_turns, t.memory, t.sandbox_name, t.archived_at,
+  exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats,
+  t.created_at, t.updated_at, t.closed_at`;
 
 /** Sorts urgent first, then high, medium, low. */
 export const PRIORITY_ORDER = `case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`;
@@ -134,6 +139,7 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     memory: row.memory,
     sandboxName: row.sandbox_name,
     archivedAt: row.archived_at,
+    repeats: row.repeats,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     closedAt: row.closed_at,
@@ -174,6 +180,20 @@ export const agentsOn = (task: Task) =>
   task.members.filter((m): m is Extract<TaskMember, { type: "agent" }> => m.type === "agent");
 export const peopleOn = (task: Task) =>
   task.members.filter((m): m is Extract<TaskMember, { type: "person" }> => m.type === "person");
+
+/**
+ * Which agent should pick the task up after a person speaks: one they
+ * mentioned by name, else the agent that last asked or reported, else the
+ * first active agent on the task.
+ */
+export function agentToWake(task: Task, messages: TaskMessage[], text = ""): string | undefined {
+  const active = agentsOn(task).filter((a) => a.status === "active");
+  const mentioned = active.find((a) => text.toLowerCase().includes(`@${a.name.toLowerCase()}`));
+  if (mentioned) return mentioned.id;
+  const last = [...messages].reverse().find((m) => m.agentId && (m.kind === "ask" || m.kind === "result"));
+  if (last && active.some((a) => a.id === last.agentId)) return last.agentId!;
+  return active[0]?.id;
+}
 
 /** True while an agent run holds the task. */
 export function isRunning(task: Pick<Task, "runStartedAt">, now = Date.now()): boolean {

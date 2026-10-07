@@ -1,6 +1,6 @@
 # Sandboxes and files for coding and analysis jobs
 
-**Status: decided 2026-10-07. Phase 1 is being built; phase 2 follows.**
+**Status: decided 2026-10-07. Phase 1, recurring jobs and the company drive are built; the rest of phase 2 follows.**
 
 Builds on [F5.4 Sandbox](spec.md#f54-sandbox) in the product spec, and replaces its "one persistent sandbox per agent" with one per job (see Decisions).
 
@@ -25,7 +25,7 @@ Agents that need to compute something (a financial model, a simulation, a backte
 - Three shapes of job:
   - **One-off** ("book flights"): archived automatically after 30 days with no activity, with a heads-up first. *(phase 2)*
   - **Iterative** (backtest rules ABC, then ABD): reply on the same card; never auto-archived.
-  - **Recurring** ("every weekday at 4pm, chart today's option flow"): a schedule on the card; each run's result lands in the inbox as an update on the same card. *(phase 2)*
+  - **Recurring** ("every weekday at 4pm, chart today's option flow"): a schedule on the card; each run's result lands in the inbox as an update on the same card, worked in the same sandbox. See Recurring jobs.
 
 ## Sandboxes
 
@@ -35,7 +35,8 @@ Agents that need to compute something (a financial model, a simulation, a backte
 - **Layout** inside the sandbox: `/vercel/job/code` (scripts), `/vercel/job/inputs` (files attached to the job), `/vercel/job/outputs` (deliverables), and `/vercel/job/NOTES.md` (job memory).
 - **Limits**: 2 vCPUs and 4 GB per sandbox; a single command runs for at most 4 minutes in phase 1. Longer jobs run detached and the workflow checks on them between steps *(phase 2)*.
 - **Safety**: no secrets in the sandbox; no environment variables are passed in and model calls happen outside it (SBX-5). Network egress is open and logged. Credentials for data APIs (an options feed) are added to outgoing requests at the network layer by Vercel Sandbox's request transformations, never stored inside *(phase 2)*.
-- **Later**: a **company data drive** (Vercel Sandbox Drives) mounted read-only into every job sandbox for shared datasets, and an optional **sandbox per defined agent** for specialist agents that accumulate their own data *(phase 2)*.
+- **Company drive**: every job sandbox sees the company's shared data at `/vercel/drive` (see The company drive).
+- **Later**: an optional **sandbox per defined agent** for specialist agents that accumulate their own data *(phase 2)*.
 
 ## Files: the company library
 
@@ -45,28 +46,51 @@ Agents that need to compute something (a financial model, a simulation, a backte
 - If two jobs edit the same version at once, both versions are kept and the later one notes which version it was built from.
 - Sandboxes are scratch space, not the system of record: if a sandbox is lost, a fresh one is rebuilt from the library (inputs, deliverables, code) and the job's notes.
 
+## The company drive
+
+Shared data that every job can read and add to: a price history a daily job appends to, an export someone dropped in, a dataset a backtest reuses.
+
+- **Storage**: Vercel Blob (private), one object per file, described by a `drive_files` row (path, size, sha256, which job, agent or person last wrote it). Each path holds its latest content; there are no versions (deliverables have those, in the file library). Postgres holds the content instead when no Blob store is connected.
+- **In the sandbox**: `/vercel/drive`. When a run starts, the sandbox gets what changed since it last looked (compared by sha256 against a manifest in the job folder) and loses what was deleted, up to 1 GB per run. After every command, files written under `/vercel/drive` are saved back; files over 100 MB stay in that sandbox. Deleting a file in a sandbox doesn't delete it from the drive; people delete from the Files page.
+- **Conflicts**: last write wins per file. Jobs are told to write in folders named for what they hold and not to overwrite other jobs' data unless that's the point.
+- **People**: the Files page lists the drive by folder, with downloads, deletes and uploads (straight from the browser to Blob, up to 100 MB a file).
+- **Agents** see the drive's newest 40 files in their brief and can list the rest.
+
+## Recurring jobs
+
+- A job can carry **one schedule**: a five-field cron expression in a timezone (IANA name), set by the Chief of Staff when it creates the job (`create_task` with `repeat`), by an agent on the job (`set_schedule`, `stop_schedule`) or by a person in the job's Repeats panel. Runs are at least 15 minutes apart. The company's timezone is taken from the first browser that opens Mach and used as the default.
+- **Firing**: Vercel Cron calls `/api/cron/tick` every minute (`vercel.json`, authenticated with `CRON_SECRET`). The tick takes every due schedule, moves it to its next run from now (missed runs aren't replayed one by one) and starts a `scheduled-run` workflow. Archived and cancelled jobs, and paused schedules, don't fire; a job brought back from the archive resumes at its next run from then.
+- **Each run** posts "Scheduled run, Thu 8 Oct, 16:00" on the card, then:
+  - **script mode** (the default) with a `run.sh`: replays `bash run.sh` in the job's sandbox without a model. Changed files in `outputs/` that are already deliverables on the job become their next versions; the last `SUMMARY:` line run.sh prints becomes the inbox line. If run.sh fails or is missing, its log goes on the thread and the agent is woken to fix it, rerun it and report.
+  - **agent mode**, or no `run.sh` yet: the agent is woken and does the job, with the scheduled-run note as the newest thread entry.
+- **Run script again**: a button in the Repeats panel replays run.sh the same way, on demand.
+- A run that arrives while another is going is skipped with a note on the thread.
+- Done doesn't stop a recurring job: the next run reopens it. Pause, Stop or Archive do.
+
 ## Memory
 
 - **Job memory**: `NOTES.md`, kept by the agent (what each script does, how to rerun it, the parameters and results of every variant, decisions made). It is saved to the database after every run and read at the start of the next, along with the thread and summary.
 - **Agent memory** for defined agents (preferences and lessons that carry across jobs) and the company profile and Brain sit above it *(agent memory: phase 2)*.
 
-## Reruns *(phase 2)*
+## Reruns
 
-Agents structure code as config plus scripts plus one entry point (`run.sh`), so a new variant means changing the config. Scheduled runs and a **Run again** button execute `run.sh` directly without a model call, and wake the agent only when the script fails, the output looks wrong, or someone asks for a change.
+Agents structure code as config plus scripts plus one entry point (`run.sh`), so a new variant means changing the config. Scheduled runs and **Run script again** execute `run.sh` directly without a model call, and wake the agent only when the script fails or someone asks for a change.
 
-## Agent tools (phase 1)
+## Agent tools
 
 | Tool | What it does |
 |---|---|
 | `run_code` | Saves the code as a named script under `code/`, runs it (Python, Node or shell) and returns stdout, stderr, the exit code and the new or changed files in `outputs/`. The script is saved to the library as code. |
 | `run_command` | Runs a shell command, e.g. `uv pip install --system yfinance`. |
-| `read_file`, `write_file`, `list_files` | Work with files in the sandbox. |
+| `read_file`, `write_file`, `list_files` | Work with files in the job folder or on the company drive (`/vercel/drive`). |
 | `attach_file` | Attaches a file from the sandbox to the job as a deliverable (a new version if the job already has a file of that name). xlsx files are recalculated first so their values preview correctly. |
+| `set_schedule`, `stop_schedule` | Make the job repeat (cron, timezone, script or agent mode), or stop it. |
 
 ## Phases
 
-- **Phase 1 (now)**: sandbox per job with the template, the tools above, the file library with versions and inputs, Blob or Postgres storage, previews (xlsx sheets, images, CSV, markdown), a collapsed Code section, job memory, and Done vs Archived.
-- **Phase 2**: recurring schedules and replayed `run.sh` reruns, long-running detached commands, auto-archive of one-off jobs, the company data drive, agent memory, per-agent sandboxes, and credential brokering for data APIs.
+- **Phase 1 (built)**: sandbox per job with the template, the tools above, the file library with versions and inputs, Blob or Postgres storage, previews (xlsx sheets, images, CSV, markdown), a collapsed Code section, job memory, and Done vs Archived.
+- **Phase 2 (built)**: recurring schedules with replayed `run.sh`, Run script again, and the company drive on Blob.
+- **Phase 2 (next)**: long-running detached commands, auto-archive of one-off jobs, agent memory, per-agent sandboxes, and credential brokering for data APIs.
 
 ## Acceptance tests
 
@@ -74,6 +98,8 @@ Agents structure code as config plus scripts plus one entry point (`run.sh`), so
 2. **Iterate on the same job.** Reply "use 70/30 instead". Expect: the same sandbox and scripts, the config changed, v2 of the xlsx next to v1, and a summary comparing the two.
 3. **A new job on an existing file.** A new task with the model attached as an input. Expect: the file copied in, the result saved as the next version of the same file.
 4. **No sandbox when not needed.** A research-only task starts no sandbox.
+5. **Recurring job.** "Every weekday at 4pm, pull MU, NVDA and AMD closes, keep a history on the drive and chart the last month." Expect: a schedule on the card; run.sh that appends to the drive and redraws a fixed-name chart; at the next tick, a replay with no model call, the chart's next version and the SUMMARY line as the inbox line.
+6. **Shared data.** A second job asked to analyse that history reads it from `/vercel/drive` instead of fetching it again.
 
 ## Decisions
 
@@ -83,3 +109,4 @@ Agents structure code as config plus scripts plus one entry point (`run.sh`), so
 4. Files in Vercel Blob (Postgres until a Blob store is connected), in a company library with versions.
 5. xlsx files preview read-only in the app.
 6. One-off jobs auto-archive after 30 days idle; recurring runs update the same card; scheduled reruns replay scripts and wake the agent only when needed.
+7. The company data drive is Vercel Blob, synced into each sandbox at `/vercel/drive` (rather than a Sandbox Drive mount), so people and the app can read and upload the same files.

@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { Download, FileCode, FileSpreadsheet, Paperclip } from "lucide-react";
 
+import { DriveSection } from "@/components/drive-section";
 import { PageHeader } from "@/components/page-header";
 import { When } from "@/components/ui";
+import { listDrive, uploadPrefix } from "@/lib/drive";
 import { listLibrary } from "@/lib/files";
 import { requireAppContext } from "@/lib/session";
+import { blobConnected } from "@/lib/storage";
 
 function size(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -14,7 +17,7 @@ function size(bytes: number): string {
 
 export default async function FilesPage() {
   const { organization } = await requireAppContext();
-  const files = await listLibrary(organization.id, { limit: 500 });
+  const [files, drive] = await Promise.all([listLibrary(organization.id, { limit: 500 }), listDrive(organization.id)]);
   const deliverables = files.filter((f) => f.kind === "deliverable");
   const code = files.filter((f) => f.kind === "code");
 
@@ -54,25 +57,32 @@ export default async function FilesPage() {
         <div className="max-w-4xl space-y-8">
           <p className="max-w-2xl text-[15px] text-muted">
             Everything agents have produced, with every version. Attach a file to any job and the agent starts from it; what it
-            changes is saved as the next version.
+            changes is saved as the next version. The drive holds shared data that every job&apos;s sandbox can read and add to.
           </p>
-          {files.length === 0 ? (
-            <p className="text-sm text-faint">No files yet. They appear here when agents attach deliverables or run code.</p>
+          {deliverables.length > 0 ? (
+            <section>
+              <h2 className="label mb-3">Deliverables</h2>
+              {list(deliverables)}
+            </section>
           ) : (
-            <>
-              {deliverables.length > 0 && (
-                <section>
-                  <h2 className="label mb-3">Deliverables</h2>
-                  {list(deliverables)}
-                </section>
-              )}
-              {code.length > 0 && (
-                <section>
-                  <h2 className="label mb-3">Code</h2>
-                  {list(code)}
-                </section>
-              )}
-            </>
+            <p className="text-sm text-faint">No deliverables yet. They appear here when agents attach them to jobs.</p>
+          )}
+          <DriveSection
+            files={drive.map((f) => ({
+              path: f.path,
+              size: f.size,
+              updatedAt: new Date(f.updatedAt).toISOString(),
+              taskNumber: f.taskNumber,
+              by: f.agentName ?? f.personName,
+            }))}
+            prefix={uploadPrefix(organization.id)}
+            canUpload={blobConnected()}
+          />
+          {code.length > 0 && (
+            <section>
+              <h2 className="label mb-3">Code</h2>
+              {list(code)}
+            </section>
           )}
         </div>
       </div>

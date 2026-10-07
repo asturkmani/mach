@@ -1,12 +1,17 @@
-import { contentTypeFor, isText, readTaskFiles, saveVersion } from "@/lib/files";
+import { createHash } from "node:crypto";
+
+import { DRIVE_DIR, drivePath, listDrive, MAX_DRIVE_FILE_BYTES, readDriveFile, writeDriveFile } from "@/lib/drive";
+import { contentTypeFor, isText, listTaskFiles, readTaskFiles, saveVersion } from "@/lib/files";
 import { versionPreview } from "@/lib/previews";
 import type { RunContext } from "@/lib/agents/prompts";
-import { JOB_DIR, sandboxes, sandboxNameFor, type JobSandbox } from "@/lib/sandbox";
+import { JOB_DIR, sandboxes, sandboxNameFor, type CommandResult, type JobSandbox } from "@/lib/sandbox";
 import { getTask, saveMemory, setSandboxName } from "@/lib/tasks";
 
 // The sandbox tools an agent uses on a job, each a durable workflow step. The
 // job's sandbox is created on first use, seeded with the job's files and
-// notes, and stopped (not deleted) at the end of the run.
+// notes, and stopped (not deleted) at the end of the run. The company drive
+// is synced into it at /vercel/drive: pulled when a run starts, pushed after
+// every command.
 
 /** A single command may run this long; longer work is split into steps. */
 export const COMMAND_TIMEOUT_MS = 240_000;
@@ -18,12 +23,27 @@ const clip = (text: string, max = OUTPUT_LIMIT) =>
 const SAFE_NAME = /^[\w][\w.-]{0,79}$/;
 const INTERPRETERS = { python: "python3", node: "node", bash: "bash" } as const;
 
-/** Resolves a path inside the job folder; anything outside it is refused. */
-export function jobPath(path: string): string {
+/** Set before each command, to find the outputs it wrote. */
+const RUN_MARK = `${JOB_DIR}/.mark`;
+/** What this sandbox has from the drive: path → sha256. */
+const DRIVE_MANIFEST = `${JOB_DIR}/.drive.json`;
+/** Set after each sync: drive files newer than this were written here since. */
+const DRIVE_SYNCED = `${JOB_DIR}/.drive-synced`;
+const DRIVE_SYNCING = `${JOB_DIR}/.drive-syncing`;
+/** At most this much is copied in from the drive when a run starts. */
+const DRIVE_PULL_BUDGET = 1024 * 1024 * 1024;
+
+/**
+ * Resolves a path inside the job folder, or inside the company drive when it
+ * starts with /vercel/drive. Anything else is refused.
+ */
+export function sandboxPath(path: string): string {
+  const trimmed = path.trim();
+  if (/^\/vercel\/drive(\/|$)/.test(trimmed)) return `${DRIVE_DIR}/${drivePath(trimmed)}`;
   const parts: string[] = [];
-  for (const part of path.replace(/^\/vercel\/job\/?/, "").split("/")) {
+  for (const part of trimmed.replace(/^\/vercel\/job\/?/, "").split("/")) {
     if (!part || part === ".") continue;
-    if (part === "..") throw new Error("Paths must stay inside the job folder.");
+    if (part === "..") throw new Error("Paths must stay inside the job folder or /vercel/drive.");
     parts.push(part);
   }
   if (parts.length === 0) throw new Error("Give a file path inside the job folder.");
@@ -56,12 +76,136 @@ async function open(context: RunContext): Promise<JobSandbox> {
   return sandbox;
 }
 
-async function changedOutputs(sandbox: JobSandbox): Promise<string> {
-  const found = await sandbox.run("bash", [
-    "-c",
-    `cd ${JOB_DIR} && find outputs -type f -newer .mark -printf '%P (%s bytes)\\n' 2>/dev/null | head -50`,
-  ]);
-  return found.stdout.trim().split("\n").filter(Boolean).join(", ");
+// ---------------------------------------------------------------------------
+// The company drive
+
+const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+const quote = (path: string) => `'${path.replace(/'/g, "'\\''")}'`;
+
+async function readManifest(sandbox: JobSandbox): Promise<Record<string, string>> {
+  const raw = await sandbox.readFile(DRIVE_MANIFEST).catch(() => null);
+  try {
+    return raw ? (JSON.parse(raw.toString("utf8")) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+const writeManifest = (sandbox: JobSandbox, manifest: Record<string, string>) =>
+  sandbox.writeFiles([{ path: DRIVE_MANIFEST, content: Buffer.from(JSON.stringify(manifest)) }]);
+
+/** Brings the sandbox's copy of the drive up to date: copies in what changed and removes what was deleted. */
+async function pullDrive(context: RunContext, sandbox: JobSandbox): Promise<string> {
+  await sandbox.run("bash", ["-c", `[ -d ${DRIVE_DIR} ] || { mkdir -p ${DRIVE_DIR} && chown ubuntu:ubuntu ${DRIVE_DIR}; }`], {
+    sudo: true,
+  });
+  const [manifest, files] = await Promise.all([readManifest(sandbox), listDrive(context.organizationId)]);
+  const live = new Set(files.map((f) => f.path));
+  const stale = files.filter((f) => manifest[f.path] !== f.sha256).sort((a, b) => a.size - b.size);
+  const gone = Object.keys(manifest).filter((path) => !live.has(path));
+
+  let budget = DRIVE_PULL_BUDGET;
+  const skipped: string[] = [];
+  let batch: { path: string; content: Buffer }[] = [];
+  let batchBytes = 0;
+  const flush = async () => {
+    if (batch.length === 0) return;
+    const dirs = [...new Set(batch.map((f) => f.path.slice(0, f.path.lastIndexOf("/"))))];
+    await sandbox.run("mkdir", ["-p", ...dirs]);
+    await sandbox.writeFiles(batch);
+    batch = [];
+    batchBytes = 0;
+  };
+  for (const file of stale) {
+    if (file.size > budget) {
+      skipped.push(file.path);
+      continue;
+    }
+    const content = await readDriveFile(context.organizationId, file.path);
+    if (!content) continue;
+    budget -= file.size;
+    batch.push({ path: `${DRIVE_DIR}/${file.path}`, content: content.bytes });
+    batchBytes += file.size;
+    manifest[file.path] = file.sha256;
+    if (batchBytes > 64 * 1024 * 1024) await flush();
+  }
+  await flush();
+  if (gone.length) {
+    await sandbox.run("bash", ["-c", `rm -f ${gone.map((p) => quote(`${DRIVE_DIR}/${p}`)).join(" ")}`]);
+    for (const path of gone) delete manifest[path];
+  }
+  await writeManifest(sandbox, manifest);
+  await sandbox.mark(DRIVE_SYNCED);
+  const copied = stale.length - skipped.length;
+  return [
+    copied && `copied ${copied} changed drive file${copied === 1 ? "" : "s"}`,
+    gone.length && `removed ${gone.length} deleted`,
+    skipped.length && `left out ${skipped.join(", ")} (over the 1 GB copy limit)`,
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+/** Saves the files written under /vercel/drive since the last sync to the company drive. Returns notes for the agent. */
+async function pushDrive(context: RunContext, sandbox: JobSandbox): Promise<{ saved: string[]; problems: string[] }> {
+  await sandbox.mark(DRIVE_SYNCING);
+  const changed = await sandbox.changedFiles(DRIVE_DIR, DRIVE_SYNCED);
+  const saved: string[] = [];
+  const problems: string[] = [];
+  if (changed.length) {
+    const manifest = await readManifest(sandbox);
+    for (const file of changed) {
+      let path: string;
+      try {
+        path = drivePath(file.path);
+      } catch (error) {
+        problems.push(`${file.path}: ${(error as Error).message}`);
+        continue;
+      }
+      if (file.size > MAX_DRIVE_FILE_BYTES) {
+        problems.push(`${path} is over ${MAX_DRIVE_FILE_BYTES / 1024 / 1024} MB, so it stays in this sandbox only`);
+        continue;
+      }
+      const bytes = await sandbox.readFile(`${DRIVE_DIR}/${file.path}`);
+      if (!bytes) continue;
+      const hash = sha256(bytes);
+      if (manifest[path] === hash) continue;
+      await writeDriveFile(context.organizationId, { path, bytes, taskId: context.taskId, agentId: context.agentId });
+      manifest[path] = hash;
+      saved.push(path);
+    }
+    await writeManifest(sandbox, manifest);
+  }
+  await sandbox.run("mv", ["-f", DRIVE_SYNCING, DRIVE_SYNCED]);
+  return { saved, problems };
+}
+
+function driveNote({ saved, problems }: { saved: string[]; problems: string[] }): string {
+  return [
+    saved.length ? `\nsaved to the company drive: ${saved.join(", ")}` : "",
+    problems.length ? `\nnot saved to the drive: ${problems.join("; ")}` : "",
+  ].join("");
+}
+
+/** Starts (or resumes) the job's sandbox for this run and brings its copy of the drive up to date. */
+export async function startSandbox(context: RunContext): Promise<string> {
+  "use step";
+  const sandbox = await open(context);
+  return pullDrive(context, sandbox);
+}
+
+// ---------------------------------------------------------------------------
+// Tools
+
+const formatLog = (result: CommandResult) =>
+  [`exit code ${result.exitCode}`, result.stdout && `stdout:\n${clip(result.stdout)}`, result.stderr && `stderr:\n${clip(result.stderr)}`]
+    .filter(Boolean)
+    .join("\n");
+
+const timedOut = (result: CommandResult) => result.exitCode === 137 || result.exitCode === -1;
+
+async function changedOutputs(sandbox: JobSandbox): Promise<{ path: string; size: number }[]> {
+  return (await sandbox.changedFiles(`${JOB_DIR}/outputs`, RUN_MARK)).slice(0, 50);
 }
 
 export async function runCode(
@@ -73,12 +217,11 @@ export async function runCode(
   const sandbox = await open(context);
   const path = `${JOB_DIR}/code/${input.filename}`;
   await sandbox.writeFiles([{ path, content: Buffer.from(input.code) }]);
-  await sandbox.run("touch", [`${JOB_DIR}/.mark`]);
+  await sandbox.mark(RUN_MARK);
   const result = await sandbox.run(INTERPRETERS[input.language], [path], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
   const changed = await changedOutputs(sandbox);
-  const log = [`exit code ${result.exitCode}`, result.stdout && `stdout:\n${clip(result.stdout)}`, result.stderr && `stderr:\n${clip(result.stderr)}`]
-    .filter(Boolean)
-    .join("\n");
+  const drive = await pushDrive(context, sandbox);
+  const log = formatLog(result);
   // Every script that runs is kept in the library as code, with the output of its latest run.
   await saveVersion(context.organizationId, {
     name: input.filename,
@@ -88,9 +231,9 @@ export async function runCode(
     agentId: context.agentId,
     note: clip(log, 4000),
   });
-  const timedOut = result.exitCode === 137 || result.exitCode === -1;
-  return `${log}${changed ? `\nnew or changed in outputs/: ${changed}` : ""}${
-    timedOut ? `\nThe script may have hit the ${COMMAND_TIMEOUT_MS / 1000}s limit; split the work into smaller steps.` : ""
+  const outputs = changed.map((f) => `${f.path} (${f.size} bytes)`).join(", ");
+  return `${log}${outputs ? `\nnew or changed in outputs/: ${outputs}` : ""}${driveNote(drive)}${
+    timedOut(result) ? `\nThe script may have hit the ${COMMAND_TIMEOUT_MS / 1000}s limit; split the work into smaller steps.` : ""
   }`;
 }
 
@@ -98,15 +241,14 @@ export async function runShell(context: RunContext, input: { command: string }):
   "use step";
   const sandbox = await open(context);
   const result = await sandbox.run("bash", ["-lc", input.command], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
-  return [`exit code ${result.exitCode}`, result.stdout && `stdout:\n${clip(result.stdout)}`, result.stderr && `stderr:\n${clip(result.stderr)}`]
-    .filter(Boolean)
-    .join("\n");
+  const drive = await pushDrive(context, sandbox);
+  return `${formatLog(result)}${driveNote(drive)}`;
 }
 
 export async function readSandboxFile(context: RunContext, input: { path: string }): Promise<string> {
   "use step";
   const sandbox = await open(context);
-  const bytes = await sandbox.readFile(jobPath(input.path));
+  const bytes = await sandbox.readFile(sandboxPath(input.path));
   if (!bytes) return `${input.path} doesn't exist.`;
   if (!isText(contentTypeFor(input.path)) || bytes.includes(0)) {
     return `${input.path} is a binary file (${bytes.length} bytes). Read it with code instead.`;
@@ -117,26 +259,31 @@ export async function readSandboxFile(context: RunContext, input: { path: string
 export async function writeSandboxFile(context: RunContext, input: { path: string; content: string }): Promise<string> {
   "use step";
   const sandbox = await open(context);
-  const path = jobPath(input.path);
+  const path = sandboxPath(input.path);
   await sandbox.run("mkdir", ["-p", path.slice(0, path.lastIndexOf("/"))]);
   await sandbox.writeFiles([{ path, content: Buffer.from(input.content) }]);
-  return `Wrote ${path}.`;
+  const drive = path.startsWith(`${DRIVE_DIR}/`) ? driveNote(await pushDrive(context, sandbox)) : "";
+  return `Wrote ${path}.${drive}`;
 }
 
-export async function listSandboxFiles(context: RunContext): Promise<string> {
+export async function listSandboxFiles(context: RunContext, input: { folder?: "job" | "drive" } = {}): Promise<string> {
   "use step";
   const sandbox = await open(context);
+  const dir = input.folder === "drive" ? DRIVE_DIR : JOB_DIR;
   const result = await sandbox.run("bash", [
     "-c",
-    `cd ${JOB_DIR} && find . -path ./.mark -prune -o -type f -printf '%P\\t%s bytes\\t%TY-%Tm-%Td %TH:%TM\\n' | sort | head -200`,
+    `cd ${dir} 2>/dev/null && find . -type f -not -path '*/.*' -printf '%P\\t%s bytes\\t%TY-%Tm-%Td %TH:%TM\\n' | sort | head -300`,
   ]);
-  return result.stdout.trim() || "The job folder is empty.";
+  return result.stdout.trim() || (input.folder === "drive" ? "The company drive is empty." : "The job folder is empty.");
 }
 
-export async function attachSandboxFile(context: RunContext, input: { path: string; note?: string }): Promise<string> {
-  "use step";
-  const sandbox = await open(context);
-  const path = jobPath(input.path);
+/** Saves a sandbox file to the job as a deliverable (xlsx recalculated first), and builds its preview. */
+async function attach(
+  context: RunContext,
+  sandbox: JobSandbox,
+  path: string,
+  note: string | undefined,
+): Promise<{ name: string; version: number; basedOn: number | null; unchanged: boolean } | string> {
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (!SAFE_NAME.test(name)) return "Give the file a simple name like portfolio-model.xlsx before attaching it.";
   if (/\.xlsx$/i.test(name)) {
@@ -144,30 +291,98 @@ export async function attachSandboxFile(context: RunContext, input: { path: stri
     await sandbox.run("bash", ["-c", `command -v recalc >/dev/null && recalc "${path}" || true`], { timeoutMs: 120_000 });
   }
   const bytes = await sandbox.readFile(path);
-  if (!bytes) return `${input.path} doesn't exist.`;
+  if (!bytes) return `${path} doesn't exist.`;
   const saved = await saveVersion(context.organizationId, {
     name,
     kind: "deliverable",
     bytes,
     taskId: context.taskId,
     agentId: context.agentId,
-    note: input.note,
+    note,
   });
-  if (saved.unchanged) return `${name} is unchanged since version ${saved.version}.`;
-  // Build the preview now, so the task page opens it instantly.
-  await versionPreview(context.organizationId, saved.versionId).catch((error) => console.error("Preview failed", error));
-  return `Attached ${name} as version ${saved.version}${saved.basedOn ? ` (replaces version ${saved.basedOn})` : ""}.`;
+  if (!saved.unchanged) {
+    // Build the preview now, so the task page opens it instantly.
+    await versionPreview(context.organizationId, saved.versionId).catch((error) => console.error("Preview failed", error));
+  }
+  return { name, version: saved.version, basedOn: saved.basedOn, unchanged: saved.unchanged };
+}
+
+export async function attachSandboxFile(context: RunContext, input: { path: string; note?: string }): Promise<string> {
+  "use step";
+  const sandbox = await open(context);
+  const result = await attach(context, sandbox, sandboxPath(input.path), input.note);
+  if (typeof result === "string") return result;
+  if (result.unchanged) return `${result.name} is unchanged since version ${result.version}.`;
+  return `Attached ${result.name} as version ${result.version}${result.basedOn ? ` (replaces version ${result.basedOn})` : ""}.`;
+}
+
+// ---------------------------------------------------------------------------
+// Replays: rerunning run.sh without a model
+
+export type ReplayResult =
+  | {
+      ok: true;
+      /** The last "SUMMARY: …" line run.sh printed. */
+      summary: string | null;
+      /** Deliverables updated, e.g. "option-flow.png (v6)". */
+      attached: string[];
+      /** Other files it wrote in outputs/, which aren't deliverables on the job. */
+      unattached: string[];
+      drive: string[];
+      log: string;
+    }
+  | { ok: false; reason: "no_script" | "failed"; log: string };
+
+export function summaryLine(stdout: string): string | null {
+  const lines = stdout.split("\n").filter((l) => /^\s*SUMMARY:/i.test(l));
+  return lines.length ? lines[lines.length - 1].replace(/^\s*SUMMARY:\s*/i, "").trim() || null : null;
 }
 
 /**
- * End of a run that used the sandbox: keep the job's notes and its code
- * (scripts, config, run.sh) in the library, so the job can be rebuilt if the
- * sandbox is ever lost, then stop the sandbox (its disk is kept).
+ * Reruns the job's run.sh: what a scheduled run or "Run again" does when the
+ * job has one. Outputs with the same name as a deliverable on the job become
+ * its next version.
+ */
+export async function replayScript(context: RunContext, label: string): Promise<ReplayResult> {
+  "use step";
+  const sandbox = await open(context);
+  await pullDrive(context, sandbox);
+  if (!(await sandbox.readFile(`${JOB_DIR}/run.sh`))) {
+    return { ok: false, reason: "no_script", log: "There is no run.sh in the job folder." };
+  }
+  await sandbox.mark(RUN_MARK);
+  const result = await sandbox.run("bash", [`${JOB_DIR}/run.sh`], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
+  const drive = await pushDrive(context, sandbox);
+  const log = `${formatLog(result)}${driveNote(drive)}${timedOut(result) ? `\nrun.sh may have hit the ${COMMAND_TIMEOUT_MS / 1000}s limit.` : ""}`;
+  if (result.exitCode !== 0) return { ok: false, reason: "failed", log };
+
+  const deliverables = new Set(
+    (await listTaskFiles(context.organizationId, context.taskId)).filter((f) => f.kind === "deliverable").map((f) => f.name.toLowerCase()),
+  );
+  const attached: string[] = [];
+  const unattached: string[] = [];
+  for (const file of await changedOutputs(sandbox)) {
+    if (file.path.includes("/") || !deliverables.has(file.path.toLowerCase())) {
+      unattached.push(file.path);
+      continue;
+    }
+    const saved = await attach(context, sandbox, `${JOB_DIR}/outputs/${file.path}`, label);
+    if (typeof saved !== "string" && !saved.unchanged) attached.push(`${saved.name} (v${saved.version})`);
+  }
+  return { ok: true, summary: summaryLine(result.stdout), attached, unattached, drive: drive.saved, log };
+}
+
+/**
+ * End of a run that used the sandbox: save anything new on the drive, keep the
+ * job's notes and its code (scripts, config, run.sh) in the library, so the
+ * job can be rebuilt if the sandbox is ever lost, then stop the sandbox (its
+ * disk is kept).
  */
 export async function closeSandbox(context: RunContext): Promise<void> {
   "use step";
   const sandbox = await sandboxes().find(sandboxNameFor(context.taskId));
   if (!sandbox) return;
+  await pushDrive(context, sandbox).catch((error) => console.error("Drive sync failed", error));
   const notes = await sandbox.readFile(`${JOB_DIR}/NOTES.md`).catch(() => null);
   if (notes) await saveMemory(context.taskId, notes.toString("utf8").slice(0, 50_000));
 

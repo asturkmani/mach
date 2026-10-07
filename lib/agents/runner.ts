@@ -15,6 +15,8 @@ import {
   recordFailure,
   reportText,
   saveFile,
+  scheduleJob,
+  unscheduleJob,
 } from "@/lib/agents/run-steps";
 import {
   attachSandboxFile,
@@ -23,6 +25,7 @@ import {
   readSandboxFile,
   runCode,
   runShell,
+  startSandbox,
   writeSandboxFile,
 } from "@/lib/agents/sandbox-steps";
 import { skillTool } from "@/lib/agents/skills";
@@ -72,13 +75,19 @@ const reportFields = {
     .describe("The steps done so far, one per line, oldest first, at most six lines. Send the whole list."),
 };
 
-type RunState = { outcome?: RunOutcome; usedSandbox?: boolean };
+type RunState = { outcome?: RunOutcome; usedSandbox?: boolean; started?: Promise<string> };
 
 function sandboxTools(context: RunContext, state: RunState) {
-  // Any sandbox tool starts (or resumes) the job's sandbox; it is closed when the run ends.
-  const using = <T>(work: Promise<T>) => {
+  // The first sandbox tool in a run starts (or resumes) the job's sandbox and
+  // syncs the company drive into it; it is closed when the run ends.
+  const using = async <T>(work: () => Promise<T>) => {
     state.usedSandbox = true;
-    return work;
+    state.started ??= startSandbox(context).catch((error) => {
+      state.started = undefined; // the next sandbox tool tries again
+      throw error;
+    });
+    await state.started;
+    return work();
   };
   return {
     run_code: tool({
@@ -89,36 +98,37 @@ function sandboxTools(context: RunContext, state: RunState) {
         language: z.enum(["python", "node", "bash"]),
         code: z.string().min(1),
       }),
-      execute: (input) => using(runCode(context, input)),
+      execute: (input) => using(() => runCode(context, input)),
     }),
     run_command: tool({
       description: "Run a shell command in the job folder, e.g. to install a package or run run.sh.",
       inputSchema: z.object({ command: z.string().min(1) }),
-      execute: (input) => using(runShell(context, input)),
+      execute: (input) => using(() => runShell(context, input)),
     }),
     read_file: tool({
-      description: "Read a text file in the job folder (a path relative to /vercel/job).",
+      description: "Read a text file in the job folder (a path relative to /vercel/job) or the company drive (/vercel/drive/…).",
       inputSchema: z.object({ path: z.string().min(1) }),
-      execute: (input) => using(readSandboxFile(context, input)),
+      execute: (input) => using(() => readSandboxFile(context, input)),
     }),
     write_file: tool({
-      description: "Write a text file in the job folder, e.g. config.yaml, run.sh or NOTES.md.",
+      description:
+        "Write a text file in the job folder, e.g. config.yaml, run.sh or NOTES.md, or on the company drive (/vercel/drive/…).",
       inputSchema: z.object({ path: z.string().min(1), content: z.string() }),
-      execute: (input) => using(writeSandboxFile(context, input)),
+      execute: (input) => using(() => writeSandboxFile(context, input)),
     }),
     list_files: tool({
-      description: "List the files in the job folder.",
-      inputSchema: z.object({}),
-      execute: () => using(listSandboxFiles(context)),
+      description: "List the files in the job folder, or on the company drive.",
+      inputSchema: z.object({ folder: z.enum(["job", "drive"]).optional().describe("job (the default) or drive.") }),
+      execute: (input) => using(() => listSandboxFiles(context, input)),
     }),
     attach_file: tool({
       description:
         "Attach a file from the sandbox (usually in outputs/) to the task as a deliverable people can open. A file with the same name as one already on the task becomes its next version.",
       inputSchema: z.object({
-        path: z.string().min(1).describe("Path relative to /vercel/job, e.g. outputs/portfolio-model.xlsx."),
+        path: z.string().min(1).describe("Path relative to /vercel/job, e.g. outputs/portfolio-model.xlsx, or on /vercel/drive."),
         note: z.string().optional().describe("What this version is, e.g. 'rules ABD' or '70/30 mix'."),
       }),
-      execute: (input) => using(attachSandboxFile(context, input)),
+      execute: (input) => using(() => attachSandboxFile(context, input)),
     }),
   } satisfies ToolSet;
 }
@@ -140,6 +150,23 @@ function runTools(context: RunContext, otherAgents: { id: string; name: string }
         content: z.string().min(1).max(200_000),
       }),
       execute: (input) => saveFile(context, input),
+    }),
+    set_schedule: tool({
+      description:
+        "Make this job repeat on a schedule, or change its schedule. Each run lands on this task and works in this job's sandbox.",
+      inputSchema: z.object({
+        cron: z.string().describe("Five-field cron in the timezone below, e.g. '0 16 * * 1-5' for weekdays at 16:00, '0 9 * * 1' for Mondays at 09:00."),
+        timezone: z.string().describe("IANA timezone, e.g. Europe/London: the one people asked for, else the company's."),
+        mode: z
+          .enum(["script", "agent"])
+          .describe("script: each run replays run.sh without you, and you're woken only if it fails. agent: you do the job each run."),
+      }),
+      execute: (input) => scheduleJob(context, input),
+    }),
+    stop_schedule: tool({
+      description: "Stop this job from repeating.",
+      inputSchema: z.object({}),
+      execute: () => unscheduleJob(context),
     }),
     ask: tool({
       description: "End your run with a question for the people on the task. They answer in the thread.",

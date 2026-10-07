@@ -17,6 +17,8 @@ export type TaskView = {
   updatedAt: string;
   running: boolean;
   runAgent: string | null;
+  /** A recurring job. */
+  repeats: boolean;
   people: { id: string; name: string }[];
   agents: { id: string; name: string; kind: "defined" | "worker" }[];
 };
@@ -39,6 +41,7 @@ export function toView(task: Task, now = Date.now()): TaskView {
     updatedAt: new Date(task.updatedAt).toISOString(),
     running,
     runAgent: running ? (agents.find((a) => a.id === task.runAgentId)?.name ?? null) : null,
+    repeats: task.repeats,
     people: task.members.filter((m) => m.type === "person").map((m) => ({ id: m.id, name: m.name })),
     agents: agents.map((m) => ({ id: m.id, name: m.name, kind: m.type === "agent" ? m.kind : "worker" })),
   };

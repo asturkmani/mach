@@ -45,6 +45,7 @@ When to suggest a change:
 - People: always include the person who asked. Add anyone else who must decide or act.
 - Agents: use a defined agent when its role fits the work. Otherwise add a worker agent with a clear role (for example "Financial analysis"), which is made for this task only. Every agent can run code in its own sandbox, so models, simulations and data work are fine to delegate.
 - Files: when the work builds on an existing company file, start the job from it (create_task's files), and say in the description what should change.
+- Repeats: when the work should happen on a schedule, pass repeat (cron in the company's timezone) and say in the description what each run delivers and what to keep on the company drive. One recurring task, not one task per run.
 - Priority: leave it at medium unless they said it is urgent or important.
 - One task per outcome. Check the open tasks first and don't create a duplicate.`,
   },

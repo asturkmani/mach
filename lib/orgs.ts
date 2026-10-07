@@ -8,6 +8,8 @@ export type Organization = {
   name: string;
   website: string | null;
   domain: string | null;
+  /** IANA name, e.g. Europe/London, for schedules. */
+  timezone: string | null;
   onboardingCompletedAt: Date | null;
 };
 
@@ -16,16 +18,18 @@ type OrgRow = {
   name: string;
   website: string | null;
   domain: string | null;
+  timezone: string | null;
   onboarding_completed_at: Date | null;
 };
 
-const ORG_COLUMNS = "id, name, website, domain, onboarding_completed_at";
+const ORG_COLUMNS = "id, name, website, domain, timezone, onboarding_completed_at";
 
 const toOrg = (row: OrgRow): Organization => ({
   id: row.id,
   name: row.name,
   website: row.website,
   domain: row.domain,
+  timezone: row.timezone,
   onboardingCompletedAt: row.onboarding_completed_at,
 });
 
@@ -68,5 +72,13 @@ export async function completeOnboarding(id: string): Promise<void> {
   await getDb().query(
     "update organizations set onboarding_completed_at = coalesce(onboarding_completed_at, now()) where id = $1",
     [id],
+  );
+}
+
+/** Records the company's timezone the first time a browser reports one; later changes are explicit. */
+export async function rememberTimezone(id: string, timezone: string, { replace = false } = {}): Promise<void> {
+  await getDb().query(
+    `update organizations set timezone = $2 where id = $1 and ($3 or timezone is null)`,
+    [id, timezone, replace],
   );
 }

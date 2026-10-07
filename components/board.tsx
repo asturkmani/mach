@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -110,6 +110,7 @@ export function Board({ tasks }: { tasks: TaskView[] }) {
                     <span className="flex items-center gap-2">
                       {task.running && <LoaderCircle size={12} className="spin-slow text-accent" />}
                       {task.laterUntil && <span className="label text-faint">Later</span>}
+                      {task.repeats && <Repeat size={12} className="text-faint" aria-label="Repeats" />}
                       <PriorityMark priority={task.priority} />
                     </span>
                   </div>

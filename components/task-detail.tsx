@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArchiveRestore, ArrowLeft, LoaderCircle, Play, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, LoaderCircle, Play, Repeat, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
@@ -22,6 +22,7 @@ import {
   updateTaskTextAction,
 } from "@/app/(app)/tasks/actions";
 import { CodeSection, FilesSection, type FileView, type LibraryOption } from "@/components/task-files";
+import { RepeatsPanel, type ScheduleView } from "@/components/task-schedule";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
 import { Face, PriorityMark, useStoredFlag, When } from "@/components/ui";
 import { byline, type TaskView } from "@/lib/task-view";
@@ -35,6 +36,10 @@ type Detail = TaskView & {
   memory: string;
   archived: boolean;
   hasSandbox: boolean;
+  schedule: ScheduleView | null;
+  /** The job has a run.sh that "Run script again" can replay. */
+  canRerun: boolean;
+  timezone: string | null;
   createdAt: string;
   members: TaskMember[];
 };
@@ -188,6 +193,11 @@ export function TaskDetail({
           <span className="label">#{task.number}</span>
           {task.kind === "suggestion" && <span className="label text-accent">Profile suggestion</span>}
           {task.archived && <span className="label text-faint">Archived</span>}
+          {task.schedule && (
+            <span className="label flex items-center gap-1 text-faint" title={task.schedule.description}>
+              <Repeat size={11} /> {task.schedule.paused ? "Repeats (paused)" : "Repeats"}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {task.kind === "task" && (
@@ -356,6 +366,17 @@ export function TaskDetail({
               </select>
             </div>
           </Property>
+          {task.kind === "task" && (
+            <Property label="Repeats">
+              <RepeatsPanel
+                taskId={task.id}
+                schedule={task.schedule}
+                canRerun={task.canRerun}
+                busy={task.running || task.archived}
+                defaultTimezone={task.timezone}
+              />
+            </Property>
+          )}
           {task.laterUntil && (
             <Property label="Later">
               <p className="text-sm">

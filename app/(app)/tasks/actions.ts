@@ -12,10 +12,14 @@ import {
   archiveTask,
   unarchiveTask,
   createTaskWithTeam,
+  pauseTaskSchedule,
   pickOption,
   replyToTask,
+  rerunScript,
   runNow,
+  scheduleTask,
   setStatus,
+  unscheduleTask,
   WorkError,
   type Actor,
 } from "@/lib/work";
@@ -245,5 +249,39 @@ export async function detachFileAction(taskId: string, fileId: string): Promise<
     const task = await getTask(organizationId, taskId);
     if (!task) throw new WorkError("That task no longer exists.");
     await detachFromTask(taskId, fileId);
+  });
+}
+
+/** Makes a job repeat, or changes its schedule. */
+export async function setScheduleAction(
+  taskId: string,
+  input: { cron: string; timezone: string; mode: "script" | "agent" },
+): Promise<TaskActionResult> {
+  const { organizationId, by } = await actor();
+  if (input.mode !== "script" && input.mode !== "agent") return { error: "Pick how each run works." };
+  return attempt(async () => {
+    await scheduleTask(organizationId, taskId, by, input);
+  });
+}
+
+export async function pauseScheduleAction(taskId: string, paused: boolean): Promise<TaskActionResult> {
+  const { organizationId, by } = await actor();
+  return attempt(async () => {
+    await pauseTaskSchedule(organizationId, taskId, by, paused);
+  });
+}
+
+export async function removeScheduleAction(taskId: string): Promise<TaskActionResult> {
+  const { organizationId, by } = await actor();
+  return attempt(async () => {
+    await unscheduleTask(organizationId, taskId, by);
+  });
+}
+
+/** Replays the job's run.sh now. */
+export async function rerunAction(taskId: string): Promise<TaskActionResult> {
+  const { organizationId, by } = await actor();
+  return attempt(async () => {
+    await rerunScript(organizationId, taskId, by);
   });
 }

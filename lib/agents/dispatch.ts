@@ -3,8 +3,12 @@ import "server-only";
 import { start } from "workflow/api";
 
 import { runAgentChain, type RunOptions } from "@/lib/agents/runner";
-import { agentsOn, getTask, type Task, type TaskMessage } from "@/lib/tasks";
+import { runScheduled, type RunTrigger } from "@/lib/agents/scheduled";
+import { agentsOn, getTask } from "@/lib/tasks";
 import { agentRunWorkflow } from "@/workflows/agent-run";
+import { scheduledRunWorkflow } from "@/workflows/scheduled-run";
+
+export { agentToWake } from "@/lib/tasks";
 
 // Starts agent runs as durable workflows (Vercel Workflow), so they keep
 // going after the request that started them and can run for as long as the
@@ -28,18 +32,14 @@ export async function dispatchRun(organizationId: string, taskId: string, agentI
   await start(agentRunWorkflow, [organizationId, taskId, agentId]);
 }
 
-/**
- * Which agent should pick the task up after a person speaks: one they
- * mentioned by name, else the agent that last asked or reported, else the
- * first active agent on the task.
- */
-export function agentToWake(task: Task, messages: TaskMessage[], text = ""): string | undefined {
-  const active = agentsOn(task).filter((a) => a.status === "active");
-  const mentioned = active.find((a) => text.toLowerCase().includes(`@${a.name.toLowerCase()}`));
-  if (mentioned) return mentioned.id;
-  const last = [...messages].reverse().find((m) => m.agentId && (m.kind === "ask" || m.kind === "result"));
-  if (last && active.some((a) => a.id === last.agentId)) return last.agentId!;
-  return active[0]?.id;
+/** Starts one run of a recurring job, or a "Run again" of its script. */
+export async function dispatchScheduled(organizationId: string, taskId: string, trigger: RunTrigger): Promise<void> {
+  if (inline) {
+    const { options } = inline;
+    inline.schedule(() => runScheduled(organizationId, taskId, trigger, options));
+    return;
+  }
+  await start(scheduledRunWorkflow, [organizationId, taskId, trigger]);
 }
 
 /** Starts the first agent on a task that is ready to be worked on. */
