@@ -123,7 +123,8 @@ try:
             storage_state=state_path if os.path.exists(state_path) else None, viewport={"width": 1366, "height": 900})
         page = context.new_page()
         status("signing_in")
-        page.goto(cfg.get("checkUrl") or cfg["loginUrl"], wait_until="domcontentloaded")
+        check = cfg.get("checkUrl") or creds.get("landingUrl")
+        page.goto(check or cfg["loginUrl"], wait_until="domcontentloaded")
         settle(page)
         if not signed_in(page):
             if not visible(page, PASSWORD) and not visible(page, USER):
@@ -154,6 +155,9 @@ try:
             if not signed_in(page):
                 raise RuntimeError("still not signed in (" + page.url + ") " + page_error(page))
         context.storage_state(path=state_path)
+        heading = visible(page, ["h1", "h2"])
+        with open(base + ".landing", "w") as f:
+            json.dump({"url": page.url, "title": page.title(), "heading": heading.inner_text().strip()[:200] if heading else ""}, f)
         status("ok")
         browser.close()
 except Exception as error:
@@ -187,15 +191,33 @@ async function waitForHelper(sandbox: JobSandbox, slug: string, seconds: number)
   return result.stdout.trim();
 }
 
+type Landing = { url: string; title: string; heading: string };
+
+async function readLanding(sandbox: JobSandbox, slug: string): Promise<Landing | null> {
+  const raw = await sandbox.readFile(`${LOGIN_DIR}/${slug}.landing`).catch(() => null);
+  try {
+    return raw ? (JSON.parse(raw.toString("utf8")) as Landing) : null;
+  } catch {
+    return null;
+  }
+}
+
+function signedInText(name: string, slug: string, landing: Landing | null, already = false): string {
+  const statePath = `${LOGIN_DIR}/${slug}.json`;
+  const where = landing
+    ? ` Landed on ${landing.url}${landing.title ? ` ("${landing.title}"` : ""}${landing.heading ? `${landing.title ? ", " : " ("}heading "${landing.heading}"` : ""}${landing.title || landing.heading ? ")" : ""}.`
+    : "";
+  return `${already ? `Already signed in to ${name} in this job.` : `Signed in to ${name}.`}${where} The session is in ${statePath}: open pages with browser.new_context(storage_state="${statePath}"), start from the page you landed on rather than the sign-in page, and save the session back with context.storage_state(path="${statePath}") when you're done, so later runs stay signed in. Only call browser_login again (with again: true) if the site has signed you out.`;
+}
+
 async function finish(context: RunContext, sandbox: JobSandbox, slug: string, name: string, status: string): Promise<LoginResult> {
   const statePath = `${LOGIN_DIR}/${slug}.json`;
   if (status === "ok") {
     const state = await sandbox.readFile(statePath);
-    if (state) await saveLoginSession(context.organizationId, slug, state.toString("utf8"));
+    const landing = await readLanding(sandbox, slug);
+    if (state) await saveLoginSession(context.organizationId, slug, state.toString("utf8"), landing?.url);
     await setPendingLogin(context.taskId, null);
-    return {
-      text: `Signed in to ${name}. The session is in ${statePath}: open it with browser.new_context(storage_state="${statePath}") and save it back with context.storage_state(path="${statePath}") when you're done, so later runs stay signed in.`,
-    };
+    return { text: signedInText(name, slug, landing) };
   }
   if (status === "needs_code") {
     await setPendingLogin(context.taskId, slug);
@@ -212,7 +234,7 @@ async function finish(context: RunContext, sandbox: JobSandbox, slug: string, na
 }
 
 /** Signs the job's browser in to a website login, or finishes a sign-in that was waiting for a code. */
-export async function browserLogin(context: RunContext, input: { login: string }): Promise<LoginResult> {
+export async function browserLogin(context: RunContext, input: { login: string; again?: boolean }): Promise<LoginResult> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.login);
   if (!integration || integration.kind !== "login" || !allowedFor(integration, context.agentId)) {
@@ -236,6 +258,10 @@ export async function browserLogin(context: RunContext, input: { login: string }
     return finish(context, sandbox, slug, name, await waitForHelper(sandbox, slug, 90));
   }
 
+  if (current === "ok" && !input.again && (await sandbox.readFile(`${LOGIN_DIR}/${slug}.json`))) {
+    return { text: signedInText(name, slug, await readLanding(sandbox, slug), true) };
+  }
+
   const login = await readLogin(context.organizationId, integration.id);
   const config = integration.config as LoginConfig;
   const creds = `/tmp/mach-login-${slug}-${crypto.randomUUID()}.json`;
@@ -245,7 +271,7 @@ export async function browserLogin(context: RunContext, input: { login: string }
     { path: WAITER, content: Buffer.from(LOGIN_WAIT_SH) },
     { path: `${LOGIN_DIR}/${slug}.status`, content: Buffer.from("starting") },
     // A saved session from an earlier run or job, so the site may not ask again.
-    ...(login.session && !(await sandbox.readFile(`${LOGIN_DIR}/${slug}.json`))
+    ...(login.session && (input.again || !(await sandbox.readFile(`${LOGIN_DIR}/${slug}.json`)))
       ? [{ path: `${LOGIN_DIR}/${slug}.json`, content: Buffer.from(login.session) }]
       : []),
     {
@@ -256,6 +282,8 @@ export async function browserLogin(context: RunContext, input: { login: string }
           username: login.secrets.username ?? "",
           password: login.secrets.password ?? "",
           totp: login.secrets.totp ?? "",
+          // Where an earlier sign-in landed: a page to check whether the saved session still works.
+          landingUrl: login.landingUrl ?? "",
         }),
       ),
     },

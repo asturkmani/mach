@@ -379,26 +379,27 @@ export async function scrubConversations(organizationId: string, secrets: string
 }
 
 /** A login's credentials and saved browser session (Playwright storage state), for the sign-in helper only. */
-export async function readLogin(organizationId: string, id: string): Promise<{ secrets: Secrets; session: string | null }> {
+export async function readLogin(
+  organizationId: string,
+  id: string,
+): Promise<{ secrets: Secrets; session: string | null; landingUrl: string | null }> {
   const [row] = await getDb().query<{ secrets: Uint8Array | null; session: Uint8Array | null }>(
     "select secrets, session from integrations where organization_id = $1 and id = $2 and kind = 'login'",
     [organizationId, id],
   );
   if (!row?.secrets) throw new IntegrationError("Its credentials haven't been entered yet.");
-  return {
-    secrets: unseal<Secrets>(row.secrets),
-    session: row.session ? unseal<{ state: string }>(row.session).state : null,
-  };
+  const session = row.session ? unseal<{ state: string; landingUrl?: string }>(row.session) : null;
+  return { secrets: unseal<Secrets>(row.secrets), session: session?.state ?? null, landingUrl: session?.landingUrl ?? null };
 }
 
 /** Keeps a signed-in browser session (sealed), so later runs and jobs skip the sign-in. */
-export async function saveLoginSession(organizationId: string, slug: string, state: string): Promise<void> {
+export async function saveLoginSession(organizationId: string, slug: string, state: string, landingUrl?: string): Promise<void> {
   await getDb().query(
     `update integrations set session = $3, session_expires_at = null, last_used_at = now(),
        status = case when status = 'disabled' then status else 'connected' end,
        status_detail = case when status = 'disabled' then status_detail else 'Signed in; the session is saved.' end
      where organization_id = $1 and slug = $2 and kind = 'login'`,
-    [organizationId, slug, seal({ state })],
+    [organizationId, slug, seal({ state, landingUrl })],
   );
 }
 

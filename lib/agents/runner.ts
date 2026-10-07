@@ -183,7 +183,10 @@ function browserTools(
     browser_login: tool({
       description:
         "Sign this job's browser in to one of the company's website logins with its saved credentials (you never see them), or finish a sign-in that was waiting for a code. Returns where the signed-in session is for your Playwright scripts. If the site asks for a sign-in code, the people on the task are asked for it and your run ends; call this again on your next run.",
-      inputSchema: z.object({ login: z.enum(logins as [string, ...string[]]) }),
+      inputSchema: z.object({
+        login: z.enum(logins as [string, ...string[]]),
+        again: z.boolean().optional().describe("Sign in again even though this job already did, because the site signed you out."),
+      }),
       execute: (input) =>
         using(async () => {
           const result = await browserLogin(context, input);
