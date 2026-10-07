@@ -103,7 +103,7 @@ export async function replyToTask(organizationId: string, taskId: string, by: Ac
   const agentId = agentToWake(task, await listMessages(task.id), body);
   if (agentId && !CLOSED_STATUSES.includes(task.status) && task.kind === "task") {
     await updateTask(organizationId, task.id, { status: "ready", laterUntil: null, options: [] });
-    dispatchRun(organizationId, task.id, agentId);
+    await dispatchRun(organizationId, task.id, agentId);
   }
   return (await getTask(organizationId, task.id))!;
 }
@@ -202,7 +202,7 @@ export async function runNow(organizationId: string, taskId: string, agentId: st
   await resetAgentTurns(task.id);
   await updateTask(organizationId, task.id, { status: "ready" });
   await addMessage(task.id, { author: by.name, personId: by.personId, kind: "event", body: "Started a run." });
-  dispatchRun(organizationId, task.id, agentId);
+  await dispatchRun(organizationId, task.id, agentId);
 }
 
 // ---------------------------------------------------------------------------

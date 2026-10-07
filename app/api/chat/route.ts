@@ -8,7 +8,8 @@ import { loadProfile } from "@/lib/profile/store";
 import { getSessionContext } from "@/lib/session";
 import { listTasks } from "@/lib/tasks";
 
-// Long enough for the conversation, and for agent runs it starts in the background.
+// Long enough for a reply that searches the web. Agent runs it starts are
+// separate workflows (see lib/agents/dispatch.ts).
 export const maxDuration = 300;
 
 const generateMessageId = createIdGenerator({ prefix: "msg", size: 16 });

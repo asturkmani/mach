@@ -478,6 +478,11 @@ export async function claimRun(organizationId: string, taskId: string, agentId: 
   return rows.length > 0;
 }
 
+/** Keeps a long run's lease fresh, so it isn't mistaken for a dead one. */
+export async function renewRun(taskId: string, agentId: string): Promise<void> {
+  await getDb().query("update tasks set run_started_at = now() where id = $1 and run_agent_id = $2", [taskId, agentId]);
+}
+
 export async function releaseRun(taskId: string, agentId: string): Promise<void> {
   await getDb().query(
     "update tasks set run_agent_id = null, run_started_at = null where id = $1 and run_agent_id = $2",

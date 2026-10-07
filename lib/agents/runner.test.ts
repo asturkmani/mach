@@ -1,13 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("next/server", () => ({ after: vi.fn() }));
+import { MockLanguageModelV4 } from "ai/test";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { agentToWake, dispatchRun, setScheduler } from "@/lib/agents/dispatch";
 import { MAX_AGENT_TURNS, normalizeOptions, runAgentOnTask, taskBrief } from "@/lib/agents/runner";
 import { createAgent, createWorker } from "@/lib/agents/store";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
-import { addMessage, createTask, getTask, listMessages, listOutputs, updateTask } from "@/lib/tasks";
+import { addMessage, createTask, getTask, listMessages, listOutputs } from "@/lib/tasks";
 import { scriptedModel, type Step } from "@/test/scripted-model";
 import { useTestDb } from "@/test/db";
 
@@ -107,29 +106,33 @@ describe("agent runs", () => {
   it("hands off to another agent on the task, which runs next", async () => {
     const { analyst, task } = await setUp();
     const writer = await createWorker(ORG, "Writing");
-    await updateTask(ORG, task.id, {});
     const { addMember } = await import("@/lib/tasks");
     await addMember(task.id, { agentId: writer.id });
 
-    const steps: Record<string, Step[]> = {
-      [analyst.id]: [[["hand_off", { to: writer.name, note: "Write it up.", summary: "Numbers done, writing up." }]]],
-      [writer.id]: [[["finish", { summary: "Write-up ready.", report: "Here it is." }]]],
+    // One model for both agents: each one's instructions say who it is.
+    const scripts = {
+      [analyst.name]: scriptedModel([[["hand_off", { to: writer.name, note: "Write it up.", summary: "Numbers done, writing up." }]]]),
+      [writer.name]: scriptedModel([[["finish", { summary: "Write-up ready.", report: "Here it is." }]]]),
     };
     const ran: string[] = [];
-    const work: Promise<void>[] = [];
-    setScheduler((job) => work.push(job()));
-    const { runAgentOnTask: realRun } = await import("@/lib/agents/runner");
-    // Run each agent with its own script.
-    vi.spyOn(await import("@/lib/agents/runner"), "runAgentOnTask").mockImplementation(async (org, id, agentId) => {
-      ran.push(agentId);
-      return realRun(org, id, agentId, { model: scriptedModel(steps[agentId]), research: false });
+    const model = new MockLanguageModelV4({
+      doGenerate: async (call) => {
+        const name = Object.keys(scripts).find((n) => JSON.stringify(call.prompt).includes(`You are ${n},`))!;
+        ran.push(name);
+        return scripts[name].doGenerate(call);
+      },
     });
+    const work: Promise<void>[] = [];
+    setScheduler((job) => work.push(job()), { model, research: false });
 
-    dispatchRun(ORG, task.id, analyst.id);
+    await dispatchRun(ORG, task.id, analyst.id);
     await Promise.all(work);
-    expect(ran).toEqual([analyst.id, writer.id]);
+    expect(ran).toEqual([analyst.name, writer.name]);
     expect(await getTask(ORG, task.id)).toMatchObject({ status: "review", summary: "Write-up ready." });
-    vi.restoreAllMocks();
+    expect((await listMessages(task.id)).map((m) => [m.author, m.kind])).toEqual([
+      ["Analyst", "update"],
+      ["Writing worker", "result"],
+    ]);
   });
 
   it("parks the task for a person when a run fails or agents loop", async () => {

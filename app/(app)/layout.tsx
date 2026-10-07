@@ -9,10 +9,6 @@ import { loadProfile } from "@/lib/profile/store";
 import { requireAppContext } from "@/lib/session";
 import { anyRunning, countInbox, listInProgress, listSuggestionStatuses } from "@/lib/tasks";
 
-// Agent runs started from this section's server actions continue after the
-// response (see lib/agents/dispatch.ts) and may take a few minutes.
-export const maxDuration = 300;
-
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { organization, user, person, isAdmin } = await requireAppContext();
   const [chat, profile, people, agents, inboxCount, inProgress, suggestionStatus, running] = await Promise.all([

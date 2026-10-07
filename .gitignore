@@ -45,3 +45,9 @@ next-env.d.ts
 
 # local scratch output (old file-based company profile)
 /data/
+
+# workflow (generated routes and local run data)
+/app/.well-known/workflow/
+/.workflow-data/
+/.workflow-vitest/
+/.swc

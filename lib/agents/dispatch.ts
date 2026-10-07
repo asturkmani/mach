@@ -1,50 +1,31 @@
 import "server-only";
 
-import { after } from "next/server";
+import { start } from "workflow/api";
 
-import { runAgentOnTask, type RunOptions } from "@/lib/agents/runner";
-import { agentsOn, countPersonComments, getTask, type Task, type TaskMessage } from "@/lib/tasks";
+import { runAgentChain, type RunOptions } from "@/lib/agents/runner";
+import { agentsOn, getTask, type Task, type TaskMessage } from "@/lib/tasks";
+import { agentRunWorkflow } from "@/workflows/agent-run";
 
-// Starts agent runs in the background, after the response that triggered them
-// has been sent. A run that hands off to another agent on the same task starts
-// that agent's run straight away.
+// Starts agent runs as durable workflows (Vercel Workflow), so they keep
+// going after the request that started them and can run for as long as the
+// work takes.
 
 type Work = () => Promise<void>;
 
-let schedule: (work: Work) => void = (work) => after(work);
-let runOptions: RunOptions = {};
+let inline: { schedule: (work: Work) => void; options: RunOptions } | null = null;
 
-/** Tests run the work inline (or capture it) instead of using after(). */
-export function setScheduler(next: ((work: Work) => void) | null, options: RunOptions = {}): void {
-  schedule = next ?? ((work) => after(work));
-  runOptions = options;
+/** Tests run the work inline (or capture it) instead of starting a workflow. */
+export function setScheduler(schedule: ((work: Work) => void) | null, options: RunOptions = {}): void {
+  inline = schedule ? { schedule, options } : null;
 }
 
-export function dispatchRun(organizationId: string, taskId: string, agentId: string): void {
-  schedule(async () => {
-    let next: string | undefined = agentId;
-    while (next) {
-      const current: string = next;
-      try {
-        const commentsBefore = await countPersonComments(taskId);
-        const outcome = await runAgentOnTask(organizationId, taskId, current, runOptions);
-        if (outcome.type === "handed_off") {
-          next = outcome.agentId;
-        } else if (
-          (outcome.type === "asked" || outcome.type === "finished") &&
-          (await countPersonComments(taskId)) > commentsBefore
-        ) {
-          // Someone replied while the agent was working; it didn't see that, so it goes again.
-          next = current;
-        } else {
-          next = undefined;
-        }
-      } catch (error) {
-        console.error(`Agent run on task ${taskId} failed`, error);
-        next = undefined;
-      }
-    }
-  });
+export async function dispatchRun(organizationId: string, taskId: string, agentId: string): Promise<void> {
+  if (inline) {
+    const { options } = inline;
+    inline.schedule(() => runAgentChain(organizationId, taskId, agentId, options));
+    return;
+  }
+  await start(agentRunWorkflow, [organizationId, taskId, agentId]);
 }
 
 /**
@@ -67,6 +48,6 @@ export async function startIfReady(organizationId: string, taskId: string): Prom
   if (!task || task.status !== "ready" || task.runStartedAt) return false;
   const agent = agentsOn(task).find((a) => a.status === "active");
   if (!agent) return false;
-  dispatchRun(organizationId, task.id, agent.id);
+  await dispatchRun(organizationId, task.id, agent.id);
   return true;
 }

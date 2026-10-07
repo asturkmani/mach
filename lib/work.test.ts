@@ -1,7 +1,5 @@
 import { MockLanguageModelV4 } from "ai/test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("next/server", () => ({ after: vi.fn() }));
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { setScheduler } from "@/lib/agents/dispatch";
 import { createAgent } from "@/lib/agents/store";

@@ -25,7 +25,7 @@ Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres 
 8. **Chief of Staff panel** on the right of every page (<kbd>C</kbd>). Ask it questions or tell it what needs doing; it creates tasks with the right people and agents. As it learns things about the company in conversation it suggests profile updates, which you apply or dismiss from a card or your inbox. It loads short playbooks ("skills") for writing the profile, writing tasks, designing agents, research and financial analysis.
 9. **Keyboard first**: <kbd>J</kbd>/<kbd>K</kbd> move, <kbd>Enter</kbd> opens, <kbd>E</kbd> approves the recommendation or marks done, <kbd>1</kbd>–<kbd>3</kbd> pick an option, <kbd>R</kbd> reply, <kbd>L</kbd> later, <kbd>Z</kbd> undo, <kbd>N</kbd> new task, <kbd>S</kbd> summary, <kbd>/</kbd> search, <kbd>⌘K</kbd> everything else, <kbd>?</kbd> all shortcuts. Light and dark themes.
 
-Agent runs start in the background after the request that triggered them (Next.js `after()`), hold a lease on the task so only one runs at a time, and stop after six agent turns in a row without a person, so agents can't hand work back and forth forever.
+Agent runs are durable [Vercel Workflow](https://workflow-sdk.dev) runs (`workflows/agent-run.ts`). Every model call and every database change is its own step, retried on failure, so a run can take as long as the work needs instead of one function's time limit. Runs hold a lease on the task so only one runs at a time, pick up replies that arrive mid-run, and stop after six agent turns in a row without a person, so agents can't hand work back and forth forever. Locally, runs use Workflow's local world (data in `.workflow-data/`); inspect them with `npx workflow web` or `npx workflow inspect runs`.
 
 The company profile is one markdown document per company, stored in Postgres. Its people section is generated from the `people` table.
 
@@ -93,7 +93,8 @@ pnpm build
 | `app/(app)/agents/`, `team/`, `company/` | Agents, team and company profile pages |
 | `app/api/chat/route.ts` | Streams the Chief of Staff's replies for the signed-in company |
 | `lib/agents/chief-of-staff.ts` | Chief of Staff instructions and tools |
-| `lib/agents/runner.ts`, `dispatch.ts` | Runs an agent on a task with everything on it; starts runs in the background |
+| `workflows/agent-run.ts` | The durable workflow an agent run executes in |
+| `lib/agents/runner.ts`, `run-steps.ts`, `prompts.ts`, `dispatch.ts` | Agent runs: orchestration (WorkflowAgent), their durable steps, what the agent reads, and starting runs |
 | `lib/agents/skills.ts`, `templates.ts`, `store.ts` | Skills (playbooks), agent templates and agent storage |
 | `lib/tasks.ts`, `lib/work.ts` | Task storage, and what people and agents do to tasks |
 | `lib/agents/history.ts`, `lib/chats.ts` | Stored chat history: loading, repairing, validating and saving |
