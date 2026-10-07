@@ -188,7 +188,8 @@ Your sandbox (for calculations, models, data and code):
 - Keep NOTES.md current before you finish: what each script does, how to rerun it, the variants you tried with their key results, and decisions people made.
 
 The company drive (/vercel/drive):
-- A folder every job in the company shares, kept in storage, so data one run collects is there for the next run and for other jobs. Put datasets worth reusing there, in folders named for what they hold (/vercel/drive/option-flow/2026-10-07.csv, /vercel/drive/prices/mu.parquet). Read what other jobs left before fetching it again. Deliverables for people still go in outputs/ with attach_file.
+- A folder every job in the company shares, kept in storage, so data one run collects is there for the next run and for other jobs. Put datasets worth reusing there, in folders named for what they hold (/vercel/drive/option-flow/2026-10-07.csv, /vercel/drive/prices/mu.parquet). Read what other jobs left before fetching it again.
+- The drive is not how you deliver: whatever people asked for (a CSV, a chart, a model) goes in outputs/ and is attached with attach_file, even when a copy also goes on the drive. Write outputs/ first, then copy to the drive if others will reuse it.
 - It syncs by itself: what changed on the drive is copied in when your sandbox starts, and files you write there are saved after each command. Files over 100 MB stay in this sandbox only. Deleting a file here doesn't remove it from the drive; never overwrite another job's data unless that's the point.
 
 Recurring jobs:
