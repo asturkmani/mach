@@ -22,7 +22,9 @@ import {
   updateTaskTextAction,
 } from "@/app/(app)/tasks/actions";
 import { CodeSection, FilesSection, type FileView, type LibraryOption } from "@/components/task-files";
+import { MentionTextarea, type MentionCandidate } from "@/components/mention-textarea";
 import { RepeatsPanel, type ScheduleView } from "@/components/task-schedule";
+import { linkMentions } from "@/lib/mentions";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
 import { Face, PriorityMark, useStoredFlag, When } from "@/components/ui";
 import { byline, type TaskView } from "@/lib/task-view";
@@ -180,6 +182,13 @@ export function TaskDetail({
 
   const agentMembers = task.members.filter((m): m is Extract<TaskMember, { type: "agent" }> => m.type === "agent");
   const personMembers = task.members.filter((m) => m.type === "person");
+  // Everyone who can be @-mentioned: the company's people and agents, plus agents made for this task.
+  const mentionable: MentionCandidate[] = [
+    ...people.map((p) => ({ id: p.id, name: p.name, kind: "person" as const, detail: p.role })),
+    ...agents.map((a) => ({ id: a.id, name: a.name, kind: "agent" as const, detail: a.role })),
+    ...agentMembers.filter((m) => !agents.some((a) => a.id === m.id)).map((m) => ({ id: m.id, name: m.name, kind: "agent" as const, detail: "Worker" })),
+  ];
+  const mentionNames = mentionable.map((m) => m.name);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -287,7 +296,7 @@ export function TaskDetail({
               <p className="label mb-4">Thread</p>
               <ol className="space-y-5">
                 {messages.map((message) => (
-                  <ThreadMessage key={message.id} message={message} />
+                  <ThreadMessage key={message.id} message={message} names={mentionNames} />
                 ))}
               </ol>
             </section>
@@ -301,11 +310,12 @@ export function TaskDetail({
                 }}
               >
                 <div className="border border-line bg-raised focus-within:border-muted">
-                  <textarea
+                  <MentionTextarea
                     ref={replyRef}
                     autoFocus={focusReply}
                     value={reply}
-                    onChange={(e) => setReply(e.target.value)}
+                    onValueChange={setReply}
+                    candidates={mentionable}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                         e.preventDefault();
@@ -315,8 +325,8 @@ export function TaskDetail({
                     rows={3}
                     placeholder={
                       agentMembers.length
-                        ? `Reply to ${agentMembers.map((a) => a.name).join(", ")}… (@name to pick an agent)`
-                        : "Write a comment…"
+                        ? `Reply to ${agentMembers.map((a) => a.name).join(", ")}… (@ to mention someone)`
+                        : "Write a comment… (@ to mention someone)"
                     }
                     className="block w-full resize-none bg-transparent px-4 py-3 text-[15px] outline-none placeholder:text-faint"
                   />
@@ -622,7 +632,19 @@ function EditableBlock({
 
 const KIND_LABEL: Partial<Record<TaskMessageKind, string>> = { ask: "Asked", result: "Result", update: "Update" };
 
-function ThreadMessage({ message }: { message: Message }) {
+/** Mentions ("@Name") show as links to "#mention", styled here rather than followed. */
+const markdownComponents = {
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) =>
+    href === "#mention" ? (
+      <span className="font-medium text-accent">{children}</span>
+    ) : (
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    ),
+};
+
+function ThreadMessage({ message, names }: { message: Message; names: string[] }) {
   if (message.kind === "event") {
     return (
       <li className="flex items-center gap-2 pl-9 text-xs text-faint">
@@ -652,7 +674,9 @@ function ThreadMessage({ message }: { message: Message }) {
             message.kind === "result" ? "border-l-2 border-accent/60 pl-4" : ""
           }`}
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.body}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {linkMentions(message.body, names)}
+          </ReactMarkdown>
         </div>
       </div>
     </li>

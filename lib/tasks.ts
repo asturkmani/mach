@@ -48,6 +48,8 @@ export type Task = {
   repeats: boolean;
   /** A website sign-in waiting on a person's code (the login's slug). */
   pendingLogin: string | null;
+  /** Who @-mentioned the person this list is for, when that's why it needs them. */
+  mentionedBy?: string | null;
   createdAt: Date;
   updatedAt: Date;
   closedAt: Date | null;
@@ -90,6 +92,7 @@ type TaskRow = {
   archived_at: Date | null;
   repeats: boolean;
   pending_login: string | null;
+  mentioned_by?: string | null;
   created_at: Date;
   updated_at: Date;
   closed_at: Date | null;
@@ -144,6 +147,7 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     archivedAt: row.archived_at,
     repeats: row.repeats,
     pendingLogin: row.pending_login,
+    mentionedBy: row.mentioned_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     closedAt: row.closed_at,
@@ -249,10 +253,18 @@ const NEEDS_PERSON = `
 
 const IS_MEMBER = `exists (select 1 from task_members m where m.task_id = t.id and m.person_id = $2)`;
 
+/** Someone @-mentioned this person on the task and they haven't opened it since. */
+const MENTIONED = `(t.archived_at is null and exists (
+  select 1 from task_mentions mm where mm.task_id = t.id and mm.person_id = $2 and mm.seen_at is null))`;
+
+const NEEDS_THEM = `((${IS_MEMBER} and ${NEEDS_PERSON}) or ${MENTIONED})`;
+
 /** What needs this person now, urgent first, newest first within a priority. */
 export async function listInbox(organizationId: string, personId: string): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
-    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and ${IS_MEMBER} and ${NEEDS_PERSON}
+    `select ${TASK_COLUMNS},
+       (select mm.by_name from task_mentions mm where mm.task_id = t.id and mm.person_id = $2 and mm.seen_at is null) as mentioned_by
+     from tasks t where t.organization_id = $1 and ${NEEDS_THEM}
      order by ${PRIORITY_ORDER}, t.updated_at desc`,
     [organizationId, personId],
   );
@@ -261,17 +273,33 @@ export async function listInbox(organizationId: string, personId: string): Promi
 
 export async function countInbox(organizationId: string, personId: string): Promise<number> {
   const [row] = await getDb().query<{ count: number }>(
-    `select count(*)::int as count from tasks t where t.organization_id = $1 and ${IS_MEMBER} and ${NEEDS_PERSON}`,
+    `select count(*)::int as count from tasks t where t.organization_id = $1 and ${NEEDS_THEM}`,
     [organizationId, personId],
   );
   return row.count;
+}
+
+/** Someone @-mentioned a person: the task needs them until they open it. */
+export async function addMention(taskId: string, personId: string, byName: string): Promise<void> {
+  await getDb().query(
+    `insert into task_mentions (task_id, person_id, by_name) values ($1, $2, $3)
+     on conflict (task_id, person_id) do update set by_name = excluded.by_name, created_at = now(), seen_at = null`,
+    [taskId, personId, byName],
+  );
+}
+
+export async function markMentionsSeen(taskId: string, personId: string): Promise<void> {
+  await getDb().query("update task_mentions set seen_at = now() where task_id = $1 and person_id = $2 and seen_at is null", [
+    taskId,
+    personId,
+  ]);
 }
 
 /** This person's open tasks that don't need them right now: agents working, queued, put off or not started. */
 export async function listInProgress(organizationId: string, personId: string): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
     `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and ${IS_MEMBER} and t.archived_at is null
-       and t.status not in ('done', 'cancelled') and not (${NEEDS_PERSON})
+       and t.status not in ('done', 'cancelled') and not (${NEEDS_PERSON}) and not ${MENTIONED}
      order by ${PRIORITY_ORDER}, t.updated_at desc`,
     [organizationId, personId],
   );

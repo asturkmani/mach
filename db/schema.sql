@@ -283,3 +283,13 @@ create index if not exists integration_calls_recent on integration_calls (integr
 -- they replied with (sealed, used once, never shown in the thread).
 alter table tasks add column if not exists pending_login text;
 alter table tasks add column if not exists login_code bytea;
+
+-- People @-mentioned on a task: it shows in their Needs you until they open it.
+create table if not exists task_mentions (
+  task_id uuid not null references tasks (id) on delete cascade,
+  person_id uuid not null references people (id) on delete cascade,
+  by_name text not null, -- who mentioned them
+  created_at timestamptz not null default now(),
+  seen_at timestamptz,
+  primary key (task_id, person_id)
+);

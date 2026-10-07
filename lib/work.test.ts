@@ -10,7 +10,7 @@ import { useTestDb } from "@/test/db";
 import { addToTask, archiveTask, createTaskWithTeam, replyToTask, setStatus, unarchiveTask } from "@/lib/work";
 import { createWorker, getAgent } from "@/lib/agents/store";
 import { setSandboxProvider } from "@/lib/sandbox";
-import { listInbox, setSandboxName } from "@/lib/tasks";
+import { listInbox, markMentionsSeen, setSandboxName } from "@/lib/tasks";
 import { fakeSandboxes } from "@/test/fake-sandbox";
 
 const ORG = "org_cedar";
@@ -139,5 +139,35 @@ describe("work on tasks", () => {
     expect((await getAgent(ORG, worker.id))!.status).toBe("active");
     expect((await getTask(ORG, task.id))!.archivedAt).toBeNull();
     setSandboxProvider(null);
+  });
+
+  it("adds @-mentioned people and agents: people see it in their Needs you, agents are woken", async () => {
+    const { ahmed, by } = await seed();
+    const karam = await linkMember(ORG, { id: "user_karam", email: "karam@cedar.example", name: "Karam El Assaad" });
+    const analyst = await createAgent(ORG, { name: "Analyst" });
+    const reviewer = await createAgent(ORG, { name: "Reviewer" });
+    const scheduled: (() => Promise<void>)[] = [];
+    setScheduler((work) => scheduled.push(work));
+    const task = await createTaskWithTeam(ORG, { title: "Reconcile Q3 statements", agentIds: [analyst.id], by });
+    expect(scheduled).toHaveLength(1);
+
+    // A question for another person: they're added and see it; the agent is left be.
+    await replyToTask(ORG, task.id, by, "@Karam El Assaad can you confirm the two Lombard breaks?");
+    expect(scheduled).toHaveLength(1);
+    expect((await getTask(ORG, task.id))!.members.map((m) => m.name)).toContain("Karam El Assaad");
+    const [needs] = await listInbox(ORG, karam.id);
+    expect(needs).toMatchObject({ id: task.id, mentionedBy: "Ahmed" });
+    await markMentionsSeen(task.id, karam.id);
+    expect(await listInbox(ORG, karam.id)).toEqual([]);
+
+    // Mentioning an agent that isn't on the task adds it and wakes it.
+    await replyToTask(ORG, task.id, { name: "Karam El Assaad", personId: karam.id }, "Confirmed. @reviewer please double-check before we book it");
+    expect((await getTask(ORG, task.id))!.members.map((m) => m.name)).toContain("Reviewer");
+    expect(scheduled).toHaveLength(2);
+    const { agentToWake } = await import("@/lib/agents/dispatch");
+    expect(agentToWake((await getTask(ORG, task.id))!, await listMessages(task.id), "please double-check @Reviewer")).toBe(reviewer.id);
+    // Mentioning yourself does nothing.
+    await replyToTask(ORG, task.id, by, "noted, @Ahmed");
+    expect((await listInbox(ORG, ahmed.id)).some((t) => t.mentionedBy)).toBe(false);
   });
 });

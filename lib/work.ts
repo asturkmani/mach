@@ -5,6 +5,7 @@ import { agentToWake, dispatchRun, dispatchScheduled, startIfReady } from "@/lib
 import { createWorker, findAgentByName, listAgents, updateAgent, type Agent } from "@/lib/agents/store";
 import { attachToTask, listTaskFiles } from "@/lib/files";
 import { rememberTimezone } from "@/lib/orgs";
+import { recordMentions } from "@/lib/task-mentions";
 import { listPeople, type Person } from "@/lib/people";
 import { PEOPLE_SECTION, SECTIONS, setSection } from "@/lib/profile/markdown";
 import { updateProfile } from "@/lib/profile/store";
@@ -132,9 +133,14 @@ export async function replyToTask(organizationId: string, taskId: string, by: Ac
     body: code ? `Sent the ${task.pendingLogin} sign-in code.` : body,
   });
   await resetAgentTurns(task.id);
+  // @-mentions add people and agents to the task; mentioned people see it in their Needs you.
+  const mentioned = code ? { people: [], agents: [] } : await recordMentions(organizationId, task, body, by, { agents: true });
+  const current = mentioned.people.length || mentioned.agents.length ? await mustGet(organizationId, task.id) : task;
 
-  // Replying on a done job reopens it: the same agent picks it up in the same sandbox.
-  const agentId = agentToWake(task, await listMessages(task.id), body);
+  // Replying on a done job reopens it: the same agent picks it up in the same sandbox. A message only
+  // for other people (it mentions people but no agent) leaves the agents be.
+  const forPeopleOnly = mentioned.people.length > 0 && mentioned.agents.length === 0;
+  const agentId = forPeopleOnly ? undefined : agentToWake(current, await listMessages(task.id), body);
   if (agentId && !task.archivedAt && task.kind === "task") {
     await updateTask(organizationId, task.id, { status: "ready", laterUntil: null, options: [] });
     await dispatchRun(organizationId, task.id, agentId);

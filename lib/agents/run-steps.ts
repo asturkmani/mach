@@ -18,6 +18,7 @@ import {
 import { getOrganization } from "@/lib/orgs";
 import { loadProfile } from "@/lib/profile/store";
 import { deleteSchedule, getSchedule, saveSchedule, scheduleProblem, type ScheduleMode } from "@/lib/schedules";
+import { recordMentions } from "@/lib/task-mentions";
 import {
   addMessage,
   agentsOn,
@@ -139,6 +140,13 @@ async function briefDrive(organizationId: string): Promise<BriefDrive> {
 
 const by = (context: RunContext) => ({ author: context.agentName, agentId: context.agentId });
 
+/** People an agent @-mentions are added to the task and see it in their Needs you. */
+async function mentionPeople(context: RunContext, text: string): Promise<void> {
+  if (!text.includes("@")) return;
+  const task = await getTask(context.organizationId, context.taskId);
+  if (task) await recordMentions(context.organizationId, task, text, { name: context.agentName, agentId: context.agentId });
+}
+
 export async function scheduleJob(
   context: RunContext,
   input: { cron: string; timezone: string; mode: ScheduleMode },
@@ -164,6 +172,7 @@ export async function unscheduleJob(context: RunContext): Promise<string> {
 export async function postUpdate(context: RunContext, input: { message: string; progress?: string }): Promise<string> {
   "use step";
   await addMessage(context.taskId, { ...by(context), kind: "update", body: input.message });
+  await mentionPeople(context, input.message);
   if (input.progress !== undefined) {
     await updateTask(context.organizationId, context.taskId, { progress: lastLines(input.progress, 6) });
   }
@@ -186,6 +195,7 @@ type Report = { summary: string; options?: TaskOption[]; context?: string; progr
 
 async function report(context: RunContext, status: "waiting" | "review", kind: "ask" | "result", body: string, fields: Report) {
   await addMessage(context.taskId, { ...by(context), kind, body });
+  await mentionPeople(context, body);
   await updateTask(context.organizationId, context.taskId, {
     status,
     summary: fields.summary,

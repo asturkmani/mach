@@ -162,6 +162,7 @@ export function TaskList({
                               <LoaderCircle size={12} className="spin-slow" /> Working
                             </span>
                           )}
+                          {task.mentionedBy && <span className="text-accent">@ {task.mentionedBy}</span>}
                           {showStatus && !task.running && <span>{task.laterUntil ? "Later" : STATUS_WORDS[task.status]}</span>}
                           <span className="hidden max-w-48 truncate sm:inline">{byline(task)}</span>
                           <When date={task.updatedAt} />

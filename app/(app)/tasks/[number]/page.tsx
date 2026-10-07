@@ -8,7 +8,7 @@ import { listPeople } from "@/lib/people";
 import { getSchedule } from "@/lib/schedules";
 import { requireAppContext } from "@/lib/session";
 import { toView } from "@/lib/task-view";
-import { getTaskByNumber, listInbox, listMessages } from "@/lib/tasks";
+import { getTaskByNumber, listInbox, listMessages, markMentionsSeen } from "@/lib/tasks";
 
 const versionView = (v: FileVersion) => ({
   id: v.id,
@@ -27,6 +27,8 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
   const { number } = await params;
   const task = await getTaskByNumber(organization.id, Number(number));
   if (!task) notFound();
+  // Opening the task answers any @-mention of this person on it.
+  await markMentionsSeen(task.id, person.id);
 
   const [messages, taskFiles, library, people, agents, inbox, schedule] = await Promise.all([
     listMessages(task.id),
