@@ -18,19 +18,22 @@ Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres 
 
    Add people, change who they report to, invite or remove them (admins only).
 5. **Home**: what needs you at the top (an agent finished or asked something), urgent first, two lines per task: what happened and what's needed. Agents end with up to three options (one recommended) that you pick with a key. Below it, all the company's work (or just yours) as a board you can drag cards across, or as a to-do list grouped into in progress, waiting on someone else, later, backlog and done. <kbd>V</kbd> switches between them. When something new needs you, Mach shows a toast and, if you turn them on from the left menu, a browser notification.
-6. **Tasks**: any mix of people and agents can be on a task. Agents on it see all of it: the ask, the summary, the whole thread, the files and everyone on it. When an agent finishes or needs a decision, the task comes back to the people's inboxes; replying (or picking an option) sends it back to the agent. Agents can save files on a task (a model as CSV, a report as markdown), previewed on the page and downloadable. 
+6. **Tasks**: any mix of people and agents can be on a task. Agents on it see all of it: the ask, the summary, the whole thread, the files and everyone on it. When an agent finishes or needs a decision, the task comes back to the people's inboxes; replying (or picking an option) sends it back to the agent. Agents can save files on a task (a model as CSV, a report as markdown), previewed on the page and downloadable.
+   - **@-mentions**: type `@` in a reply to tag a person or an agent. Either one joins the task. A mentioned person sees it in their **Needs you**. A mentioned agent is the one that picks up the reply, and a message that mentions only people doesn't wake any agent.
+   - **Attachments**: attach files to a reply with the paperclip, by pasting a screenshot, or by dropping them on the reply box. Images show in the thread and other files are downloads. They join the task as inputs in the file library, and attaching a file with a deliverable's name saves its next version. Agents get the files in their sandbox and see the images themselves.
 7. **Agents**:
    - **Defined agents** have a standing profile (role, job description, instructions) and get the same kind of work again and again, e.g. sales outbound or financial analysis. Create them from a template on the Agents page or by asking the Chief of Staff.
    - **Worker agents** are made for one task (with a role like "Financial analysis") and archived when the task closes.
 8. **Chief of Staff panel** on the right of every page (<kbd>C</kbd>). Ask it questions or tell it what needs doing; it creates tasks with the right people and agents. As it learns things about the company in conversation it suggests profile updates, which you apply or dismiss from a card or your inbox. It loads short playbooks ("skills") for writing the profile, writing tasks, designing agents, research and financial analysis.
-9. **Sandboxes and files**: an agent that needs to compute something gets a [Vercel Sandbox](https://vercel.com/docs/vercel-sandbox) for the job, with Python's data stack and LibreOffice preinstalled. It writes and runs code there and attaches real files: Excel models with working formulas, charts, CSVs. Deliverables are previewed on the task page (spreadsheets sheet by sheet) with every version kept; the code sits in a collapsed section with each script's last run output. The sandbox lasts until the job is archived, so replies pick up where the agent left off. Every deliverable and script lands in the company file library (**Files**), and any job can start from a file another job made.
+9. **Sandboxes and files**: an agent that needs to compute something gets a [Vercel Sandbox](https://vercel.com/docs/vercel-sandbox) for the job, with Python's data stack, LibreOffice and headless Chromium (Playwright) preinstalled. It writes and runs code there and attaches real files: Excel models with working formulas, charts, CSVs. Deliverables are previewed on the task page (spreadsheets sheet by sheet) with every version kept; the code sits in a collapsed section with each script's last run output. The sandbox lasts until the job is archived, so replies pick up where the agent left off. Every deliverable and script lands in the company file library (**Files**), and any job can start from a file another job made.
 10. **Recurring jobs**: "every weekday at 4pm, chart the option flow" gives the job a schedule. Each run lands on the same card, in the same sandbox. When the job has a `run.sh`, scheduled runs replay it without a model and the changed deliverables become their next versions; the agent is woken only if it fails. Set, pause or change a schedule from the job's **Repeats** panel, which also has **Run script again**.
 11. **Company drive**: shared data every job's sandbox sees at `/vercel/drive` (a price history a daily job appends to, an export someone uploaded). It lives in Vercel Blob and is listed, downloadable and uploadable on the Files page.
-12. **Keyboard first**: <kbd>J</kbd>/<kbd>K</kbd> move, <kbd>V</kbd> board or list, <kbd>Enter</kbd> opens, <kbd>E</kbd> approves the recommendation or marks done, <kbd>1</kbd>–<kbd>3</kbd> pick an option, <kbd>R</kbd> reply, <kbd>L</kbd> later, <kbd>Z</kbd> undo, <kbd>N</kbd> new task, <kbd>S</kbd> summary, <kbd>/</kbd> search, <kbd>⌘K</kbd> everything else, <kbd>?</kbd> all shortcuts. Light and dark themes.
+12. **Integrations**: connect the company's other systems by giving the Chief of Staff the docs. A **data source** is an API that agents call with `call_api` or straight from sandbox code, read-only unless you allow writes. A **website login** is an account that chosen agents sign in to with a headless browser in their sandbox, for data entry where there's no API. When a site asks for a sign-in code, the job asks the people on it and they reply with the code. Credentials go in a form straight to sealed storage, never through a model or a chat, and requests from sandboxes are signed at the network layer. Each integration is company-wide and can be limited to chosen agents. See [docs/integrations.md](docs/integrations.md).
+13. **Keyboard first**: <kbd>J</kbd>/<kbd>K</kbd> move, <kbd>V</kbd> board or list, <kbd>Enter</kbd> opens, <kbd>E</kbd> approves the recommendation or marks done, <kbd>1</kbd>–<kbd>3</kbd> pick an option, <kbd>R</kbd> reply, <kbd>L</kbd> later, <kbd>Z</kbd> undo, <kbd>N</kbd> new task, <kbd>S</kbd> summary, <kbd>/</kbd> search, <kbd>⌘K</kbd> everything else, <kbd>?</kbd> all shortcuts. Light and dark themes.
 
 Agent runs are durable [Vercel Workflow](https://workflow-sdk.dev) runs (`workflows/agent-run.ts`). Every model call and every database change is its own step, retried on failure, so a run can take as long as the work needs instead of one function's time limit. Runs hold a lease on the task so only one runs at a time, pick up replies that arrive mid-run, and stop after six agent turns in a row without a person, so agents can't hand work back and forth forever. Locally, runs use Workflow's local world (data in `.workflow-data/`); inspect them with `npx workflow web` or `npx workflow inspect runs`.
 
-How sandboxes, files, recurring jobs and the drive work, and why: [docs/sandbox.md](docs/sandbox.md).
+How sandboxes, files, recurring jobs and the drive work, and why: [docs/sandbox.md](docs/sandbox.md). Data sources, website logins and how credentials are kept out of models: [docs/integrations.md](docs/integrations.md).
 
 The company profile is one markdown document per company, stored in Postgres. Its people section is generated from the `people` table.
 
@@ -75,7 +78,9 @@ For agents that run code, the project needs Vercel Sandbox access (`vercel link`
 pnpm sandbox:template   # builds and snapshots sandbox/template.json (about a minute); rerun after changing it
 ```
 
-Files are stored in a private Vercel Blob store when one is connected (`BLOB_READ_WRITE_TOKEN`), otherwise in Postgres. Create one with `vercel blob create-store mach-files --access private`, which connects it to the project. Uploads to the company drive need it.
+Files are stored in a private Vercel Blob store when one is connected (`BLOB_READ_WRITE_TOKEN`), otherwise in Postgres. Create one with `vercel blob create-store mach-files --access private`, which connects it to the project. Uploads to the company drive and attachments in task threads need it.
+
+Integrations need `MACH_SECRETS_KEY` (`openssl rand -base64 32`), which seals their credentials. Use the same key everywhere that shares the database, or `vercel env pull` it.
 
 The Chief of Staff's web search and page-reading tools run through AI Gateway (Parallel search and Browserbase fetch, a few dollars per thousand calls) and are billed to your AI Gateway credits, even when the model itself uses your own provider key.
 
@@ -83,7 +88,7 @@ The Chief of Staff's web search and page-reading tools run through AI Gateway (P
 
 1. Import the repo; connect Neon from the Marketplace.
 2. Add the WorkOS variables and `CHIEF_OF_STAFF_MODEL` (and optionally `AGENT_MODEL` for task agents). Set `NEXT_PUBLIC_WORKOS_REDIRECT_URI` to `https://<your-domain>/callback` and add the same URL in WorkOS.
-3. Connect a private Blob store, and add `CRON_SECRET` (any long random string) so the every-minute cron in `vercel.json` can start recurring jobs. Cron runs only on production deployments.
+3. Connect a private Blob store, and add `CRON_SECRET` (any long random string) so the every-minute cron in `vercel.json` can start recurring jobs. Cron runs only on production deployments. Add `MACH_SECRETS_KEY` for integrations.
 4. Deploy. Vercel builds run `vercel-build`, which applies `db/schema.sql` before building, so the production tables are created automatically.
 
 ## Checks
@@ -104,7 +109,11 @@ pnpm build
 | `components/shell/` | App shell: left rail, Chief of Staff panel, shortcuts, ⌘K palette, dialogs, undo |
 | `app/(app)/page.tsx`, `components/home.tsx` | Home: what needs you, then the work as a board or a list |
 | `app/(app)/tasks/` | Task page and its server actions |
-| `app/(app)/files/`, `drive/`, `app/api/drive/` | The file library and company drive: pages, downloads, previews and uploads |
+| `app/(app)/files/`, `drive/`, `app/api/drive/`, `app/api/uploads/` | The file library and company drive: pages, downloads, previews and uploads (drive files, and attachments in task threads) |
+| `app/(app)/integrations/`, `lib/integrations.ts`, `lib/secrets.ts` | Integrations: the page, storage and sealing, signing, and the sandbox network policy |
+| `lib/agents/integration-steps.ts`, `browser-steps.ts` | Agent tools for data sources (`call_api`, guides) and website logins (`browser_login`, sign-in codes) |
+| `lib/mentions.ts`, `lib/task-mentions.ts`, `components/mention-textarea.tsx` | @-mentions: finding them, recording them, and the reply box that suggests names |
+| `components/reply-attachments.tsx` | Attachments in the reply box and the thread |
 | `app/api/cron/tick/route.ts`, `vercel.json` | The every-minute cron that starts recurring jobs |
 | `app/(app)/agents/`, `team/`, `company/` | Agents, team and company profile pages |
 | `app/api/chat/route.ts` | Streams the Chief of Staff's replies for the signed-in company |
