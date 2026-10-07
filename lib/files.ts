@@ -250,7 +250,8 @@ export async function saveVersion(organizationId: string, input: SaveVersionInpu
     );
   }
   if (latest && latest.sha256 === sha256) {
-    if (input.note) await db.query("update file_versions set note = $2 where id = $1", [latest.id, input.note]);
+    // A script that ran again keeps its latest run's output; a deliverable keeps the note it was made with.
+    if (input.note && input.kind === "code") await db.query("update file_versions set note = $2 where id = $1", [latest.id, input.note]);
     return { fileId, versionId: latest.id, version: latest.version, basedOn: null, unchanged: true };
   }
 

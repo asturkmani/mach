@@ -17,6 +17,10 @@ export type ScheduledPlan =
 
 const SCHEDULER = "Schedule";
 
+/** "a, b, c and 4 more" */
+const listed = (items: string[], max = 3) =>
+  items.length > max ? `${items.slice(0, max).join(", ")} and ${items.length - max} more` : items.join(", ");
+
 export async function beginScheduledRun(organizationId: string, taskId: string, trigger: RunTrigger): Promise<ScheduledPlan> {
   "use step";
   const task = await getTask(organizationId, taskId);
@@ -69,7 +73,7 @@ export async function reportReplay(context: RunContext, result: Extract<ReplayRe
     "",
     updated,
     result.unattached.length ? `Also wrote ${result.unattached.join(", ")} in outputs/ (not attached).` : "",
-    result.drive.length ? `Saved to the drive: ${result.drive.join(", ")}.` : "",
+    result.drive.length ? `Saved to the drive: ${listed(result.drive)}.` : "",
   ];
   await addMessage(context.taskId, {
     author: context.agentName,

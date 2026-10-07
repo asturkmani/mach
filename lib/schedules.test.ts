@@ -7,9 +7,11 @@ import { describeSchedule, getSchedule, nextRun, saveSchedule, scheduleProblem, 
 
 const ORG = "org_cedar";
 
+let pg: Awaited<ReturnType<typeof useTestDb>>;
+
 describe("schedules", () => {
   beforeEach(async () => {
-    await useTestDb();
+    pg = await useTestDb();
   });
 
   it("checks and describes schedules in the company's timezone", () => {
@@ -37,5 +39,14 @@ describe("schedules", () => {
     expect(taken).toEqual([{ taskId: daily.id, organizationId: ORG, dueAt: first }]);
     expect(again).toEqual([]);
     expect((await getSchedule(daily.id))!.nextRunAt).toEqual(nextRun("0 16 * * *", "Europe/London", later));
+  });
+
+  it("takes runs that are due by the database's clock, whatever the timestamp's precision", async () => {
+    await createOrganization({ id: ORG, name: "Cedar Legacy" });
+    const task = await createTask(ORG, { title: "Chart the option flow" });
+    await saveSchedule(task.id, { cron: "0 16 * * *", timezone: "Europe/London" });
+    await pg.query("update task_schedules set next_run_at = now() - interval '1.234567 seconds' where task_id = $1", [task.id]);
+    expect((await takeDueRuns()).map((r) => r.taskId)).toEqual([task.id]);
+    expect(await takeDueRuns()).toEqual([]);
   });
 });

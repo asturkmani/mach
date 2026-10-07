@@ -43,6 +43,8 @@ describe("file library", () => {
     });
 
     expect([v1.version, same.unchanged, v2.version, v2.basedOn, v2.fileId]).toEqual([1, true, 2, 1, v1.fileId]);
+    // Saving the same content again with a note doesn't relabel the version it matches.
+    await saveVersion(ORG, { name: "model.xlsx", kind: "deliverable", bytes: Buffer.from("v2!"), taskId: first.id, note: "rerun" });
     const [file] = await listTaskFiles(ORG, first.id);
     expect(file).toMatchObject({ name: "model.xlsx", kind: "deliverable", role: "output" });
     expect(file.versions.map((v) => [v.version, v.size, v.taskNumber, v.note])).toEqual([

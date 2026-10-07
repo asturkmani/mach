@@ -160,31 +160,34 @@ export async function rescheduleFromNow(taskId: string): Promise<void> {
 export type DueRun = { taskId: string; organizationId: string; dueAt: Date };
 
 /**
- * Takes the runs that are due: each schedule moves on to its next run from
- * now (missed runs aren't replayed one by one), atomically, so two ticks that
- * overlap never start the same run twice.
+ * Takes the runs that are due (by the database's clock unless `now` is
+ * given): each schedule moves on to its next run (missed runs aren't replayed
+ * one by one). A schedule is only taken while it is still due, so two ticks
+ * that overlap never start the same run twice.
  */
-export async function takeDueRuns(now = new Date(), limit = 50): Promise<DueRun[]> {
+export async function takeDueRuns(now?: Date, limit = 50): Promise<DueRun[]> {
   const db = getDb();
-  const due = await db.query<ScheduleRow & { organization_id: string }>(
-    `select ${COLUMNS.split(", ").map((c) => `s.${c}`).join(", ")}, t.organization_id
+  const due = await db.query<ScheduleRow & { organization_id: string; now: Date }>(
+    `select ${COLUMNS.split(", ").map((c) => `s.${c}`).join(", ")}, t.organization_id, coalesce($1::timestamptz, now()) as now
      from task_schedules s join tasks t on t.id = s.task_id
-     where not s.paused and s.next_run_at <= $1 and t.archived_at is null and t.status <> 'cancelled'
+     where not s.paused and s.next_run_at <= coalesce($1::timestamptz, now())
+       and t.archived_at is null and t.status <> 'cancelled'
      order by s.next_run_at limit $2`,
-    [now, limit],
+    [now ?? null, limit],
   );
   const taken: DueRun[] = [];
   for (const row of due) {
+    const from = new Date(Math.max(new Date(row.now).getTime(), new Date(row.next_run_at!).getTime()));
     let next: Date | null = null;
     try {
-      next = nextRun(row.cron, row.timezone, now);
+      next = nextRun(row.cron, row.timezone, from);
     } catch (error) {
       console.error(`Schedule for task ${row.task_id} is broken`, error);
     }
     const claimed = await db.query(
-      `update task_schedules set next_run_at = $3, last_run_at = $4, paused = paused or $3::timestamptz is null
-       where task_id = $1 and next_run_at = $2 returning task_id`,
-      [row.task_id, row.next_run_at, next, now],
+      `update task_schedules set next_run_at = $3, last_run_at = $2, paused = paused or $3::timestamptz is null
+       where task_id = $1 and not paused and next_run_at <= $2 returning task_id`,
+      [row.task_id, row.now, next],
     );
     if (claimed.length) taken.push({ taskId: row.task_id, organizationId: row.organization_id, dueAt: row.next_run_at! });
   }
