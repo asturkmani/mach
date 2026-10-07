@@ -58,6 +58,9 @@ export type Task = {
 
 export type TaskMessageKind = "comment" | "update" | "ask" | "result" | "event";
 
+/** A file attached to a message in the thread. */
+export type MessageAttachment = { versionId: string; fileId: string; name: string; contentType: string; size: number; version: number };
+
 export type TaskMessage = {
   id: string;
   author: string;
@@ -66,6 +69,7 @@ export type TaskMessage = {
   kind: TaskMessageKind;
   body: string;
   createdAt: Date;
+  attachments: MessageAttachment[];
 };
 
 type TaskRow = {
@@ -341,6 +345,28 @@ export async function listMessages(taskId: string): Promise<TaskMessage[]> {
     "select id, author, person_id, agent_id, kind, body, created_at from task_messages where task_id = $1 order by created_at, id",
     [taskId],
   );
+  const attached = await getDb().query<{
+    message_id: string;
+    version_id: string;
+    file_id: string;
+    name: string;
+    content_type: string;
+    size: number;
+    version: number;
+  }>(
+    `select mf.message_id, v.id as version_id, f.id as file_id, f.name, v.content_type, v.size, v.version
+     from task_message_files mf join task_messages m on m.id = mf.message_id
+     join file_versions v on v.id = mf.version_id join files f on f.id = v.file_id
+     where m.task_id = $1 order by f.name`,
+    [taskId],
+  );
+  const byMessage = new Map<string, MessageAttachment[]>();
+  for (const a of attached) {
+    byMessage.set(a.message_id, [
+      ...(byMessage.get(a.message_id) ?? []),
+      { versionId: a.version_id, fileId: a.file_id, name: a.name, contentType: a.content_type, size: a.size, version: a.version },
+    ]);
+  }
   return rows.map((r) => ({
     id: r.id,
     author: r.author,
@@ -349,6 +375,7 @@ export async function listMessages(taskId: string): Promise<TaskMessage[]> {
     kind: r.kind,
     body: r.body,
     createdAt: r.created_at,
+    attachments: byMessage.get(r.id) ?? [],
   }));
 }
 
@@ -476,17 +503,32 @@ export async function removeMember(taskId: string, member: { personId?: string; 
   );
 }
 
+/**
+ * Adds a message to the thread, with any files attached to it (file version ids), and returns its id.
+ * An empty message with nothing attached isn't added (null).
+ */
 export async function addMessage(
   taskId: string,
-  message: { author: string; kind?: TaskMessageKind; body: string; personId?: string; agentId?: string },
-): Promise<void> {
+  message: { author: string; kind?: TaskMessageKind; body: string; personId?: string; agentId?: string; attachments?: string[] },
+): Promise<string | null> {
   const body = message.body.trim();
-  if (!body) return;
-  await getDb().query(
-    "insert into task_messages (task_id, author, kind, body, person_id, agent_id) values ($1, $2, $3, $4, $5, $6)",
+  if (!body && !message.attachments?.length) return null;
+  const [row] = await getDb().query<{ id: string }>(
+    "insert into task_messages (task_id, author, kind, body, person_id, agent_id) values ($1, $2, $3, $4, $5, $6) returning id",
     [taskId, message.author, message.kind ?? "comment", body, message.personId ?? null, message.agentId ?? null],
   );
+  if (message.attachments?.length) await attachToMessage(row.id, message.attachments);
   await getDb().query("update tasks set updated_at = now() where id = $1", [taskId]);
+  return row.id;
+}
+
+export async function attachToMessage(messageId: string, versionIds: string[]): Promise<void> {
+  for (const versionId of versionIds) {
+    await getDb().query("insert into task_message_files (message_id, version_id) values ($1, $2) on conflict do nothing", [
+      messageId,
+      versionId,
+    ]);
+  }
 }
 
 /** Marks a website sign-in as waiting on a person's code (or clears it), dropping any code already given. */

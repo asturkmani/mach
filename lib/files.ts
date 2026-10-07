@@ -3,7 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { getDb } from "@/lib/db";
-import { loadBytes, storeBytes } from "@/lib/storage";
+import { loadBytes, removeBytes, storeBytes } from "@/lib/storage";
 
 // The company file library. Every deliverable an agent attaches and every
 // script it runs is a file with versions; jobs list the files they work with
@@ -207,6 +207,8 @@ export type SaveVersionInput = {
   agentId?: string;
   personId?: string;
   note?: string;
+  /** How a new file joins the task: an input someone gave it, or an output it produced (the default). */
+  role?: "input" | "output";
 };
 
 export type SavedVersion = { fileId: string; versionId: string; version: number; basedOn: number | null; unchanged: boolean };
@@ -245,8 +247,8 @@ export async function saveVersion(organizationId: string, input: SaveVersionInpu
   );
   if (input.taskId) {
     await db.query(
-      "insert into task_files (task_id, file_id, role) values ($1, $2, 'output') on conflict (task_id, file_id) do nothing",
-      [input.taskId, fileId],
+      "insert into task_files (task_id, file_id, role) values ($1, $2, $3) on conflict (task_id, file_id) do nothing",
+      [input.taskId, fileId, input.role ?? "output"],
     );
   }
   if (latest && latest.sha256 === sha256) {
@@ -279,6 +281,27 @@ export async function saveVersion(organizationId: string, input: SaveVersionInpu
   );
   await db.query("update files set updated_at = now() where id = $1", [fileId]);
   return { fileId, versionId: row.id, version, basedOn: latest?.version ?? null, unchanged: false };
+}
+
+// ---------------------------------------------------------------------------
+// Files people attach in a task's thread go straight from the browser to Blob,
+// under this prefix, and are then taken into the library.
+
+export const uploadsPrefix = (organizationId: string) => `orgs/${organizationId}/uploads/`;
+
+/** Reads a browser upload, which must be this company's. */
+export async function readUpload(organizationId: string, blobPathname: string): Promise<Buffer> {
+  const prefix = uploadsPrefix(organizationId);
+  if (!blobPathname.startsWith(prefix) || blobPathname.slice(prefix.length).includes("/")) {
+    throw new Error("That upload isn't this company's.");
+  }
+  return loadBytes({ blob_pathname: blobPathname, content: null });
+}
+
+/** Deletes browser uploads once they're in the library, which keeps its own copy. */
+export async function discardUploads(organizationId: string, blobPathnames: string[]): Promise<void> {
+  const prefix = uploadsPrefix(organizationId);
+  await Promise.all(blobPathnames.filter((p) => p.startsWith(prefix)).map((p) => removeBytes(p).catch(() => undefined)));
 }
 
 /** Attaches a library file to a job, e.g. as an input for a new job. */

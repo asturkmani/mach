@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { TaskDetail, type FileView } from "@/components/task-detail";
 import { timeIn } from "@/lib/agents/prompts";
 import { listAgents } from "@/lib/agents/store";
-import { listLibrary, listTaskFiles, type FileVersion } from "@/lib/files";
+import { listLibrary, listTaskFiles, uploadsPrefix, type FileVersion } from "@/lib/files";
 import { listPeople } from "@/lib/people";
 import { getSchedule } from "@/lib/schedules";
+import { blobConnected } from "@/lib/storage";
 import { requireAppContext } from "@/lib/session";
 import { toView } from "@/lib/task-view";
 import { getTaskByNumber, listInbox, listMessages, markMentionsSeen } from "@/lib/tasks";
@@ -86,6 +87,8 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
       agents={agents.filter((a) => a.kind === "defined" && a.status === "active").map((a) => ({ id: a.id, name: a.name, role: a.role }))}
       nextNumber={next?.number ?? null}
       focusReply={reply}
+      uploadPrefix={uploadsPrefix(organization.id)}
+      canAttach={blobConnected()}
     />
   );
 }

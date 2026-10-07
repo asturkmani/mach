@@ -290,6 +290,7 @@ describe("taskBrief", () => {
       kind: "comment" as const,
       body: `message ${i}`,
       createdAt: new Date(),
+      attachments: [],
     }));
     const brief = taskBrief({ task, messages, files: [], agent });
     expect(brief).toContain("message 0\n");

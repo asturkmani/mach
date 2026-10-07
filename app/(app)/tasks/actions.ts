@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { searchTasks as search, updateTask, type Priority, type Task, type TaskStatus } from "@/lib/tasks";
 import { PRIORITIES, TASK_STATUSES } from "@/lib/task-words";
 import { requireAppContext } from "@/lib/session";
-import { attachToTask, detachFromTask } from "@/lib/files";
+import { attachToTask, detachFromTask, discardUploads, readUpload } from "@/lib/files";
 import {
   addToTask,
   approveOrDone,
@@ -20,6 +20,7 @@ import {
   scheduleTask,
   setStatus,
   unscheduleTask,
+  MAX_REPLY_ATTACHMENTS,
   WorkError,
   type Actor,
 } from "@/lib/work";
@@ -78,10 +79,25 @@ export async function createTaskAction(input: {
   });
 }
 
-export async function replyAction(taskId: string, text: string): Promise<TaskActionResult> {
+/** Replies on a task; files attached to the reply were uploaded to Blob first (/api/uploads). */
+export async function replyAction(
+  taskId: string,
+  text: string,
+  uploads: { name: string; blobPathname: string }[] = [],
+): Promise<TaskActionResult> {
   const { organizationId, by } = await actor();
+  if (uploads.length > MAX_REPLY_ATTACHMENTS) return { error: `Attach at most ${MAX_REPLY_ATTACHMENTS} files at a time.` };
   return attempt(async () => {
-    await replyToTask(organizationId, taskId, by, text);
+    const attachments = [];
+    for (const upload of uploads) {
+      try {
+        attachments.push({ name: upload.name, bytes: await readUpload(organizationId, upload.blobPathname) });
+      } catch {
+        throw new WorkError(`Couldn't read ${upload.name}. Remove it and attach it again.`);
+      }
+    }
+    await replyToTask(organizationId, taskId, by, text, attachments);
+    await discardUploads(organizationId, uploads.map((u) => u.blobPathname));
   });
 }
 

@@ -32,6 +32,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
+    "sharp": "0.35.5",
     "vercel": "^62.7.0",
     "workflow": "^5.1.0",
     "zod": "^4.6.5"

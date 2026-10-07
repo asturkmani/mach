@@ -141,7 +141,10 @@ export function taskBrief({
   // Long threads keep the opening message and the most recent ones.
   const shown = messages.length > 60 ? [messages[0], ...messages.slice(-59)] : messages;
   const thread = shown
-    .map((m) => `[${time(m.createdAt)}] ${m.author} (${m.kind}):\n${clip(m.body, 6000)}`)
+    .map((m) => {
+      const attached = m.attachments.map((a) => `[attached: ${a.name}${a.version > 1 ? ` v${a.version}` : ""} (${a.contentType}, ${size(a.size)})]`);
+      return `[${time(m.createdAt)}] ${m.author} (${m.kind}):\n${[m.body && clip(m.body, 6000), ...attached].filter(Boolean).join("\n")}`;
+    })
     .join("\n\n");
   const fileList = files
     .map((f) => {
@@ -209,7 +212,7 @@ How to work:
 - Never give a number you didn't find or calculate. Say what you don't know.
 
 Your sandbox (for calculations, models, data and code):
-- This job has its own Linux sandbox that keeps its files between runs until the job is archived. It starts the first time you run code. The job folder is /vercel/job: code/ for scripts, inputs/ for files people attached, outputs/ for deliverables, and NOTES.md for the job's notes. Files already on this task are copied in when it starts.
+- This job has its own Linux sandbox that keeps its files between runs until the job is archived. It starts the first time you run code. The job folder is /vercel/job: code/ for scripts, inputs/ for files people attached, outputs/ for deliverables, and NOTES.md for the job's notes. Files already on this task are copied in when it starts, and so are files people attach in the thread later (into inputs/, or into outputs/ when they attach a new version of a deliverable).
 - Installed: Python 3.14 with pandas, numpy, scipy, statsmodels, scikit-learn, numpy-financial, openpyxl, xlsxwriter, matplotlib, seaborn, pyarrow, duckdb, requests, httpx, beautifulsoup4, python-docx, python-pptx; Playwright with headless Chromium (from playwright.sync_api import sync_playwright) for sites that need a real browser: pages built with JavaScript, downloads behind buttons; Node 24; LibreOffice. Install anything else with run_command (uv pip install --system NAME).
 - Calculate with code, never in your head. Write scripts with run_code; each run is limited to about four minutes, so split long work into steps.
 - Structure work so it can be rerun and changed: a config file with the inputs and assumptions, scripts that read it, and run.sh to run everything. A change of assumptions should be a config change.

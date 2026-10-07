@@ -1,5 +1,5 @@
 import { WorkflowAgent } from "@ai-sdk/workflow";
-import { gateway, hasToolCall, isStepCount, tool, type LanguageModel, type ToolSet } from "ai";
+import { gateway, hasToolCall, isStepCount, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
 
 import { SUMMARY_MAX, type RunContext, type RunOutcome } from "@/lib/agents/prompts";
@@ -17,6 +17,7 @@ import {
   saveFile,
   scheduleJob,
   unscheduleJob,
+  type BriefImage,
 } from "@/lib/agents/run-steps";
 import {
   attachSandboxFile,
@@ -286,6 +287,21 @@ const researchTools = (): ToolSet => ({
   fetch_page: gateway.tools.browserbaseFetch({ format: "markdown", allowRedirects: true, proxies: false }),
 });
 
+/** The run's opening message, with the images people just attached. */
+function withImages(prompt: string, images: BriefImage[]): string | ModelMessage[] {
+  if (images.length === 0) return prompt;
+  const named = images.map((i) => i.name).join(", ");
+  return [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: `${prompt}\n\nThe images attached in the thread since you last wrote (${named}) are below.` },
+        ...images.map((i) => ({ type: "image" as const, image: i.data, mediaType: i.mediaType })),
+      ],
+    },
+  ];
+}
+
 /** One agent's turn on a task. */
 export async function runAgentOnTask(
   organizationId: string,
@@ -319,7 +335,7 @@ export async function runAgentOnTask(
         return undefined;
       },
     });
-    const result = await agent.generate({ prompt: begun.prompt });
+    const result = await agent.generate({ prompt: withImages(begun.prompt, begun.images) });
     return state.outcome ?? (await reportText(context, result.text));
   } catch (error) {
     return recordFailure(context, error instanceof Error ? error.message : String(error));

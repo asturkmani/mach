@@ -293,3 +293,10 @@ create table if not exists task_mentions (
   seen_at timestamptz,
   primary key (task_id, person_id)
 );
+
+-- Files attached to a message in a task's thread (they're also on the task, as inputs).
+create table if not exists task_message_files (
+  message_id uuid not null references task_messages (id) on delete cascade,
+  version_id uuid not null references file_versions (id) on delete cascade,
+  primary key (message_id, version_id)
+);

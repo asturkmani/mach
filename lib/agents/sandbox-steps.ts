@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { DRIVE_DIR, drivePath, listDrive, MAX_DRIVE_FILE_BYTES, readDriveFile, writeDriveFile } from "@/lib/drive";
-import { contentTypeFor, isText, listTaskFiles, readTaskFiles, saveVersion } from "@/lib/files";
+import { contentTypeFor, isText, listTaskFiles, readTaskFiles, readVersion, saveVersion, type FileKind } from "@/lib/files";
 import { saveLoginSessions } from "@/lib/agents/browser-steps";
 import { knownSecrets, sandboxPolicy } from "@/lib/integrations";
 import { redact } from "@/lib/secrets";
@@ -61,20 +61,51 @@ export function sandboxPath(path: string): string {
 /** Files that belong at the top of the job folder rather than under code/. */
 const ROOT_FILES = /^(run\.sh|config\.(json|ya?ml|toml)|requirements\.txt)$/i;
 
+/** Where one of the job's files lives in its sandbox. */
+const jobPath = (f: { kind: FileKind; role: "input" | "output"; name: string }) =>
+  f.kind === "code"
+    ? `${JOB_DIR}/${ROOT_FILES.test(f.name) ? "" : "code/"}${f.name}`
+    : `${JOB_DIR}/${f.role === "input" ? "inputs" : "outputs"}/${f.name}`;
+
+/** Which version of each of the job's files the sandbox has (path → version). */
+const FILES_MANIFEST = `${JOB_DIR}/.files.json`;
+
 async function seed(context: RunContext, sandbox: JobSandbox): Promise<void> {
   await sandbox.run("mkdir", ["-p", `${JOB_DIR}/code`, `${JOB_DIR}/inputs`, `${JOB_DIR}/outputs`]);
   const task = await getTask(context.organizationId, context.taskId);
   const files = await readTaskFiles(context.organizationId, context.taskId);
+  const manifest = Object.fromEntries(files.map((f) => [jobPath(f), f.version]));
   await sandbox.writeFiles([
     { path: `${JOB_DIR}/NOTES.md`, content: Buffer.from(task?.memory || "# Job notes\n") },
-    ...files.map((f) => ({
-      path:
-        f.kind === "code"
-          ? `${JOB_DIR}/${ROOT_FILES.test(f.name) ? "" : "code/"}${f.name}`
-          : `${JOB_DIR}/${f.role === "input" ? "inputs" : "outputs"}/${f.name}`,
-      content: f.bytes,
-    })),
+    { path: FILES_MANIFEST, content: Buffer.from(JSON.stringify(manifest)) },
+    ...files.map((f) => ({ path: jobPath(f), content: f.bytes })),
   ]);
+}
+
+/**
+ * Copies in files people added to the job since the sandbox last had them: an
+ * attachment in the thread, a file from the library, a new version of a
+ * deliverable. Versions an agent made on this job came from this sandbox, so
+ * they're already here (and may have moved on since).
+ */
+async function syncTaskFiles(context: RunContext, sandbox: JobSandbox): Promise<string[]> {
+  const manifest = (await readJson(sandbox, FILES_MANIFEST)) as Record<string, number>;
+  const writes: { path: string; content: Buffer }[] = [];
+  let changed = false;
+  for (const file of await listTaskFiles(context.organizationId, context.taskId)) {
+    const latest = file.versions[0];
+    if (!latest || file.kind === "code") continue;
+    const path = jobPath(file);
+    if ((manifest[path] ?? 0) >= latest.version) continue;
+    manifest[path] = latest.version;
+    changed = true;
+    if (latest.taskId === context.taskId && latest.agentName) continue;
+    const content = await readVersion(context.organizationId, latest.id);
+    if (content) writes.push({ path, content: content.bytes });
+  }
+  if (changed) writes.push({ path: FILES_MANIFEST, content: Buffer.from(JSON.stringify(manifest)) });
+  if (writes.length) await sandbox.writeFiles(writes);
+  return writes.filter((w) => w.path !== FILES_MANIFEST).map((w) => w.path.slice(JOB_DIR.length + 1));
 }
 
 async function open(context: RunContext): Promise<JobSandbox> {
@@ -90,14 +121,16 @@ async function open(context: RunContext): Promise<JobSandbox> {
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const quote = (path: string) => `'${path.replace(/'/g, "'\\''")}'`;
 
-async function readManifest(sandbox: JobSandbox): Promise<Record<string, string>> {
-  const raw = await sandbox.readFile(DRIVE_MANIFEST).catch(() => null);
+async function readJson(sandbox: JobSandbox, path: string): Promise<Record<string, unknown>> {
+  const raw = await sandbox.readFile(path).catch(() => null);
   try {
-    return raw ? (JSON.parse(raw.toString("utf8")) as Record<string, string>) : {};
+    return raw ? (JSON.parse(raw.toString("utf8")) as Record<string, unknown>) : {};
   } catch {
     return {};
   }
 }
+
+const readManifest = async (sandbox: JobSandbox) => (await readJson(sandbox, DRIVE_MANIFEST)) as Record<string, string>;
 
 const writeManifest = (sandbox: JobSandbox, manifest: Record<string, string>) =>
   sandbox.writeFiles([{ path: DRIVE_MANIFEST, content: Buffer.from(JSON.stringify(manifest)) }]);
@@ -211,9 +244,16 @@ async function connectSources(context: RunContext, sandbox: JobSandbox): Promise
 export async function startSandbox(context: RunContext): Promise<string> {
   "use step";
   const sandbox = await open(context);
+  const added = await syncTaskFiles(context, sandbox);
   const sources = await connectSources(context, sandbox);
   const pulled = await pullDrive(context, sandbox);
-  return [pulled, sources.length ? `data sources connected: ${sources.join(", ")}` : ""].filter(Boolean).join("; ");
+  return [
+    added.length ? `new on the job: ${added.join(", ")}` : "",
+    pulled,
+    sources.length ? `data sources connected: ${sources.join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
 }
 
 /** Writes bytes to a file in the job folder or on the drive (saved to the drive straight away). */

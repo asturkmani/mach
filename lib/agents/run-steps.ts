@@ -29,6 +29,7 @@ import {
   releaseRun,
   renewRun,
   updateTask,
+  type TaskMessage,
   type TaskOption,
 } from "@/lib/tasks";
 
@@ -51,7 +52,11 @@ export type BegunRun =
       sources: string[];
       /** The website logins this agent may use (slugs). */
       logins: string[];
+      /** Images people attached since this agent last spoke, sized for the model. */
+      images: BriefImage[];
     };
+
+export type BriefImage = { name: string; mediaType: string; data: string };
 
 /** Checks the run can go ahead, takes the task's lease and gathers everything the agent will read. */
 export async function beginRun(
@@ -98,6 +103,7 @@ export async function beginRun(
     listIntegrations(organizationId, { agentId: agent.id }),
   ]);
   const others = agentsOn(task).filter((m) => m.id !== agent.id);
+  const images = await newImages(organizationId, messages, agent.id);
   return {
     ok: true,
     context,
@@ -107,7 +113,44 @@ export async function beginRun(
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
     sources: integrations.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
     logins: integrations.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
+    images,
   };
+}
+
+const MAX_IMAGES = 4;
+const MODEL_IMAGE_EDGE = 1568;
+
+/**
+ * The images people attached in the thread since this agent last wrote there
+ * (newest first, at most four), so it sees what they showed it. Each is scaled
+ * down to what the model reads anyway, which keeps the run's record small.
+ */
+async function newImages(organizationId: string, messages: TaskMessage[], agentId: string): Promise<BriefImage[]> {
+  const since = messages.findLastIndex((m) => m.agentId === agentId);
+  const attached = messages
+    .slice(since + 1)
+    .filter((m) => !m.agentId)
+    .flatMap((m) => m.attachments)
+    .filter((a) => /^image\/(png|jpeg|gif|webp)$/.test(a.contentType))
+    .slice(-MAX_IMAGES);
+  if (attached.length === 0) return [];
+  const { default: sharp } = await import("sharp");
+  const images: BriefImage[] = [];
+  for (const a of attached) {
+    const file = await readVersion(organizationId, a.versionId);
+    if (!file) continue;
+    try {
+      const scaled = await sharp(file.bytes)
+        .rotate()
+        .resize({ width: MODEL_IMAGE_EDGE, height: MODEL_IMAGE_EDGE, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      images.push({ name: a.name, mediaType: "image/jpeg", data: scaled.toString("base64") });
+    } catch (error) {
+      console.error(`Couldn't read the image ${a.name}`, error);
+    }
+  }
+  return images;
 }
 
 /** The job's files as the agent sees them; small text files include their content. */

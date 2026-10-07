@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArchiveRestore, ArrowLeft, LoaderCircle, Play, Repeat, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, LoaderCircle, Paperclip, Play, Repeat, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
@@ -23,6 +23,7 @@ import {
 } from "@/app/(app)/tasks/actions";
 import { CodeSection, FilesSection, type FileView, type LibraryOption } from "@/components/task-files";
 import { MentionTextarea, type MentionCandidate } from "@/components/mention-textarea";
+import { MessageAttachments, PendingAttachments, useReplyAttachments, type MessageAttachmentView } from "@/components/reply-attachments";
 import { RepeatsPanel, type ScheduleView } from "@/components/task-schedule";
 import { linkMentions } from "@/lib/mentions";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
@@ -47,7 +48,16 @@ type Detail = TaskView & {
 };
 
 export type { FileView };
-type Message = { id: string; author: string; personId: string | null; agentId: string | null; kind: TaskMessageKind; body: string; createdAt: string };
+type Message = {
+  id: string;
+  author: string;
+  personId: string | null;
+  agentId: string | null;
+  kind: TaskMessageKind;
+  body: string;
+  createdAt: string;
+  attachments: MessageAttachmentView[];
+};
 type Option = { id: string; name: string; role: string };
 
 const SUMMARY_KEY = "mach-summary-open";
@@ -61,6 +71,8 @@ export function TaskDetail({
   agents,
   nextNumber,
   focusReply,
+  uploadPrefix,
+  canAttach,
 }: {
   task: Detail;
   messages: Message[];
@@ -70,6 +82,9 @@ export function TaskDetail({
   agents: Option[];
   nextNumber: number | null;
   focusReply: boolean;
+  /** Where this company's thread attachments upload to, and whether they can (a Blob store is connected). */
+  uploadPrefix: string;
+  canAttach: boolean;
 }) {
   const router = useRouter();
   const { openLater, pushUndo, toast } = useShell();
@@ -77,6 +92,9 @@ export function TaskDetail({
   const [reply, setReply] = useState("");
   const [summaryOpen, setSummaryOpen] = useStoredFlag(SUMMARY_KEY, true);
   const replyRef = useRef<HTMLTextAreaElement>(null);
+  const filePicker = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const attachments = useReplyAttachments({ prefix: uploadPrefix, enabled: canAttach, onError: (message) => toast(message) });
   const closed = task.status === "done" || task.status === "cancelled" || task.archived;
   const lastResult = [...messages].reverse().find((m) => m.kind === "result" || m.kind === "ask");
 
@@ -137,12 +155,21 @@ export function TaskDetail({
     );
   };
 
+  const canSend = !pending && !attachments.uploading && !attachments.failed && Boolean(reply.trim() || attachments.uploads.length);
   const sendReply = () => {
+    if (!canSend) {
+      if (attachments.uploading) toast("Still uploading…");
+      else if (attachments.failed) toast("Remove the attachment that failed, then send.");
+      return;
+    }
     const text = reply.trim();
-    if (!text) return;
+    const uploads = attachments.uploads;
     act(
-      () => replyAction(task.id, text),
-      () => setReply(""),
+      () => replyAction(task.id, text, uploads),
+      () => {
+        setReply("");
+        attachments.clear();
+      },
     );
   };
 
@@ -308,8 +335,22 @@ export function TaskDetail({
                   e.preventDefault();
                   sendReply();
                 }}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes("Files")) return;
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+                }}
+                onDrop={(e) => {
+                  if (!e.dataTransfer.files.length) return;
+                  e.preventDefault();
+                  setDragging(false);
+                  attachments.add(Array.from(e.dataTransfer.files));
+                }}
               >
-                <div className="border border-line bg-raised focus-within:border-muted">
+                <div className={`border bg-raised focus-within:border-muted ${dragging ? "border-accent" : "border-line"}`}>
                   <MentionTextarea
                     ref={replyRef}
                     autoFocus={focusReply}
@@ -322,6 +363,13 @@ export function TaskDetail({
                         sendReply();
                       }
                     }}
+                    onPaste={(e) => {
+                      // A pasted screenshot attaches; pasted text (even with an image alongside, as from Excel) stays text.
+                      const files = Array.from(e.clipboardData.files);
+                      if (!files.length || e.clipboardData.types.includes("text/plain")) return;
+                      e.preventDefault();
+                      attachments.add(files);
+                    }}
                     rows={3}
                     placeholder={
                       agentMembers.length
@@ -330,11 +378,33 @@ export function TaskDetail({
                     }
                     className="block w-full resize-none bg-transparent px-4 py-3 text-[15px] outline-none placeholder:text-faint"
                   />
+                  <PendingAttachments pending={attachments.pending} onRemove={attachments.remove} />
                   <div className="flex items-center justify-between border-t border-line-soft px-3 py-2">
-                    <span className="text-xs text-faint">
-                      <kbd className="kbd">R</kbd> to reply · <kbd className="kbd">⌘↵</kbd> to send
-                    </span>
-                    <button type="submit" disabled={pending || !reply.trim()} className="btn btn-primary">
+                    <div className="flex items-center gap-3">
+                      <input
+                        ref={filePicker}
+                        type="file"
+                        multiple
+                        hidden
+                        onChange={(e) => {
+                          attachments.add(Array.from(e.target.files ?? []));
+                          e.target.value = "";
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => (canAttach ? filePicker.current?.click() : toast("Connect a Vercel Blob store to attach files."))}
+                        title={canAttach ? "Attach files (or paste or drop them here)" : "Connect a Vercel Blob store to attach files"}
+                        aria-label="Attach files"
+                        className={`text-muted hover:text-ink ${canAttach ? "" : "opacity-50"}`}
+                      >
+                        <Paperclip size={15} />
+                      </button>
+                      <span className="text-xs text-faint">
+                        <kbd className="kbd">R</kbd> to reply · <kbd className="kbd">⌘↵</kbd> to send
+                      </span>
+                    </div>
+                    <button type="submit" disabled={!canSend} className="btn btn-primary">
                       Send
                     </button>
                   </div>
@@ -678,6 +748,7 @@ function ThreadMessage({ message, names }: { message: Message; names: string[] }
             {linkMentions(message.body, names)}
           </ReactMarkdown>
         </div>
+        <MessageAttachments attachments={message.attachments} />
       </div>
     </li>
   );

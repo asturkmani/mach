@@ -3,7 +3,7 @@ import "server-only";
 import { loginCodeFrom, sealLoginCode } from "@/lib/agents/browser-steps";
 import { agentToWake, dispatchRun, dispatchScheduled, startIfReady } from "@/lib/agents/dispatch";
 import { createWorker, findAgentByName, listAgents, updateAgent, type Agent } from "@/lib/agents/store";
-import { attachToTask, listTaskFiles } from "@/lib/files";
+import { attachToTask, listTaskFiles, MAX_FILE_BYTES, saveVersion } from "@/lib/files";
 import { rememberTimezone } from "@/lib/orgs";
 import { recordMentions } from "@/lib/task-mentions";
 import { listPeople, type Person } from "@/lib/people";
@@ -119,18 +119,48 @@ export async function createTaskWithTeam(
 }
 
 /** A person writes on the task. If agents are on it, the right one picks it up again. */
-export async function replyToTask(organizationId: string, taskId: string, by: Actor, text: string): Promise<Task> {
+/** A file someone attached to a reply. */
+export type ReplyAttachment = { name: string; bytes: Buffer };
+
+export const MAX_REPLY_ATTACHMENTS = 10;
+
+export async function replyToTask(
+  organizationId: string,
+  taskId: string,
+  by: Actor,
+  text: string,
+  attachments: ReplyAttachment[] = [],
+): Promise<Task> {
   const task = await mustGet(organizationId, taskId);
   const body = text.trim();
-  if (!body) throw new WorkError("Write something first.");
+  if (!body && attachments.length === 0) throw new WorkError("Write something first.");
+  if (attachments.length > MAX_REPLY_ATTACHMENTS) throw new WorkError(`Attach at most ${MAX_REPLY_ATTACHMENTS} files at a time.`);
+  for (const file of attachments) {
+    if (file.bytes.length > MAX_FILE_BYTES) throw new WorkError(`${file.name} is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB.`);
+  }
   // A website sign-in waiting for a code: a reply that is one goes to the sign-in, sealed, not into the thread.
-  const code = task.pendingLogin ? loginCodeFrom(body) : null;
+  const code = task.pendingLogin && attachments.length === 0 ? loginCodeFrom(body) : null;
   if (code) await saveLoginCode(task.id, sealLoginCode(code));
+  // Attached files join the task as inputs (a file with the same name becomes its next version).
+  const versions = [];
+  for (const file of attachments) {
+    const saved = await saveVersion(organizationId, {
+      name: file.name,
+      kind: "deliverable",
+      bytes: file.bytes,
+      taskId: task.id,
+      personId: by.personId,
+      role: "input",
+      note: `Attached by ${by.name} in the thread`,
+    });
+    versions.push(saved.versionId);
+  }
   await addMessage(task.id, {
     author: by.name,
     personId: by.personId,
     kind: "comment",
     body: code ? `Sent the ${task.pendingLogin} sign-in code.` : body,
+    attachments: versions,
   });
   await resetAgentTurns(task.id);
   // @-mentions add people and agents to the task; mentioned people see it in their Needs you.
