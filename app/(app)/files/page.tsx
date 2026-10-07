@@ -53,7 +53,7 @@ export default async function FilesPage() {
   return (
     <>
       <PageHeader title="Files" count={files.length} />
-      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-8 py-6">
+      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-4 sm:px-8 py-6">
         <div className="max-w-4xl space-y-8">
           <p className="max-w-2xl text-[15px] text-muted">
             Everything agents have produced, with every version. Attach a file to any job and the agent starts from it; what it

@@ -86,7 +86,7 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
 
   return (
     <section className="border border-line bg-raised">
-      <header className="flex items-start justify-between gap-4 border-b border-line-soft px-5 py-4">
+      <header className="flex flex-col items-start justify-between gap-2 border-b border-line-soft px-4 py-4 sm:flex-row sm:gap-4 sm:px-5">
         <div className="min-w-0">
           <p className="label mb-1">
             {i.kind === "api" ? "Data source" : "Login"} · <span className="font-mono normal-case">{i.slug}</span>
@@ -120,18 +120,18 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
         </div>
       </header>
 
-      <dl className="grid gap-x-6 gap-y-3 px-5 py-4 text-sm sm:grid-cols-[9rem_1fr]">
-        <dt className="label pt-0.5">{i.kind === "api" ? "Base URL" : "Sign-in page"}</dt>
+      <dl className="grid gap-x-6 gap-y-1 px-4 py-4 text-sm sm:grid-cols-[9rem_1fr] sm:gap-y-3 sm:px-5">
+        <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">{i.kind === "api" ? "Base URL" : "Sign-in page"}</dt>
         <dd className="min-w-0 truncate font-mono text-xs leading-5">{i.url}</dd>
         {i.signing && (
           <>
-            <dt className="label pt-0.5">Signed with</dt>
+            <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">Signed with</dt>
             <dd className="text-muted">{i.signing}</dd>
           </>
         )}
         {i.kind === "login" && (
           <>
-            <dt className="label pt-0.5">Session</dt>
+            <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">Session</dt>
             <dd className="flex items-center gap-3">
               <span className="text-muted">{i.hasSession ? "Signed in · saved for the next run" : "Not signed in yet"}</span>
               {i.hasSession && (
@@ -148,7 +148,7 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
         )}
         {i.kind === "api" && (
           <>
-            <dt className="label pt-0.5">Access</dt>
+            <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">Access</dt>
             <dd>
               <select
                 value={i.access}
@@ -162,7 +162,7 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
             </dd>
           </>
         )}
-        <dt className="label pt-0.5">Who can use it</dt>
+        <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">Who can use it</dt>
         <dd>
           <button onClick={() => setChoosing(!choosing)} className="flex items-center gap-1 text-left hover:text-ink">
             <span>{who ? (who.length ? who.join(", ") : "No agents") : "Every agent"}</span>
@@ -188,7 +188,7 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
             </div>
           )}
         </dd>
-        <dt className="label pt-0.5">Credentials</dt>
+        <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">Credentials</dt>
         <dd>
           {credentials ? (
             <div className="max-w-sm">

@@ -19,7 +19,7 @@ export default async function AgentsPage({ searchParams }: PageProps<"/agents">)
   return (
     <>
       <PageHeader title="Agents" count={defined.length + workers.length} />
-      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-8 py-6">
+      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-4 sm:px-8 py-6">
         <div className="max-w-4xl space-y-10">
           <p className="max-w-2xl text-[15px] text-muted">
             <span className="text-ink">Defined agents</span> have a standing profile and take on the same kind of work again
@@ -74,15 +74,18 @@ export default async function AgentsPage({ searchParams }: PageProps<"/agents">)
                 {workers.map((agent) => {
                   const task = openTasksFor(agent.id)[0];
                   return (
-                    <li key={agent.id} className="flex items-center gap-3 px-4 py-3">
+                    <li key={agent.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
                       <Face name={agent.name} agent size={30} />
                       <div className="min-w-0 flex-1">
                         <p className="text-[15px]">{agent.name}</p>
                         <p className="truncate text-sm text-muted">{agent.role}</p>
                       </div>
                       {task && (
-                        <Link href={`/tasks/${task.number}`} className="label hover:text-ink">
-                          #{task.number} {task.title.slice(0, 40)}
+                        <Link
+                          href={`/tasks/${task.number}`}
+                          className="label min-w-0 basis-full truncate pl-[42px] hover:text-ink sm:max-w-[45%] sm:basis-auto sm:pl-0"
+                        >
+                          #{task.number} {task.title}
                         </Link>
                       )}
                     </li>

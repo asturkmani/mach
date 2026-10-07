@@ -136,10 +136,10 @@ export function TaskList({
   const offsets = visible.map((_, i) => visible.slice(0, i).reduce((n, s) => n + s.tasks.length, 0));
   return (
     <>
-      <div ref={listRef} className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-3 pb-6">
+      <div ref={listRef} className="scroll-quiet min-h-0 flex-1 overflow-y-auto pb-6 sm:px-3">
         {visible.map((section, sectionIndex) => (
           <section key={section.title ?? "all"} className="pt-5">
-            {section.title && <h2 className="px-5 pb-2 text-sm text-muted">{section.title}</h2>}
+            {section.title && <h2 className="px-4 pb-2 text-sm text-muted sm:px-5">{section.title}</h2>}
             <ul>
               {section.tasks.map((task, n) => {
                 const i = offsets[sectionIndex] + n;
@@ -149,9 +149,9 @@ export function TaskList({
                     <Link
                       href={`/tasks/${task.number}`}
                       onMouseMove={() => cursor !== i && setCursor(i)}
-                      className={`block border-b border-line-soft px-5 py-4 ${isSelected ? "bg-selected" : "hover:bg-hover"}`}
+                      className={`block border-b border-line-soft px-4 py-4 sm:px-5 ${isSelected ? "bg-selected" : "hover:bg-hover"}`}
                     >
-                      <div className="flex items-baseline justify-between gap-6">
+                      <div className="flex items-baseline justify-between gap-3 sm:gap-6">
                         <p className={`flex min-w-0 items-center gap-2 text-[17px] ${task.priority === "urgent" ? "urgent-title" : ""}`}>
                           <span className="truncate">{task.title}</span>
                           {task.repeats && <Repeat size={13} className="shrink-0 text-faint" aria-label="Repeats" />}
@@ -160,7 +160,7 @@ export function TaskList({
                           {task.running && (
                             <span className="flex min-w-0 items-center gap-1.5 text-accent" title={task.activity ?? undefined}>
                               <LoaderCircle size={12} className="spin-slow shrink-0" />
-                              <span className="max-w-56 truncate normal-case tracking-normal">{task.activity ?? "Working"}</span>
+                              <span className="max-w-24 truncate normal-case tracking-normal sm:max-w-56">{task.activity ?? "Working"}</span>
                             </span>
                           )}
                           {task.mentionedBy && <span className="text-accent">@ {task.mentionedBy}</span>}

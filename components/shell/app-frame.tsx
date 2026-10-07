@@ -6,24 +6,36 @@ import { rememberTimezoneAction } from "@/app/(app)/actions";
 
 import { CosPanel } from "./cos-panel";
 import { InboxNotifier } from "./inbox-notifier";
+import { MobileNav } from "./mobile-nav";
 import { Rail } from "./rail";
-import { ShellProvider, useShell, type ShellData } from "./shell";
+import { ShellProvider, useIsPhone, useShell, type ShellData } from "./shell";
 
 type CosProps = React.ComponentProps<typeof CosPanel>;
 
+// On a computer: the left menu, the page in a frame, and the Chief of Staff
+// beside it. On a phone: the page full width, a bar of the main actions at the
+// bottom, and the Chief of Staff as a full-screen sheet.
 function Layout({ children, cos }: { children: React.ReactNode; cos: CosProps }) {
   const { cosOpen } = useShell();
+  const phone = useIsPhone();
   return (
     <div className="flex h-dvh">
       <Rail />
-      <main className="flex min-w-0 flex-1 flex-col py-3 pr-3">
+      <main className="flex min-w-0 flex-1 flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:py-3 md:pr-3">
         <div className="frame flex min-h-0 flex-1 flex-col">{children}</div>
       </main>
-      {cosOpen && (
-        <div className="fixed inset-y-0 right-0 z-20 w-full max-w-[420px] py-3 pr-3 pl-3 lg:static lg:w-[400px] lg:shrink-0 lg:pl-0 xl:w-[440px] xl:max-w-none">
-          <CosPanel {...cos} />
-        </div>
-      )}
+      {cosOpen &&
+        (phone ? (
+          <div className="fixed inset-x-0 top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 bg-bg pt-[env(safe-area-inset-top)]">
+            <CosPanel {...cos} />
+          </div>
+        ) : (
+          // Hidden by CSS on a phone until hydrated, so the panel never flashes there.
+          <div className="fixed inset-y-0 right-0 z-20 hidden w-full max-w-[420px] py-3 pr-3 pl-3 md:block lg:static lg:w-[400px] lg:shrink-0 lg:pl-0 xl:w-[440px] xl:max-w-none">
+            <CosPanel {...cos} />
+          </div>
+        ))}
+      <MobileNav />
     </div>
   );
 }

@@ -56,7 +56,7 @@ export default async function IntegrationsPage() {
   return (
     <>
       <PageHeader title="Integrations" count={views.length} />
-      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-8 py-6">
+      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-4 sm:px-8 py-6">
         <div className="max-w-4xl space-y-6">
           <p className="max-w-2xl text-[15px] text-muted">
             The company&apos;s other systems, connected so agents can use them without ever seeing the credentials. Data sources

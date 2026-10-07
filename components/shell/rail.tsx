@@ -32,7 +32,16 @@ import { useShell, type ShellData } from "./shell";
 
 type Item = { href: string; label: string; icon: LucideIcon; count?: number; accent?: boolean };
 
-function isActive(pathname: string, href: string): boolean {
+/** The company's pages, in the left menu and the phone's menu sheet. */
+export const COMPANY_PAGES: Item[] = [
+  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/files", label: "Files", icon: FolderOpen },
+  { href: "/integrations", label: "Integrations", icon: Cable },
+  { href: "/team", label: "Team", icon: Users },
+  { href: "/company", label: "Company profile", icon: Building },
+];
+
+export function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/" || pathname.startsWith("/tasks/");
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -45,13 +54,7 @@ export function Rail() {
   const workspace: Item[] = [
     { href: "/", label: "Home", icon: House, count: data.inboxCount, accent: true },
   ];
-  const company: Item[] = [
-    { href: "/agents", label: "Agents", icon: Bot },
-    { href: "/files", label: "Files", icon: FolderOpen },
-    { href: "/integrations", label: "Integrations", icon: Cable },
-    { href: "/team", label: "Team", icon: Users },
-    { href: "/company", label: "Company profile", icon: Building },
-  ];
+  const company = COMPANY_PAGES;
 
   const row = "flex h-10 w-full items-center gap-3 px-[17px] text-[15px] whitespace-nowrap";
   const text = "opacity-0 transition-opacity duration-150 group-hover/rail:opacity-100 group-has-[:focus-visible]/rail:opacity-100";
@@ -91,7 +94,7 @@ export function Rail() {
   );
 
   return (
-    <nav aria-label="Main" className="group/rail relative z-30 w-[60px] shrink-0">
+    <nav aria-label="Main" className="group/rail relative z-30 hidden w-[60px] shrink-0 md:block">
       <div className="absolute inset-y-0 left-0 flex w-[60px] flex-col overflow-clip border-r border-transparent bg-bg py-3 transition-[width,box-shadow,border-color] duration-200 group-hover/rail:w-60 group-hover/rail:border-line group-hover/rail:shadow-[var(--shadow)] group-has-[:focus-visible]/rail:w-60 group-has-[:focus-visible]/rail:border-line">
         <div className="mb-3 flex h-10 items-center gap-3 px-[15px] whitespace-nowrap">
           <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center bg-ink font-mono text-sm font-semibold text-panel">

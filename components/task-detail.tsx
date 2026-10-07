@@ -225,7 +225,7 @@ export function TaskDetail({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center justify-between gap-4 border-b border-line px-6 py-3.5">
+      <header className="flex items-center justify-between gap-3 border-b border-line px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-3.5">
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/" className="flex items-center gap-2 text-muted hover:text-ink" title="Back (Esc)">
             <ArrowLeft size={16} />
@@ -237,11 +237,11 @@ export function TaskDetail({
           {task.archived && <span className="label text-faint">Archived</span>}
           {task.schedule && (
             <span className="label flex items-center gap-1 text-faint" title={task.schedule.description}>
-              <Repeat size={11} /> {task.schedule.paused ? "Repeats (paused)" : "Repeats"}
+              <Repeat size={11} /> <span className="hidden sm:inline">{task.schedule.paused ? "Repeats (paused)" : "Repeats"}</span>
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           {task.kind === "task" && (
             <button
               onClick={() => archive(!task.archived)}
@@ -250,21 +250,22 @@ export function TaskDetail({
               title={task.archived ? "Bring this job back" : "Retire this job: deletes its sandbox, keeps its files"}
             >
               {task.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-              {task.archived ? "Unarchive" : "Archive"}
+              <span className="hidden sm:inline">{task.archived ? "Unarchive" : "Archive"}</span>
             </button>
           )}
           <button onClick={() => openLater(task.id)} className="btn btn-ghost" disabled={closed}>
-            Later <kbd className="kbd">L</kbd>
+            Later <kbd className="kbd hidden md:inline-flex">L</kbd>
           </button>
           <button onClick={approve} className="btn" disabled={pending || task.status === "done"}>
-            {task.options.some((o) => o.recommended) ? "Approve" : "Done"} <kbd className="kbd">E</kbd>
+            {task.options.some((o) => o.recommended) ? "Approve" : "Done"} <kbd className="kbd hidden md:inline-flex">E</kbd>
           </button>
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="scroll-quiet min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-8 pb-10 pt-8">
+      {/* On a phone the details come after the thread, in one scroll. */}
+      <div className="scroll-quiet flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+        <div className="scroll-quiet min-w-0 md:flex-1 md:overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-4 pt-6 pb-10 sm:px-8 sm:pt-8">
             {task.running && (
               <div
                 className="mb-6 flex items-center gap-2 border border-accent/40 bg-accent-soft px-3 py-2 text-sm"
@@ -414,7 +415,7 @@ export function TaskDetail({
                       >
                         <Paperclip size={15} />
                       </button>
-                      <span className="text-xs text-faint">
+                      <span className="hidden text-xs text-faint md:inline">
                         <kbd className="kbd">R</kbd> to reply · <kbd className="kbd">⌘↵</kbd> to send
                       </span>
                     </div>
@@ -428,7 +429,7 @@ export function TaskDetail({
           </div>
         </div>
 
-        <aside className="scroll-quiet hidden w-72 shrink-0 space-y-7 overflow-y-auto border-l border-line px-5 py-7 md:block">
+        <aside className="scroll-quiet w-full shrink-0 space-y-7 border-t border-line px-4 py-7 md:w-72 md:overflow-y-auto md:border-t-0 md:border-l md:px-5">
           <Property label="Status">
             <select
               value={task.status}
@@ -556,7 +557,7 @@ function Property({ label, children }: { label: string; children: React.ReactNod
 
 function RemoveButton({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} title="Take off this task" className="text-faint opacity-0 hover:text-danger group-hover:opacity-100">
+    <button onClick={onClick} title="Take off this task" className="text-faint opacity-0 hover:text-danger group-hover:opacity-100 pointer-coarse:opacity-100">
       <X size={13} />
     </button>
   );

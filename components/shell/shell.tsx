@@ -142,24 +142,52 @@ const subscribe = (listener: () => void) => {
 };
 const notify = () => listeners.forEach((l) => l());
 
+/** Phones: below Tailwind's md breakpoint. */
+const PHONE_QUERY = "(max-width: 767px)";
+/** Below lg, the Chief of Staff covers the page instead of sitting beside it. */
+const OVERLAY_QUERY = "(max-width: 1023px)";
+
+/** Whether a media query matches. False on the server and until hydrated, so layouts lean on CSS breakpoints too. */
+function useMedia(media: string): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      const query = window.matchMedia(media);
+      query.addEventListener("change", listener);
+      return () => query.removeEventListener("change", listener);
+    },
+    () => window.matchMedia(media).matches,
+    () => false,
+  );
+}
+
+/** True on a phone-sized screen. */
+export const useIsPhone = () => useMedia(PHONE_QUERY);
+
 export function ShellProvider({ data, children }: { data: ShellData; children: React.ReactNode }) {
   const router = useRouter();
+  const overlay = useMedia(OVERLAY_QUERY);
   const storedCos = useSyncExternalStore(
     subscribe,
     () => readStorage(COS_KEY),
     () => null,
   );
-  // Open by default until onboarding is done, so the first thing people see is the conversation.
-  const cosOpen = storedCos === null ? !data.organization.onboarded : storedCos === "1";
+  // On a wide screen the panel sits beside the page and its open state is a saved preference,
+  // open by default until onboarding is done, so the first thing people see is the conversation.
+  // Narrower, it covers the page (a full-screen sheet on a phone), so it starts closed (open for
+  // onboarding) and isn't saved.
+  const panelOpen = storedCos === null ? !data.organization.onboarded : storedCos === "1";
+  const [sheetOpen, setSheetOpen] = useState<boolean | null>(null);
+  const cosOpen = overlay ? (sheetOpen ?? !data.organization.onboarded) : panelOpen;
   const setCosOpen = useCallback((open: boolean) => {
     cosFocus.requested = open;
+    if (window.matchMedia(OVERLAY_QUERY).matches) return setSheetOpen(open);
     writeStorage(COS_KEY, open ? "1" : "0");
     notify();
   }, []);
   // Keep that default once shown, so finishing onboarding mid-conversation doesn't close the panel.
   useEffect(() => {
-    if (readStorage(COS_KEY) === null) writeStorage(COS_KEY, cosOpen ? "1" : "0");
-  }, [cosOpen]);
+    if (!overlay && readStorage(COS_KEY) === null) writeStorage(COS_KEY, panelOpen ? "1" : "0");
+  }, [overlay, panelOpen]);
 
   const storedTheme = useSyncExternalStore(
     subscribe,

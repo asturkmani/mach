@@ -144,6 +144,17 @@ body {
     border-right: 1px solid var(--faint);
   }
 
+  /* On a phone the page fills the screen: no frame. */
+  @media (max-width: 767px) {
+    .frame {
+      border: 0;
+    }
+    .frame::before,
+    .frame::after {
+      display: none;
+    }
+  }
+
   .kbd {
     display: inline-flex;
     align-items: center;

@@ -21,7 +21,7 @@ export function CompanyProfile({
 
   return (
     <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-8 py-6">
+      <div className="mx-auto max-w-3xl px-4 sm:px-8 py-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-lg text-sm text-muted">
             What every agent reads before it works. The Chief of Staff keeps it current and suggests changes as it learns;

@@ -125,7 +125,7 @@ export function DriveSection({ files, prefix, canUpload }: { files: DriveFileVie
                   <button
                     onClick={() => remove(`${dir}/`, `the ${dir} folder and its ${items.length} files`)}
                     title="Delete this folder"
-                    className="text-faint opacity-0 hover:text-danger group-hover:opacity-100"
+                    className="text-faint opacity-0 hover:text-danger group-hover:opacity-100 pointer-coarse:opacity-100"
                   >
                     <X size={13} />
                   </button>
@@ -153,7 +153,7 @@ export function DriveSection({ files, prefix, canUpload }: { files: DriveFileVie
                     <button
                       onClick={() => remove(file.path, file.path)}
                       title="Delete from the drive"
-                      className="text-faint opacity-0 hover:text-danger group-hover:opacity-100"
+                      className="text-faint opacity-0 hover:text-danger group-hover:opacity-100 pointer-coarse:opacity-100"
                     >
                       <X size={13} />
                     </button>

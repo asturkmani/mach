@@ -18,7 +18,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
 
   return (
     <>
-      <header className="flex items-center justify-between gap-4 border-b border-line px-8 pb-5 pt-7">
+      <header className="flex items-center justify-between gap-4 border-b border-line px-4 sm:px-8 pb-5 pt-7">
         <div className="flex min-w-0 items-center gap-4">
           <Link href="/agents" className="text-muted hover:text-ink" title="Agents">
             <ArrowLeft size={16} />
@@ -33,7 +33,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
         </div>
         <AgentStatusControl agentId={agent.id} status={agent.status} />
       </header>
-      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-8 py-6">
+      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-4 sm:px-8 py-6">
         <div className="grid max-w-5xl gap-10 lg:grid-cols-[1fr_300px]">
           <section>
             <h2 className="label mb-4">Profile</h2>

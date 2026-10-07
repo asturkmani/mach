@@ -79,7 +79,7 @@ export function Board({
   );
 
   return (
-    <div className="scroll-quiet flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
+    <div className="scroll-quiet flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto p-3 md:snap-none md:p-4">
       {columns.map(({ status, tasks: cards }, c) => (
         <section
           key={status}
@@ -95,7 +95,7 @@ export function Board({
             setDragging(null);
             setOver(null);
           }}
-          className={`flex min-w-60 flex-1 flex-col border ${over === status ? "border-accent/60 bg-accent-soft" : "border-line-soft"}`}
+          className={`flex w-[82vw] shrink-0 snap-start flex-col border md:w-auto md:min-w-60 md:flex-1 md:shrink ${over === status ? "border-accent/60 bg-accent-soft" : "border-line-soft"}`}
         >
           <header className="flex items-center justify-between px-3 py-2.5">
             <h2 className="label">{STATUS_WORDS[status]}</h2>

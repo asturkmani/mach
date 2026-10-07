@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   title: "Mach",
   description: "Run your company with people and AI agents.",
 };
+
+// Fills the screen on phones with a notch; the app pads for the safe areas itself.
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 // Applies a saved light/dark choice before the first paint, so pages don't flash.
 const themeScript = `try{var t=localStorage.getItem("mach-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;

@@ -32,7 +32,7 @@ export default async function TeamPage() {
     <>
     <PageHeader title="Team" count={people.length} />
     <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto">
-      <div className="grid max-w-6xl gap-8 px-8 py-6 lg:grid-cols-[1fr_300px]">
+      <div className="grid max-w-6xl gap-8 px-4 sm:px-8 py-6 lg:grid-cols-[1fr_300px]">
         <section className="min-w-0 space-y-6">
           <p className="text-sm text-muted">
             Everyone in {organization.name}&apos;s org chart. People don&apos;t need a login to be here; invite them when
@@ -40,7 +40,7 @@ export default async function TeamPage() {
           </p>
 
           <div className="overflow-x-auto border border-line bg-raised">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[620px] text-sm">
               <thead className="border-b border-line text-left">
                 <tr>
                   <th className="label px-3 py-2.5 font-normal">Name</th>
