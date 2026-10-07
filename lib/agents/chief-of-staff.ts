@@ -7,7 +7,6 @@ import {
   type InferAgentUIMessage,
   type LanguageModel,
   type ToolSet,
-  type UIMessage,
 } from "ai";
 import { z } from "zod";
 
@@ -68,7 +67,11 @@ ${profile}
 
 const sectionNames = SECTIONS.filter((s) => s !== PEOPLE_SECTION) as [string, ...string[]];
 
-// Every tool returns the latest profile so the model and the UI both see the new state.
+// Tools return the latest profile for the live preview, but the model only sees
+// a short confirmation: it gets the current profile in its instructions on every
+// request, so repeating it in each tool result would just bloat the context.
+const confirm = (value: string) => () => ({ type: "text" as const, value });
+
 function profileTools({ organization }: Context) {
   const orgId = organization.id;
   return {
@@ -79,6 +82,7 @@ function profileTools({ organization }: Context) {
         await renameOrganization(orgId, name);
         return { profile: await updateProfile(orgId, (md) => setCompanyName(md, name)) };
       },
+      toModelOutput: confirm("Saved."),
     }),
     update_section: tool({
       description:
@@ -90,6 +94,7 @@ function profileTools({ organization }: Context) {
       execute: async ({ section, content }) => ({
         profile: await updateProfile(orgId, (md) => setSection(md, section, content)),
       }),
+      toModelOutput: confirm("Saved."),
     }),
     save_person: tool({
       description:
@@ -106,6 +111,7 @@ function profileTools({ organization }: Context) {
         await savePerson(orgId, { ...person, managerName: reportsTo });
         return { profile: await syncPeopleSection(orgId) };
       },
+      toModelOutput: confirm("Saved."),
     }),
     remove_person: tool({
       description: "Remove a person from the organisation. Anyone who reported to them is left without a manager.",
@@ -114,6 +120,10 @@ function profileTools({ organization }: Context) {
         const removed = await removePersonByName(orgId, name);
         return { removed, profile: await syncPeopleSection(orgId) };
       },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value: output.removed ? "Removed." : "No one by that name was in the people list.",
+      }),
     }),
     complete_onboarding: tool({
       description: "Mark onboarding as finished once the company overview, team with reporting lines and top priorities are captured.",
@@ -122,6 +132,7 @@ function profileTools({ organization }: Context) {
         await completeOnboarding(orgId);
         return { onboardingComplete: true, profile: await loadProfile(orgId) };
       },
+      toModelOutput: confirm("Onboarding is marked complete."),
     }),
   };
 }
@@ -131,19 +142,6 @@ const researchTools = {
   web_search: gateway.tools.parallelSearch({ mode: "agentic", maxResults: 5 }),
   fetch_page: gateway.tools.browserbaseFetch({ format: "markdown", allowRedirects: true, proxies: false }),
 } satisfies ToolSet;
-
-/**
- * AI Gateway returns web search and page fetch results in a different shape
- * from the one the AI SDK validates (e.g. `search_id` vs `searchId`), so a
- * conversation that used them fails validation on the next message. The model
- * has already acted on those results, so drop them from the history sent back.
- */
-export function withoutResearchResults<T extends UIMessage>(messages: T[]): T[] {
-  const isResearch = (type: string) => Object.keys(researchTools).some((name) => type === `tool-${name}`);
-  return messages
-    .map((message) => ({ ...message, parts: message.parts.filter((part) => !isResearch(part.type)) }))
-    .filter((message) => message.parts.some((part) => part.type !== "step-start"));
-}
 
 export function createChiefOfStaff(
   context: Context,

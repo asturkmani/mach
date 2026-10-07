@@ -38,3 +38,16 @@ create table if not exists people (
 create unique index if not exists people_org_name on people (organization_id, lower(name));
 create unique index if not exists people_org_email on people (organization_id, lower(email)) where email is not null;
 create unique index if not exists people_org_user on people (organization_id, workos_user_id) where workos_user_id is not null;
+
+-- One Chief of Staff conversation per person per organization, stored in the
+-- AI SDK's UI message format.
+create table if not exists chats (
+  id text primary key,
+  organization_id text not null references organizations (id) on delete cascade,
+  user_id text not null, -- WorkOS user id
+  messages jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists chats_org_user on chats (organization_id, user_id);

@@ -1,16 +1,37 @@
-import { createAgentUIStreamResponse } from "ai";
+import { createAgentUIStreamResponse, createIdGenerator, type UIMessage } from "ai";
 
-import { createChiefOfStaff, withoutResearchResults } from "@/lib/agents/chief-of-staff";
+import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
+import { prepareHistory } from "@/lib/agents/history";
+import { loadChat, saveChat } from "@/lib/chats";
 import { loadProfile } from "@/lib/profile/store";
 import { getSessionContext } from "@/lib/session";
 
 export const maxDuration = 120;
 
+const generateMessageId = createIdGenerator({ prefix: "msg", size: 16 });
+
+/** Accepts only a plain user text message from the browser; history comes from the database. */
+function parseUserMessage(value: unknown): UIMessage | null {
+  const message = value as { id?: unknown; role?: unknown; parts?: unknown } | null;
+  if (!message || typeof message.id !== "string" || message.role !== "user" || !Array.isArray(message.parts)) {
+    return null;
+  }
+  const parts = message.parts
+    .filter((part): part is { type: "text"; text: string } => part?.type === "text" && typeof part.text === "string")
+    .map((part) => ({ type: "text" as const, text: part.text }));
+  return parts.some((part) => part.text.trim()) ? { id: message.id, role: "user", parts } : null;
+}
+
 export async function POST(request: Request) {
   const context = await getSessionContext();
   if (!context.organization) return new Response("Create your company first.", { status: 409 });
 
-  const { messages } = await request.json();
+  const body = (await request.json().catch(() => null)) as { id?: unknown; message?: unknown } | null;
+  const userMessage = parseUserMessage(body?.message);
+  if (typeof body?.id !== "string" || !userMessage) return new Response("Invalid message.", { status: 400 });
+
+  const chat = await loadChat(body.id, context.organization.id, context.user.id);
+  if (!chat) return new Response("Conversation not found.", { status: 404 });
 
   let agent;
   try {
@@ -23,10 +44,21 @@ export async function POST(request: Request) {
     });
   }
 
+  // Resending a message (e.g. retrying after an error) replaces it and anything after it.
+  const history = await prepareHistory(chat.messages, agent.tools);
+  const retryIndex = history.findIndex((message) => message.id === userMessage.id);
+  const messages = [...(retryIndex === -1 ? history : history.slice(0, retryIndex)), userMessage];
+  // Save the question first so it isn't lost if the run fails.
+  await saveChat(chat.id, messages);
+
   return createAgentUIStreamResponse({
     agent,
-    uiMessages: withoutResearchResults(messages),
+    uiMessages: messages,
     abortSignal: request.signal,
+    generateMessageId,
+    onEnd: async ({ messages: finished }) => {
+      await saveChat(chat.id, await prepareHistory(finished, agent.tools));
+    },
     // Internal tool for now, so show the real reason (e.g. a missing AI Gateway key).
     onError: (error) => (error instanceof Error ? error.message : "Something went wrong."),
   });

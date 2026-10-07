@@ -1,8 +1,7 @@
-import { validateUIMessages, type UIMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { chiefOfStaffInstructions, createChiefOfStaff, withoutResearchResults } from "./chief-of-staff";
+import { chiefOfStaffInstructions, createChiefOfStaff } from "./chief-of-staff";
 import { createOrganization, getOrganization } from "@/lib/orgs";
 import { linkMember, listPeople, syncPeopleSection } from "@/lib/people";
 import { getSection, onboardingChecklist } from "@/lib/profile/markdown";
@@ -98,44 +97,6 @@ describe("Chief of Staff", () => {
     const done = { ...organization, onboardingCompletedAt: new Date() };
     expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).toContain("Onboarding is complete");
     expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).not.toContain("fetch_page");
-  });
-
-  it("drops web search results from the history so the next message validates", async () => {
-    const organization = await setUpOrg();
-    const agent = createChiefOfStaff({ organization, user, profile: "" }, { model: scriptedModel() });
-    // The shape AI Gateway actually returns for a Parallel search.
-    const messages = [
-      { id: "u1", role: "user", parts: [{ type: "text", text: "Hi, let's get set up." }] },
-      {
-        id: "a1",
-        role: "assistant",
-        parts: [
-          { type: "step-start" },
-          {
-            type: "tool-web_search",
-            toolCallId: "call_1",
-            state: "output-available",
-            providerExecuted: true,
-            input: { objective: "What is Cedar Legacy?" },
-            output: {
-              search_id: "search_1",
-              results: [{ url: "https://www.cedarlegacy.com/", title: "Cedar Legacy", excerpts: ["A family office."] }],
-              usage: [{ name: "sku_search", count: 1 }],
-            },
-          },
-          { type: "text", text: "You're a family office. Right?" },
-        ],
-      },
-      { id: "a2", role: "assistant", parts: [{ type: "step-start" }, { type: "tool-fetch_page", toolCallId: "call_2", state: "output-available", providerExecuted: true, input: { url: "https://www.cedarlegacy.com/" }, output: { raw: true } }] },
-      { id: "u2", role: "user", parts: [{ type: "text", text: "Yes." }] },
-    ] as unknown as UIMessage[];
-
-    await expect(validateUIMessages({ messages, tools: agent.tools })).rejects.toThrow(/web_search/);
-
-    const cleaned = withoutResearchResults(messages);
-    expect(cleaned.map((m) => m.id)).toEqual(["u1", "a1", "u2"]);
-    expect(cleaned[1].parts.map((p) => p.type)).toEqual(["step-start", "text"]);
-    await expect(validateUIMessages({ messages: cleaned, tools: agent.tools })).resolves.toHaveLength(3);
   });
 
   it("refuses to start without a model", async () => {

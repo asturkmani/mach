@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { getToolName, isToolUIPart } from "ai";
+import { DefaultChatTransport, getToolName, isToolUIPart } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,21 +11,36 @@ import { onboardingChecklist } from "@/lib/profile/markdown";
 
 type ToolPart = Extract<ChiefOfStaffMessage["parts"][number], { type: `tool-${string}` }>;
 
+// History is stored on the server, so only the newest message is sent.
+const transport = new DefaultChatTransport<ChiefOfStaffMessage>({
+  api: "/api/chat",
+  prepareSendMessagesRequest: ({ id, messages }) => ({ body: { id, message: messages.at(-1) } }),
+});
+
 export function Onboarding({
+  chatId,
+  initialMessages,
   initialProfile,
   initiallyComplete,
 }: {
+  chatId: string;
+  initialMessages: ChiefOfStaffMessage[];
   initialProfile: string;
   initiallyComplete: boolean;
 }) {
-  const { messages, sendMessage, status, error, stop } = useChat<ChiefOfStaffMessage>();
+  const { messages, sendMessage, status, error, stop } = useChat<ChiefOfStaffMessage>({
+    id: chatId,
+    messages: initialMessages,
+    transport,
+  });
   const [input, setInput] = useState("");
   const [view, setView] = useState<"preview" | "markdown">("preview");
   const busy = status === "submitted" || status === "streaming";
 
-  // The profile shown is the newest one returned by any finished tool call.
+  // The profile shown is the newest one returned by a tool call in this visit;
+  // older stored tool results may predate changes made elsewhere (e.g. Team page).
   const profile = useMemo(() => {
-    for (let m = messages.length - 1; m >= 0; m--) {
+    for (let m = messages.length - 1; m >= initialMessages.length; m--) {
       const parts = messages[m].parts;
       for (let p = parts.length - 1; p >= 0; p--) {
         const part = parts[p];
@@ -36,7 +51,7 @@ export function Onboarding({
       }
     }
     return initialProfile;
-  }, [messages, initialProfile]);
+  }, [messages, initialMessages.length, initialProfile]);
 
   const complete =
     initiallyComplete ||

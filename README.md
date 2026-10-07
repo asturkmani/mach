@@ -20,6 +20,8 @@ Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres 
 
 The company profile is one markdown document per company, stored in Postgres. Its people section is generated from the `people` table.
 
+Each person's conversation with the Chief of Staff is stored in Postgres too, so it survives a reload. The browser only sends the newest message; the server loads the history, repairs known AI Gateway result-shape mismatches, validates it and saves the reply.
+
 ## Set up
 
 ### 1. WorkOS
@@ -80,6 +82,7 @@ pnpm build
 | `app/(app)/team/` | Team page and its server actions (add, set manager, invite, remove) |
 | `app/api/chat/route.ts` | Streams the Chief of Staff's replies for the signed-in company |
 | `lib/agents/chief-of-staff.ts` | Agent instructions and tools |
+| `lib/agents/history.ts`, `lib/chats.ts` | Stored chat history: loading, repairing, validating and saving |
 | `lib/session.ts` | Signed-in user, current company and their person record |
 | `lib/people.ts`, `lib/orgs.ts`, `lib/profile/` | Data access for people, companies and the profile |
 | `db/schema.sql` | Database schema |
