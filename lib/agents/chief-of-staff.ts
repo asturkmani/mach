@@ -1,6 +1,14 @@
 import "server-only";
 
-import { gateway, ToolLoopAgent, tool, type InferAgentUIMessage, type LanguageModel, type ToolSet } from "ai";
+import {
+  gateway,
+  ToolLoopAgent,
+  tool,
+  type InferAgentUIMessage,
+  type LanguageModel,
+  type ToolSet,
+  type UIMessage,
+} from "ai";
 import { z } from "zod";
 
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
@@ -123,6 +131,19 @@ const researchTools = {
   web_search: gateway.tools.parallelSearch({ mode: "agentic", maxResults: 5 }),
   fetch_page: gateway.tools.browserbaseFetch({ format: "markdown", allowRedirects: true, proxies: false }),
 } satisfies ToolSet;
+
+/**
+ * AI Gateway returns web search and page fetch results in a different shape
+ * from the one the AI SDK validates (e.g. `search_id` vs `searchId`), so a
+ * conversation that used them fails validation on the next message. The model
+ * has already acted on those results, so drop them from the history sent back.
+ */
+export function withoutResearchResults<T extends UIMessage>(messages: T[]): T[] {
+  const isResearch = (type: string) => Object.keys(researchTools).some((name) => type === `tool-${name}`);
+  return messages
+    .map((message) => ({ ...message, parts: message.parts.filter((part) => !isResearch(part.type)) }))
+    .filter((message) => message.parts.some((part) => part.type !== "step-start"));
+}
 
 export function createChiefOfStaff(
   context: Context,

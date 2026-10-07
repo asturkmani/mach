@@ -1,6 +1,6 @@
 import { createAgentUIStreamResponse } from "ai";
 
-import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
+import { createChiefOfStaff, withoutResearchResults } from "@/lib/agents/chief-of-staff";
 import { loadProfile } from "@/lib/profile/store";
 import { getSessionContext } from "@/lib/session";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
   return createAgentUIStreamResponse({
     agent,
-    uiMessages: messages,
+    uiMessages: withoutResearchResults(messages),
     abortSignal: request.signal,
     // Internal tool for now, so show the real reason (e.g. a missing AI Gateway key).
     onError: (error) => (error instanceof Error ? error.message : "Something went wrong."),
