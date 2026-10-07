@@ -56,7 +56,12 @@ export function Onboarding({
   const complete =
     initiallyComplete ||
     messages.some((m) =>
-      m.parts.some((part) => part.type === "tool-complete_onboarding" && part.state === "output-available"),
+      m.parts.some(
+        (part) =>
+          part.type === "tool-complete_onboarding" &&
+          part.state === "output-available" &&
+          part.output.onboardingComplete,
+      ),
     );
   const checklist = onboardingChecklist(profile);
   const started = onboardingChecklist(initialProfile).some((item) => item.done);

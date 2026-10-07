@@ -6,6 +6,7 @@ import { cache } from "react";
 
 import { createOrganization, getOrganization, type Organization } from "@/lib/orgs";
 import { linkMember, type Person } from "@/lib/people";
+import { companyDomainFromEmail } from "@/lib/website";
 
 export type SessionUser = { id: string; email: string; name: string };
 
@@ -43,6 +44,16 @@ export const getSessionContext = cache(async function getSessionContext(): Promi
   const person = await linkMember(organization.id, user);
   return { user, organization, person, isAdmin: auth.role === "admin" };
 });
+
+/**
+ * The signed-in user's work email domain, which ties them to their company.
+ * Null for personal providers (gmail.com…) and for unverified addresses, so
+ * nobody can claim a domain they don't own.
+ */
+export async function getCompanyDomain(): Promise<string | null> {
+  const { user } = await withAuth({ ensureSignedIn: true });
+  return user.emailVerified ? companyDomainFromEmail(user.email) : null;
+}
 
 /** For pages that need an organization: sends people without one to /welcome. */
 export async function requireAppContext(): Promise<AppContext> {

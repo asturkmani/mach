@@ -9,7 +9,7 @@ Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres 
 ## What works today
 
 1. **Sign in** with WorkOS (Google, Microsoft, email magic link — whatever you enable in WorkOS).
-2. **Create your company**: name and website (guessed from your work email). This creates a WorkOS organization with you as admin.
+2. **Create your company**: name and website (guessed from your work email). This creates a WorkOS organization with you as admin. Signing up with a work email claims its domain (e.g. `cedarlegacy.com`): colleagues who sign in later with the same domain are told the company is already on Mach and asked to get an invite, instead of creating a duplicate. Personal addresses (gmail.com, outlook.com, …) claim nothing, so anyone using one can create a company of their own.
 3. **Chief of Staff onboarding**: a short chat that captures just the essentials — what the company does (it reads your website first), the team and reporting lines, and the top priorities — then marks onboarding complete. It looks things up on the web instead of asking you to explain tools or companies.
 4. **Team page**: everyone in the org chart with their status:
    - **Not invited** — in the org chart, no login.

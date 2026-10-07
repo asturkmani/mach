@@ -72,7 +72,7 @@ export default async function TeamPage() {
                         />
                       </td>
                       <td className="px-3 py-2">
-                        <span className={`rounded-full px-2 py-0.5 text-xs ${status.className}`}>{status.label}</span>
+                        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${status.className}`}>{status.label}</span>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <PersonActions
