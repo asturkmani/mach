@@ -20,35 +20,38 @@ function toolCall(id: string, toolName: string, input: object) {
   return { type: "tool-call" as const, toolCallId: id, toolName, input: JSON.stringify(input) };
 }
 
-// First model call: record the essentials via tools (in parallel). Second: reply.
-function scriptedModel() {
+type Step = Array<[toolName: string, input: object]> | string;
+
+// Plays back one model step per call: a list of (parallel) tool calls, or a final text reply.
+function scriptedModel(steps: Step[]) {
   let call = 0;
   return new MockLanguageModelV4({
     doGenerate: async () => {
-      call += 1;
-      if (call === 1) {
+      const step = steps[Math.min(call++, steps.length - 1)];
+      if (typeof step === "string") {
         return {
-          content: [
-            toolCall("1", "update_section", { section: "Overview", content: "Single-family office for the Cedar family." }),
-            toolCall("2", "save_person", { name: "Ahmed", role: "Principal", reportsTo: "" }),
-            toolCall("3", "save_person", { name: "Mustapha", role: "Finance lead", reportsTo: "Ahmed", responsibilities: "Masttro" }),
-            toolCall("4", "update_section", { section: "Goals", content: "- Manage cash flow\n- AI-first operations" }),
-            toolCall("5", "complete_onboarding", {}),
-          ],
-          finishReason: { unified: "tool-calls" as const, raw: undefined },
+          content: [{ type: "text" as const, text: step }],
+          finishReason: { unified: "stop" as const, raw: undefined },
           usage,
           warnings: [],
         };
       }
       return {
-        content: [{ type: "text" as const, text: "You're set up." }],
-        finishReason: { unified: "stop" as const, raw: undefined },
+        content: step.map(([name, input], i) => toolCall(`${call}-${i}`, name, input)),
+        finishReason: { unified: "tool-calls" as const, raw: undefined },
         usage,
         warnings: [],
       };
     },
   });
 }
+
+const essentials: Step = [
+  ["update_section", { section: "Overview", content: "Single-family office for the Cedar family." }],
+  ["save_person", { name: "Ahmed", role: "Principal", reportsTo: "" }],
+  ["save_person", { name: "Mustapha", role: "Finance lead", reportsTo: "Ahmed", responsibilities: "Masttro" }],
+  ["update_section", { section: "Goals", content: "- Manage cash flow\n- AI-first operations" }],
+];
 
 async function setUpOrg() {
   await createOrganization({ id: ORG, name: "Cedar Legacy", website: "https://cedar.example" });
@@ -66,7 +69,11 @@ describe("Chief of Staff", () => {
     const organization = await setUpOrg();
     const agent = createChiefOfStaff(
       { organization, user, profile: await loadProfile(ORG) },
-      { model: scriptedModel(), research: false },
+      // Like the real model, it calls complete_onboarding alongside the saves, then again.
+      {
+        model: scriptedModel([[...essentials, ["complete_onboarding", {}]], [["complete_onboarding", {}]], "You're set up."]),
+        research: false,
+      },
     );
     const result = await agent.generate({ prompt: "We're a family office. Mustapha runs Masttro and reports to me." });
     expect(result.text).toBe("You're set up.");
@@ -83,9 +90,28 @@ describe("Chief of Staff", () => {
     expect((await getOrganization(ORG))!.onboardingCompletedAt).toBeInstanceOf(Date);
   });
 
+  it("won't finish onboarding while someone besides the top person has no manager", async () => {
+    const organization = await setUpOrg();
+    const model = scriptedModel([
+      [
+        ["update_section", { section: "Overview", content: "Family office." }],
+        ["save_person", { name: "Mustapha", role: "Finance lead" }],
+        ["update_section", { section: "Goals", content: "- Cash flow" }],
+      ],
+      [["complete_onboarding", {}]],
+      "Who does Mustapha report to?",
+    ]);
+    const agent = createChiefOfStaff({ organization, user, profile: await loadProfile(ORG) }, { model, research: false });
+    await agent.generate({ prompt: "Mustapha does finance." });
+
+    expect((await getOrganization(ORG))!.onboardingCompletedAt).toBeNull();
+    const lastPrompt = JSON.stringify(model.doGenerateCalls.at(-1)!.prompt);
+    expect(lastPrompt).toContain("Not complete yet. Missing: Team and reporting lines (2 people, 1 needs a manager)");
+  });
+
   it("offers research tools, reads the website first and drops the interview after onboarding", async () => {
     const organization = await setUpOrg();
-    const onboarding = createChiefOfStaff({ organization, user, profile: "" }, { model: scriptedModel() });
+    const onboarding = createChiefOfStaff({ organization, user, profile: "" }, { model: scriptedModel(["Hi"]) });
     expect(onboarding.tools).toHaveProperty("web_search");
     expect(onboarding.tools).toHaveProperty("fetch_page");
 

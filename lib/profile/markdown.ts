@@ -186,7 +186,7 @@ export function onboardingChecklist(markdown: string): ChecklistItem[] {
         people.length === 0
           ? undefined
           : `${people.length} ${people.length === 1 ? "person" : "people"}${
-              withoutManager > 1 ? `, ${withoutManager - 1} need a manager` : ""
+              withoutManager > 1 ? `, ${withoutManager - 1} ${withoutManager === 2 ? "needs" : "need"} a manager` : ""
             }`,
     },
     { label: "Top priorities", done: isCaptured(markdown, "Goals") },

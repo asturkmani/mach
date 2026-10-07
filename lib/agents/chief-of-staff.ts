@@ -12,8 +12,8 @@ import { z } from "zod";
 
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
 import { removePersonByName, savePerson, syncPeopleSection } from "@/lib/people";
-import { PEOPLE_SECTION, SECTIONS, setCompanyName, setSection } from "@/lib/profile/markdown";
-import { loadProfile, updateProfile } from "@/lib/profile/store";
+import { onboardingChecklist, PEOPLE_SECTION, SECTIONS, setCompanyName, setSection } from "@/lib/profile/markdown";
+import { updateProfile } from "@/lib/profile/store";
 import type { SessionUser } from "@/lib/session";
 
 type Context = { organization: Organization; user: SessionUser; profile: string };
@@ -35,7 +35,7 @@ How to run it:
 - Propose instead of asking: draft from what you already know and ask "Is that right?".
 - Never ask the person to explain a product, tool, company or term you can look up. Use web_search, record what you learn (Glossary or How We Work), and carry on. Example: if they say they use Masttro, look it up and note what it is; don't ask what it is for.
 - Don't ask about mission, values, customers, products or glossary unless they bring it up. Record anything they volunteer.
-- As soon as the three essentials are captured, call complete_onboarding, then reply with a three-line summary and tell them they can keep telling you things at any time.`;
+- As soon as the three essentials are captured, call complete_onboarding on its own (after your other saves). If it reports something missing, ask about that in one short question and try again later. Once it succeeds, reply with a three-line summary and tell them they can keep telling you things at any time.`;
 }
 
 const AFTER_ONBOARDING = `Onboarding is complete. You are now the company's Chief of Staff: answer questions using the profile, record anything new you learn, and keep the people list and reporting lines up to date. Don't start a new interview; ask at most one short question when something important is missing.`;
@@ -126,13 +126,25 @@ function profileTools({ organization }: Context) {
       }),
     }),
     complete_onboarding: tool({
-      description: "Mark onboarding as finished once the company overview, team with reporting lines and top priorities are captured.",
+      description:
+        "Mark onboarding as finished. Only succeeds once the company overview, the team with reporting lines (everyone but the person at the top has a manager) and top priorities are captured; otherwise it lists what's missing.",
       inputSchema: z.object({}),
       execute: async () => {
+        // Queued behind any profile updates still in flight from this step.
+        const profile = await updateProfile(orgId, (md) => md);
+        const missing = onboardingChecklist(profile)
+          .filter((item) => !item.done)
+          .map((item) => (item.detail ? `${item.label} (${item.detail})` : item.label));
+        if (missing.length > 0) return { onboardingComplete: false, missing, profile };
         await completeOnboarding(orgId);
-        return { onboardingComplete: true, profile: await loadProfile(orgId) };
+        return { onboardingComplete: true, missing, profile };
       },
-      toModelOutput: confirm("Onboarding is marked complete."),
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value: output.onboardingComplete
+          ? "Onboarding is marked complete."
+          : `Not complete yet. Missing: ${output.missing.join("; ")}. If you saved this in the same step, call complete_onboarding again. Otherwise ask one short question about it; if someone has no manager, ask where they fit (for example whether the person you're talking to is one of the people already listed).`,
+      }),
     }),
   };
 }
