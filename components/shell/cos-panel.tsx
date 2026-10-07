@@ -161,6 +161,7 @@ export function CosPanel({
                       part={part as ToolPart}
                       suggestionStatus={suggestionStatus}
                       integrationStatus={integrationStatus}
+                      latest={message.id === messages.at(-1)?.id}
                       tell={(text) => !busy && sendMessage({ text })}
                     />
                   );
@@ -235,11 +236,14 @@ function ToolPart({
   part,
   suggestionStatus,
   integrationStatus,
+  latest,
   tell,
 }: {
   part: ToolPart;
   suggestionStatus: Record<string, TaskStatus>;
   integrationStatus: IntegrationState;
+  /** In the newest message: a code card there is still live; older ones are history. */
+  latest: boolean;
   /** Tells the Chief of Staff something happened in a card (credentials saved, a code entered), so it carries on. */
   tell: (text: string) => void;
 }) {
@@ -274,7 +278,7 @@ function ToolPart({
     return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} tell={tell} login />;
   }
   const needsCode = name === "browser_login" && done ? (part.output as unknown as LoginOutput).needsCode : undefined;
-  if (needsCode) return <SignInCodeCard login={needsCode} tell={tell} />;
+  if (needsCode && latest) return <SignInCodeCard login={needsCode} tell={tell} />;
 
   const input = (part.input ?? {}) as Record<string, string | undefined>;
   const labels: Record<string, string> = {
@@ -298,7 +302,7 @@ function ToolPart({
     web_search: `Searched${input.objective ? `: ${truncate(input.objective, 50)}` : " the web"}`,
     fetch_page: `Read ${input.url ? truncate(input.url.replace(/^https?:\/\//, ""), 50) : "a page"}`,
     browse: `Opened ${input.url ? truncate(input.url.replace(/^https?:\/\//, ""), 50) : "a page"} in the browser`,
-    browser_login: `Signed in to ${input.login ?? "a site"}`,
+    browser_login: needsCode ? `${input.login ?? "The site"} asked for a sign-in code` : `Signed in to ${input.login ?? "a site"}`,
     run_code: `Ran ${input.filename ?? "a script"}`,
     run_command: `Ran ${truncate(input.command ?? "a command", 40)}`,
     read_file: `Read ${input.path ?? "a file"}`,

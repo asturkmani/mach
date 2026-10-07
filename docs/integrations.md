@@ -11,7 +11,14 @@ Everything is on the **Integrations** page: status, who can use it, access, cred
 
 ## Connecting one
 
-Tell the Chief of Staff, e.g. "Connect Masttro as a data source, the API docs are at …" or "Set up a login for app.masttro.com for the data entry agent". It reads the docs and saves the integration:
+Tell the Chief of Staff, e.g. "Connect Masttro as a data source, the API docs are at …" or "Set up a login for app.masttro.com for the data entry agent". It sets the integration up itself, in the chat: it never creates an agent or a task for this.
+
+It reads the docs first. When `fetch_page` can't read them (a JavaScript page, or docs behind a sign-in), it uses the browser in its own sandbox:
+
+- **Docs behind a sign-in:** it connects a login for the docs site, for itself only. You enter your username and password in the card, which tells the Chief of Staff when it's saved, so it carries on. It signs in with `browser_login`; if the site sends a code, a code card in the chat hands it straight to the waiting browser.
+- **Swagger or Redoc pages:** `browse` lists the data a page loaded, which is where these pages fetch their spec. It saves the spec and reads it with code.
+
+Then it saves the integration:
 
 - **For a data source:**
   - the base URL and the hosts requests may go to;

@@ -608,7 +608,7 @@ export async function testIntegration(organizationId: string, id: string): Promi
   if (!integration) throw new IntegrationError("That integration doesn't exist.");
   if (integration.kind !== "api") {
     // A login is checked by signing in, which happens in an agent's browser the first time it's used.
-    await setStatus(integration.id, "connected", "Credentials saved; an agent signs in the first time it uses it.");
+    await setStatus(integration.id, "connected", "Credentials saved; it signs in the first time it’s used.");
     return (await getIntegration(organizationId, integration.id))!;
   }
   const config = integration.config as ApiConfig;
