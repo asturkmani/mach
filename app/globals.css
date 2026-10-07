@@ -1,27 +1,254 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/*
+ * Mach's look: a warm, quiet workspace with a dotted backdrop, framed panels,
+ * small monospace labels and one accent colour for what needs attention.
+ * Every colour is a token so light and dark stay in step.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f2f0ec;
+  --bg-dot: rgba(28, 27, 25, 0.07);
+  --panel: #fbfaf8;
+  --raised: #ffffff;
+  --hover: #efece7;
+  --selected: #e8e4de;
+  --line: #d9d4cc;
+  --line-soft: #e8e4de;
+  --ink: #1c1b19;
+  --muted: #69645d;
+  --faint: #9c978f;
+  --accent: #d4521c;
+  --accent-soft: rgba(212, 82, 28, 0.1);
+  --ok: #3b8455;
+  --warn: #a9711b;
+  --danger: #bf3b28;
+  --shadow: 0 12px 40px rgba(28, 27, 25, 0.12);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171615;
+    --bg-dot: rgba(255, 255, 255, 0.045);
+    --panel: #1e1d1b;
+    --raised: #252422;
+    --hover: #282624;
+    --selected: #302e2b;
+    --line: #393633;
+    --line-soft: #2c2a27;
+    --ink: #ece8e2;
+    --muted: #a39e97;
+    --faint: #6f6b65;
+    --accent: #ef6b33;
+    --accent-soft: rgba(239, 107, 51, 0.13);
+    --ok: #6fbf89;
+    --warn: #e0a64a;
+    --danger: #f07a64;
+    --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #171615;
+  --bg-dot: rgba(255, 255, 255, 0.045);
+  --panel: #1e1d1b;
+  --raised: #252422;
+  --hover: #282624;
+  --selected: #302e2b;
+  --line: #393633;
+  --line-soft: #2c2a27;
+  --ink: #ece8e2;
+  --muted: #a39e97;
+  --faint: #6f6b65;
+  --accent: #ef6b33;
+  --accent-soft: rgba(239, 107, 51, 0.13);
+  --ok: #6fbf89;
+  --warn: #e0a64a;
+  --danger: #f07a64;
+  --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
   font-family: var(--font-sans), system-ui, sans-serif;
-  background: var(--background);
-  color: var(--foreground);
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--bg-dot) 1px, transparent 1px);
+  background-size: 18px 18px;
+  color: var(--ink);
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+@layer components {
+  /* Small uppercase monospace label: section names, metadata, keys. */
+  .label {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* A framed panel with corner marks at the top. */
+  .frame {
+    position: relative;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+  }
+  .frame::before,
+  .frame::after {
+    content: "";
+    position: absolute;
+    top: 10px;
+    width: 14px;
+    height: 14px;
+    border-top: 1px solid var(--faint);
+    pointer-events: none;
+  }
+  .frame::before {
+    left: 10px;
+    border-left: 1px solid var(--faint);
+  }
+  .frame::after {
+    right: 10px;
+    border-right: 1px solid var(--faint);
+  }
+
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4em;
+    height: 1.4em;
+    padding: 0 0.3em;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 10.5px;
+    line-height: 1;
+    color: var(--muted);
+    background: var(--raised);
+  }
+
+  .field {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: var(--raised);
+    color: var(--ink);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    outline: none;
+    border-radius: 4px;
+  }
+  .field:focus {
+    border-color: var(--muted);
+  }
+  .field::placeholder {
+    color: var(--faint);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid var(--line);
+    background: var(--raised);
+    color: var(--ink);
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8125rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .btn:hover {
+    background: var(--hover);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .btn-primary {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--panel);
+  }
+  .btn-primary:hover {
+    background: color-mix(in srgb, var(--ink) 85%, var(--panel));
+  }
+  .btn-ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+  }
+  .btn-ghost:hover {
+    color: var(--ink);
+    background: var(--hover);
+  }
+
+  /* The accent underline used on urgent titles. */
+  .urgent-title {
+    text-decoration-line: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 5px;
+  }
+
+  .scroll-quiet {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+}
+
+/* Markdown written by people and agents. */
+.prose-mach {
+  --tw-prose-body: var(--ink);
+  --tw-prose-headings: var(--ink);
+  --tw-prose-bold: var(--ink);
+  --tw-prose-links: var(--accent);
+  --tw-prose-bullets: var(--faint);
+  --tw-prose-counters: var(--muted);
+  --tw-prose-quotes: var(--muted);
+  --tw-prose-quote-borders: var(--line);
+  --tw-prose-code: var(--ink);
+  --tw-prose-hr: var(--line);
+  --tw-prose-th-borders: var(--line);
+  --tw-prose-td-borders: var(--line-soft);
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-slow {
+  animation: spin-slow 2.4s linear infinite;
 }

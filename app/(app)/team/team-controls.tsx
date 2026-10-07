@@ -6,12 +6,11 @@ import type { PersonStatus } from "@/lib/people";
 
 import { addPersonAction, inviteAction, removePersonAction, setManagerAction, type ActionResult } from "./actions";
 
-const inputClass =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900";
+const inputClass = "field";
 
 function Feedback({ result }: { result: ActionResult }) {
-  if (result.error) return <p className="text-xs text-red-600 dark:text-red-400">{result.error}</p>;
-  if (result.message) return <p className="text-xs text-emerald-700 dark:text-emerald-400">{result.message}</p>;
+  if (result.error) return <p className="text-xs text-danger">{result.error}</p>;
+  if (result.message) return <p className="text-xs text-ok">{result.message}</p>;
   return null;
 }
 
@@ -27,9 +26,9 @@ export function AddPersonForm({ managers }: { managers: string[] }) {
     <form
       ref={formRef}
       action={action}
-      className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+      className="space-y-3 border border-line bg-raised p-4"
     >
-      <h2 className="text-sm font-medium">Add someone</h2>
+      <h2 className="label">Add someone</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <input name="name" required placeholder="Name" className={inputClass} />
         <input name="role" placeholder="Role, e.g. Finance lead" className={inputClass} />
@@ -48,7 +47,7 @@ export function AddPersonForm({ managers }: { managers: string[] }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+          className="btn btn-primary"
         >
           {pending ? "Adding…" : "Add"}
         </button>
@@ -70,7 +69,7 @@ export function ManagerSelect({ personId, value, options }: { personId: string; 
           const managerName = e.target.value;
           startTransition(async () => setResult(await setManagerAction(personId, managerName)));
         }}
-        className="max-w-44 rounded-md border border-transparent bg-transparent py-0.5 text-sm hover:border-zinc-300 dark:hover:border-zinc-700"
+        className="max-w-44 border border-transparent bg-transparent py-0.5 text-sm hover:border-line"
       >
         <option value="">No one</option>
         {options.map((name) => (
@@ -101,8 +100,7 @@ export function PersonActions({
   const [result, setResult] = useState<ActionResult>({});
   const [copied, setCopied] = useState(false);
   const run = (action: () => Promise<ActionResult>) => startTransition(async () => setResult(await action()));
-  const button =
-    "rounded-md px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-800";
+  const button = "px-2 py-1 text-xs text-muted hover:bg-hover hover:text-ink disabled:opacity-50";
 
   return (
     <div className="flex flex-col items-end gap-1">
@@ -131,7 +129,7 @@ export function PersonActions({
         )}
         {canManage && (
           <button
-            className={`${button} text-red-600 dark:text-red-400`}
+            className={`${button} hover:text-danger`}
             disabled={pending}
             onClick={() => {
               if (confirm("Remove this person from the team?")) run(() => removePersonAction(personId));
