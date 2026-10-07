@@ -26,6 +26,7 @@ import {
   countPersonComments,
   getTask,
   listMessages,
+  reactToMessages,
   releaseRun,
   renewRun,
   updateTask,
@@ -54,6 +55,8 @@ export type BegunRun =
       logins: string[];
       /** Images people attached since this agent last spoke, sized for the model. */
       images: BriefImage[];
+      /** The people's messages this run answers: they get its reaction (👀, then how it ended). */
+      answering: string[];
     };
 
 export type BriefImage = { name: string; mediaType: string; data: string };
@@ -104,6 +107,16 @@ export async function beginRun(
   ]);
   const others = agentsOn(task).filter((m) => m.id !== agent.id);
   const images = await newImages(organizationId, messages, agent.id);
+  // The people's messages since this agent last wrote, and any still showing its 👀 (one that
+  // came in while it was finishing its last run, or that a run never got to).
+  const since = messages.findLastIndex((m) => m.agentId === agent.id);
+  const answering = messages
+    .filter(
+      (m, i) =>
+        m.personId && m.kind === "comment" && (i > since || m.reactions.some((r) => r.agentId === agent.id && r.emoji === "👀")),
+    )
+    .map((m) => m.id);
+  await reactToMessages(agent.id, answering, "👀");
   return {
     ok: true,
     context,
@@ -114,6 +127,7 @@ export async function beginRun(
     sources: integrations.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
     logins: integrations.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
     images,
+    answering,
   };
 }
 
@@ -299,13 +313,19 @@ export async function recordFailure(context: RunContext, message: string): Promi
   return { type: "failed", error: message };
 }
 
-export async function keepLease(context: RunContext): Promise<void> {
+/** Keeps the run's lease fresh and says what the agent is doing now, for the live status on the task. */
+export async function keepLease(context: RunContext, activity?: string): Promise<void> {
   "use step";
-  await renewRun(context.taskId, context.agentId);
+  await renewRun(context.taskId, context.agentId, activity);
 }
 
-export async function endRun(context: RunContext): Promise<void> {
+/** How a run ended, as the reaction on the messages it answered. */
+const ENDED: Partial<Record<RunOutcome["type"], string>> = { finished: "✅", asked: "💬", handed_off: "🤝", failed: "⚠️" };
+
+export async function endRun(context: RunContext, answering: string[] = [], outcome?: RunOutcome): Promise<void> {
   "use step";
+  const emoji = outcome && ENDED[outcome.type];
+  if (emoji) await reactToMessages(context.agentId, answering, emoji);
   await releaseRun(context.taskId, context.agentId);
 }
 

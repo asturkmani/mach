@@ -57,7 +57,7 @@ export async function beginScheduledRun(organizationId: string, taskId: string, 
   await resetAgentTurns(task.id);
   await updateTask(organizationId, task.id, { status: "ready", options: [], laterUntil: null });
   if (!replay) return { type: "agent", agentId: agent.id };
-  if (!(await claimRun(organizationId, task.id, agent.id))) {
+  if (!(await claimRun(organizationId, task.id, agent.id, "Running run.sh"))) {
     await note(`Skipped: ${label.toLowerCase()} came while a run was still going.`);
     return { type: "skip", reason: "A run is going." };
   }

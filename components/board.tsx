@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 
 import { restoreAction, setStatusAction } from "@/app/(app)/tasks/actions";
 import { useKeys, useShell } from "@/components/shell/shell";
+import { TypingDots } from "@/components/agent-status";
 import { Face, PriorityMark } from "@/components/ui";
 import type { TaskView } from "@/lib/task-view";
 import { BOARD_COLUMNS, STATUS_WORDS, type TaskStatus } from "@/lib/task-words";
@@ -126,7 +127,14 @@ export function Board({
                     </span>
                   </div>
                   <p className={`text-[15px] leading-snug ${task.priority === "urgent" ? "urgent-title" : ""}`}>{task.title}</p>
-                  {task.summary && <p className="mt-1 line-clamp-2 text-sm text-muted">{task.summary}</p>}
+                  {task.running ? (
+                    <p className="mt-1 flex items-center gap-1.5 text-sm text-muted">
+                      <TypingDots className="shrink-0 text-accent" />
+                      <span className="truncate">{task.activity ?? "Working"}</span>
+                    </p>
+                  ) : (
+                    task.summary && <p className="mt-1 line-clamp-2 text-sm text-muted">{task.summary}</p>
+                  )}
                   <div className="mt-2.5 flex items-center gap-1">
                     {task.people.map((p) => (
                       <Face key={p.id} name={p.name} size={20} />

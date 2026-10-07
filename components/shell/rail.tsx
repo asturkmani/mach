@@ -21,10 +21,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { signOutAction } from "@/app/(app)/actions";
+import { Elapsed, TypingDots } from "@/components/agent-status";
 import { Face } from "@/components/ui";
 
 import { useNotificationPermission } from "./inbox-notifier";
-import { useShell } from "./shell";
+import { useShell, type ShellData } from "./shell";
 
 // The left menu: a column of icons that widens into labels while the pointer
 // (or keyboard focus) is on it, laid over the page rather than pushing it.
@@ -112,6 +113,7 @@ export function Rail() {
 
           <p className={`${text} label mb-1 px-[15px]`}>Workspace</p>
           <div className="space-y-0.5">{workspace.map(link)}</div>
+          {data.working.length > 0 && <Working working={data.working} text={text} />}
 
           <p className={`${text} label mb-1 mt-5 px-[15px]`}>Company</p>
           <div className="space-y-0.5">{company.map(link)}</div>
@@ -150,5 +152,42 @@ export function Rail() {
         </div>
       </div>
     </nav>
+  );
+}
+
+/**
+ * Agents working right now: three moving dots under Home while the menu is
+ * narrow; widened, who is on which task and what they're doing.
+ */
+function Working({ working, text }: { working: ShellData["working"]; text: string }) {
+  const label = `${working.length} agent${working.length === 1 ? "" : "s"} working`;
+  return (
+    <div className="mt-1" role="status" aria-label={label}>
+      <div className="flex h-8 items-center gap-3 px-[17px] whitespace-nowrap text-accent" title={label}>
+        <span className="flex w-[18px] shrink-0 justify-center">
+          <TypingDots />
+        </span>
+        <span className={`${text} label flex-1 text-accent`}>{label}</span>
+      </div>
+      <ul className="hidden space-y-0.5 group-hover/rail:block group-has-[:focus-visible]/rail:block">
+        {working.slice(0, 5).map((w) => (
+          <li key={w.number}>
+            <Link
+              href={`/tasks/${w.number}`}
+              tabIndex={-1}
+              className="block px-[17px] py-1 text-xs whitespace-nowrap hover:bg-hover"
+              title={`#${w.number} ${w.title}`}
+            >
+              <span className="flex items-center gap-2">
+                <span className="font-mono text-faint">#{w.number}</span>
+                <span className="min-w-0 flex-1 truncate">{w.agent}</span>
+                <Elapsed since={w.since} className="text-faint" />
+              </span>
+              <span className="block truncate pl-0 text-muted">{w.activity || "Working"}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

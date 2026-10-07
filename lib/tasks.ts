@@ -39,6 +39,9 @@ export type Task = {
   createdByAgentId: string | null;
   runAgentId: string | null;
   runStartedAt: Date | null;
+  /** When the current run began, and what its agent is doing now. */
+  runBeganAt: Date | null;
+  runActivity: string;
   agentTurns: number;
   /** The job's notes (the agent's NOTES.md): how to rerun it, variants tried, results. */
   memory: string;
@@ -58,6 +61,9 @@ export type Task = {
 
 export type TaskMessageKind = "comment" | "update" | "ask" | "result" | "event";
 
+/** An agent's reaction to a message: 👀 on it, ✅ done, 💬 asked, 🤝 handed off, ⚠️ hit a problem. */
+export type MessageReaction = { agentId: string; agentName: string; emoji: string };
+
 /** A file attached to a message in the thread. */
 export type MessageAttachment = { versionId: string; fileId: string; name: string; contentType: string; size: number; version: number };
 
@@ -70,6 +76,7 @@ export type TaskMessage = {
   body: string;
   createdAt: Date;
   attachments: MessageAttachment[];
+  reactions: MessageReaction[];
 };
 
 type TaskRow = {
@@ -90,6 +97,8 @@ type TaskRow = {
   created_by_agent_id: string | null;
   run_agent_id: string | null;
   run_started_at: Date | null;
+  run_began_at: Date | null;
+  run_activity: string;
   agent_turns: number;
   memory: string;
   sandbox_name: string | null;
@@ -116,7 +125,7 @@ type MemberRow = {
 
 const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary, t.context, t.progress, t.status,
   t.priority, t.options, t.payload, t.later_until, t.created_by_person_id, t.created_by_agent_id, t.run_agent_id,
-  t.run_started_at, t.agent_turns, t.memory, t.sandbox_name, t.archived_at,
+  t.run_started_at, t.run_began_at, t.run_activity, t.agent_turns, t.memory, t.sandbox_name, t.archived_at,
   exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats, t.pending_login,
   t.created_at, t.updated_at, t.closed_at`;
 
@@ -145,6 +154,8 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     createdByAgentId: row.created_by_agent_id,
     runAgentId: row.run_agent_id,
     runStartedAt: row.run_started_at,
+    runBeganAt: row.run_began_at,
+    runActivity: row.run_activity,
     agentTurns: row.agent_turns,
     memory: row.memory,
     sandboxName: row.sandbox_name,
@@ -367,6 +378,16 @@ export async function listMessages(taskId: string): Promise<TaskMessage[]> {
       { versionId: a.version_id, fileId: a.file_id, name: a.name, contentType: a.content_type, size: a.size, version: a.version },
     ]);
   }
+  const reacted = await getDb().query<{ message_id: string; agent_id: string; agent_name: string; emoji: string }>(
+    `select r.message_id, r.agent_id, a.name as agent_name, r.emoji
+     from task_message_reactions r join task_messages m on m.id = r.message_id join agents a on a.id = r.agent_id
+     where m.task_id = $1 order by r.updated_at`,
+    [taskId],
+  );
+  const reactions = new Map<string, MessageReaction[]>();
+  for (const r of reacted) {
+    reactions.set(r.message_id, [...(reactions.get(r.message_id) ?? []), { agentId: r.agent_id, agentName: r.agent_name, emoji: r.emoji }]);
+  }
   return rows.map((r) => ({
     id: r.id,
     author: r.author,
@@ -376,6 +397,7 @@ export async function listMessages(taskId: string): Promise<TaskMessage[]> {
     body: r.body,
     createdAt: r.created_at,
     attachments: byMessage.get(r.id) ?? [],
+    reactions: reactions.get(r.id) ?? [],
   }));
 }
 
@@ -576,27 +598,47 @@ export async function resetAgentTurns(taskId: string): Promise<void> {
  * Takes the run lease for an agent. Only one run holds a task at a time; a
  * lease older than the timeout is treated as a dead run and can be taken over.
  */
-export async function claimRun(organizationId: string, taskId: string, agentId: string): Promise<boolean> {
+export async function claimRun(
+  organizationId: string,
+  taskId: string,
+  agentId: string,
+  activity = "Reading the task",
+): Promise<boolean> {
   const rows = await getDb().query(
-    `update tasks set run_agent_id = $3, run_started_at = now(), status = 'in_progress',
-       agent_turns = agent_turns + 1, updated_at = now()
+    `update tasks set run_agent_id = $3, run_started_at = now(), run_began_at = now(), run_activity = $4,
+       status = 'in_progress', agent_turns = agent_turns + 1, updated_at = now()
      where organization_id = $1 and id = $2 and status not in ('done', 'cancelled')
        and (run_started_at is null or run_started_at < now() - interval '${LEASE}')
      returning id`,
-    [organizationId, taskId, agentId],
+    [organizationId, taskId, agentId, activity],
   );
   return rows.length > 0;
 }
 
-/** Keeps a long run's lease fresh, so it isn't mistaken for a dead one. */
-export async function renewRun(taskId: string, agentId: string): Promise<void> {
-  await getDb().query("update tasks set run_started_at = now() where id = $1 and run_agent_id = $2", [taskId, agentId]);
+/** Keeps a long run's lease fresh, so it isn't mistaken for a dead one, and says what the agent is doing now. */
+export async function renewRun(taskId: string, agentId: string, activity?: string): Promise<void> {
+  await getDb().query(
+    "update tasks set run_started_at = now(), run_activity = coalesce($3, run_activity) where id = $1 and run_agent_id = $2",
+    [taskId, agentId, activity ?? null],
+  );
 }
 
 export async function releaseRun(taskId: string, agentId: string): Promise<void> {
   await getDb().query(
-    "update tasks set run_agent_id = null, run_started_at = null where id = $1 and run_agent_id = $2",
+    `update tasks set run_agent_id = null, run_started_at = null, run_began_at = null, run_activity = ''
+     where id = $1 and run_agent_id = $2`,
     [taskId, agentId],
+  );
+}
+
+/** An agent's reaction to messages in a thread (one per agent per message; a new one replaces it). */
+export async function reactToMessages(agentId: string, messageIds: string[], emoji: string): Promise<void> {
+  if (messageIds.length === 0) return;
+  await getDb().query(
+    `insert into task_message_reactions (message_id, agent_id, emoji)
+     select unnest($1::uuid[]), $2, $3
+     on conflict (message_id, agent_id) do update set emoji = excluded.emoji, updated_at = now()`,
+    [messageIds, agentId, emoji],
   );
 }
 
@@ -611,6 +653,20 @@ export async function listSuggestionStatuses(organizationId: string, personId: s
 }
 
 /** True while any agent in the organization is working or about to start, so screens know to keep refreshing. */
+/** The company's agent runs going now: which task, which agent, and what it's doing. */
+export async function listWorking(
+  organizationId: string,
+): Promise<{ number: number; title: string; agent: string; activity: string; since: Date | null }[]> {
+  const rows = await getDb().query<{ number: number; title: string; agent: string; run_activity: string; run_began_at: Date | null }>(
+    `select t.number, t.title, a.name as agent, t.run_activity, t.run_began_at
+     from tasks t join agents a on a.id = t.run_agent_id
+     where t.organization_id = $1 and t.run_started_at > now() - interval '${LEASE}'
+     order by t.run_began_at nulls last`,
+    [organizationId],
+  );
+  return rows.map((r) => ({ number: r.number, title: r.title, agent: r.agent, activity: r.run_activity, since: r.run_began_at }));
+}
+
 export async function anyRunning(organizationId: string): Promise<boolean> {
   const [row] = await getDb().query<{ running: boolean }>(
     `select exists (

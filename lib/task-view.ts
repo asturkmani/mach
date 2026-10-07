@@ -17,6 +17,9 @@ export type TaskView = {
   updatedAt: string;
   running: boolean;
   runAgent: string | null;
+  /** While an agent works: what it's doing now ("Running summarise.py"), and since when the run began. */
+  activity: string | null;
+  runSince: string | null;
   /** A recurring job. */
   repeats: boolean;
   /** Who @-mentioned the viewer, when that's why it needs them. */
@@ -43,6 +46,8 @@ export function toView(task: Task, now = Date.now()): TaskView {
     updatedAt: new Date(task.updatedAt).toISOString(),
     running,
     runAgent: running ? (agents.find((a) => a.id === task.runAgentId)?.name ?? null) : null,
+    activity: running ? task.runActivity || null : null,
+    runSince: running && task.runBeganAt ? new Date(task.runBeganAt).toISOString() : null,
     repeats: task.repeats,
     mentionedBy: task.mentionedBy ?? null,
     people: task.members.filter((m) => m.type === "person").map((m) => ({ id: m.id, name: m.name })),

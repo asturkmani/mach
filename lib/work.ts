@@ -30,6 +30,7 @@ import {
   getTask,
   isRunning,
   listMessages,
+  reactToMessages,
   resetAgentTurns,
   saveLoginCode,
   setArchived,
@@ -155,7 +156,7 @@ export async function replyToTask(
     });
     versions.push(saved.versionId);
   }
-  await addMessage(task.id, {
+  const messageId = await addMessage(task.id, {
     author: by.name,
     personId: by.personId,
     kind: "comment",
@@ -173,6 +174,8 @@ export async function replyToTask(
   const agentId = forPeopleOnly ? undefined : agentToWake(current, await listMessages(task.id), body);
   if (agentId && !task.archivedAt && task.kind === "task") {
     await updateTask(organizationId, task.id, { status: "ready", laterUntil: null, options: [] });
+    // 👀 straight away: the agent has it.
+    if (messageId) await reactToMessages(agentId, [messageId], "👀");
     await dispatchRun(organizationId, task.id, agentId);
   }
   return (await getTask(organizationId, task.id))!;

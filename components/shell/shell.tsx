@@ -31,6 +31,8 @@ export type ShellData = {
   /** What's in this person's inbox now, so the shell can notify them when something arrives. */
   inbox: InboxItem[];
   inProgressCount: number;
+  /** Agents working right now, for the status in the left menu. */
+  working: { number: number; title: string; agent: string; activity: string; since: string | null }[];
 };
 
 

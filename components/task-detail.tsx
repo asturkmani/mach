@@ -3,7 +3,7 @@
 import { Archive, ArchiveRestore, ArrowLeft, LoaderCircle, Paperclip, Play, Repeat, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -23,6 +23,7 @@ import {
 } from "@/app/(app)/tasks/actions";
 import { CodeSection, FilesSection, type FileView, type LibraryOption } from "@/components/task-files";
 import { MentionTextarea, type MentionCandidate } from "@/components/mention-textarea";
+import { Elapsed, Reactions, ThreadStatus, type ReactionView } from "@/components/agent-status";
 import { MessageAttachments, PendingAttachments, useReplyAttachments, type MessageAttachmentView } from "@/components/reply-attachments";
 import { RepeatsPanel, type ScheduleView } from "@/components/task-schedule";
 import { linkMentions } from "@/lib/mentions";
@@ -57,6 +58,7 @@ type Message = {
   body: string;
   createdAt: string;
   attachments: MessageAttachmentView[];
+  reactions: ReactionView[];
 };
 type Option = { id: string; name: string; role: string };
 
@@ -92,6 +94,7 @@ export function TaskDetail({
   const [reply, setReply] = useState("");
   const [summaryOpen, setSummaryOpen] = useStoredFlag(SUMMARY_KEY, true);
   const replyRef = useRef<HTMLTextAreaElement>(null);
+  const starting = useStarting(task);
   const filePicker = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const attachments = useReplyAttachments({ prefix: uploadPrefix, enabled: canAttach, onError: (message) => toast(message) });
@@ -208,6 +211,9 @@ export function TaskDetail({
   ]);
 
   const agentMembers = task.members.filter((m): m is Extract<TaskMember, { type: "agent" }> => m.type === "agent");
+  // Who's on it: the agent running, else the one that picked up the latest reply (👀), else the first on the task.
+  const lastAsk = [...messages].reverse().find((m) => m.personId && m.kind === "comment");
+  const working = task.runAgent ?? lastAsk?.reactions.find((r) => r.emoji === "👀")?.agentName ?? agentMembers[0]?.name ?? null;
   const personMembers = task.members.filter((m) => m.type === "person");
   // Everyone who can be @-mentioned: the company's people and agents, plus agents made for this task.
   const mentionable: MentionCandidate[] = [
@@ -260,9 +266,14 @@ export function TaskDetail({
         <div className="scroll-quiet min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-8 pb-10 pt-8">
             {task.running && (
-              <div className="mb-6 flex items-center gap-2 border border-accent/40 bg-accent-soft px-3 py-2 text-sm">
-                <LoaderCircle size={14} className="spin-slow text-accent" />
-                {task.runAgent ?? "An agent"} is working on this. It comes back to the top of Home when it&apos;s done.
+              <div
+                className="mb-6 flex items-center gap-2 border border-accent/40 bg-accent-soft px-3 py-2 text-sm"
+                title="It comes back to the top of Home when it's done."
+              >
+                <LoaderCircle size={14} className="spin-slow shrink-0 text-accent" />
+                <span className="shrink-0">{task.runAgent ?? "An agent"} is working</span>
+                {task.activity && <span className="min-w-0 truncate text-muted">· {task.activity}</span>}
+                <Elapsed since={task.runSince} className="ml-auto shrink-0 text-xs text-muted" />
               </div>
             )}
 
@@ -325,6 +336,9 @@ export function TaskDetail({
                 {messages.map((message) => (
                   <ThreadMessage key={message.id} message={message} names={mentionNames} />
                 ))}
+                {(task.running || starting) && (
+                  <ThreadStatus agent={working ?? "An agent"} activity={task.activity} since={task.runSince} starting={!task.running} />
+                )}
               </ol>
             </section>
 
@@ -749,7 +763,26 @@ function ThreadMessage({ message, names }: { message: Message; names: string[] }
           </ReactMarkdown>
         </div>
         <MessageAttachments attachments={message.attachments} />
+        <Reactions reactions={message.reactions} />
       </div>
     </li>
   );
+}
+
+/** A run is about to start: an agent was just woken (by a reply, or a new task) and hasn't begun. */
+function useStarting(task: Pick<Detail, "running" | "status" | "agents" | "updatedAt">): boolean {
+  const waiting = !task.running && task.status === "ready" && task.agents.length > 0;
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    if (!waiting) return;
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 5000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [waiting]);
+  // A start that hasn't happened within a few minutes isn't coming; don't promise it.
+  return waiting && now !== null && now - new Date(task.updatedAt).getTime() < 3 * 60_000;
 }

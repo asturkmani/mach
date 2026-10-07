@@ -8,11 +8,11 @@ import { onboardingChecklist } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { requireAppContext } from "@/lib/session";
 import { listIntegrations } from "@/lib/integrations";
-import { anyRunning, listInbox, listInProgress, listSuggestionStatuses } from "@/lib/tasks";
+import { anyRunning, listInbox, listInProgress, listSuggestionStatuses, listWorking } from "@/lib/tasks";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { organization, user, person, isAdmin } = await requireAppContext();
-  const [chat, profile, people, agents, inbox, inProgress, suggestionStatus, running, integrations] = await Promise.all([
+  const [chat, profile, people, agents, inbox, inProgress, suggestionStatus, running, integrations, working] = await Promise.all([
     getOrCreateChat<ChiefOfStaffMessage>(organization.id, user.id),
     loadProfile(organization.id),
     listPeople(organization.id),
@@ -22,6 +22,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     listSuggestionStatuses(organization.id, person.id),
     anyRunning(organization.id),
     listIntegrations(organization.id),
+    listWorking(organization.id),
   ]);
 
   return (
@@ -45,6 +46,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           updatedAt: new Date(t.updatedAt).toISOString(),
         })),
         inProgressCount: inProgress.length,
+        working: working.map((w) => ({ ...w, since: w.since ? new Date(w.since).toISOString() : null })),
       }}
       cos={{
         chatId: chat.id,

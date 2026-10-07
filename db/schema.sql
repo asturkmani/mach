@@ -300,3 +300,17 @@ create table if not exists task_message_files (
   version_id uuid not null references file_versions (id) on delete cascade,
   primary key (message_id, version_id)
 );
+
+-- A run's live status: when it began and what the agent is doing now ("Running summarise.py").
+alter table tasks add column if not exists run_began_at timestamptz;
+alter table tasks add column if not exists run_activity text not null default '';
+
+-- An agent's reaction to a message in the thread: 👀 when it picks the message
+-- up, then ✅ done, 💬 asked, 🤝 handed off or ⚠️ hit a problem.
+create table if not exists task_message_reactions (
+  message_id uuid not null references task_messages (id) on delete cascade,
+  agent_id uuid not null references agents (id) on delete cascade,
+  emoji text not null,
+  updated_at timestamptz not null default now(),
+  primary key (message_id, agent_id)
+);

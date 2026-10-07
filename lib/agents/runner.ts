@@ -287,6 +287,76 @@ const researchTools = (): ToolSet => ({
   fetch_page: gateway.tools.browserbaseFetch({ format: "markdown", allowRedirects: true, proxies: false }),
 });
 
+const fileName = (path: unknown) => String(path ?? "").split("/").filter(Boolean).pop() ?? "a file";
+const clipped = (text: unknown, max = 48) => {
+  const line = String(text ?? "").split("\n")[0].trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+};
+
+/** What the agent is doing while a tool runs, in a few words for the live status on the task. */
+export function activityFor(tool: string, input: Record<string, unknown>): string {
+  switch (tool) {
+    case "run_code":
+      return `Running ${fileName(input.filename)}`;
+    case "run_command":
+      return `Running ${clipped(input.command)}`;
+    case "read_file":
+      return `Reading ${fileName(input.path)}`;
+    case "write_file":
+      return `Writing ${fileName(input.path)}`;
+    case "list_files":
+      return input.folder === "drive" ? "Looking through the drive" : "Looking through the job's files";
+    case "attach_file":
+      return `Attaching ${fileName(input.path)}`;
+    case "save_output":
+      return `Saving ${fileName(input.filename)}`;
+    case "call_api":
+      return `Calling ${input.integration}`;
+    case "read_integration_guide":
+      return `Reading the ${input.integration} guide`;
+    case "save_integration_guide":
+      return `Updating the ${input.integration} guide`;
+    case "browser_login":
+      return `Signing in to ${input.login}`;
+    case "post_update":
+      return "Posting an update";
+    case "set_schedule":
+      return "Setting the schedule";
+    case "stop_schedule":
+      return "Stopping the schedule";
+    case "use_skill":
+      return `Reading the ${input.name} playbook`;
+    case "ask":
+      return "Writing a question";
+    case "finish":
+      return "Writing the report";
+    case "hand_off":
+      return "Handing off";
+    default:
+      return tool.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+  }
+}
+
+/** Tools that first say what the agent is doing, so the task shows it live. */
+function narrated(context: RunContext, tools: ToolSet): ToolSet {
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, t]) => {
+      const execute = t.execute;
+      if (!execute) return [name, t]; // run by the provider (web search), with no step of ours to mark
+      return [
+        name,
+        {
+          ...t,
+          execute: async (input: Record<string, unknown>, options: Parameters<typeof execute>[1]) => {
+            await keepLease(context, activityFor(name, input ?? {}));
+            return execute(input, options);
+          },
+        },
+      ];
+    }),
+  ) as ToolSet;
+}
+
 /** The run's opening message, with the images people just attached. */
 function withImages(prompt: string, images: BriefImage[]): string | ModelMessage[] {
   if (images.length === 0) return prompt;
@@ -314,31 +384,34 @@ export async function runAgentOnTask(
   const { context } = begun;
   const state: RunState = {};
   const using = sandboxUser(context, state);
+  let outcome: RunOutcome | undefined;
 
   try {
     const agent = new WorkflowAgent({
       model: options.model ?? begun.model,
       instructions: begun.instructions,
-      tools: {
+      tools: narrated(context, {
         ...runTools(context, begun.otherAgents, (outcome) => (state.outcome = outcome)),
         ...sandboxTools(context, using),
         ...integrationTools(context, begun.sources, using),
         ...browserTools(context, begun.logins, using, (outcome) => (state.outcome = outcome)),
         ...(options.research === false ? {} : researchTools()),
         use_skill: skillTool(),
-      },
+      }),
       // A run also ends when a tool ended it (e.g. a sign-in that asked for a code).
       stopWhen: [isStepCount(40), hasToolCall("ask", "finish", "hand_off"), () => state.outcome !== undefined],
-      // Long runs keep their lease fresh before each model call.
+      // Long runs keep their lease fresh before each model call (and say they're thinking).
       prepareStep: async () => {
-        await keepLease(context);
+        await keepLease(context, "Thinking");
         return undefined;
       },
     });
     const result = await agent.generate({ prompt: withImages(begun.prompt, begun.images) });
-    return state.outcome ?? (await reportText(context, result.text));
+    outcome = state.outcome ?? (await reportText(context, result.text));
+    return outcome;
   } catch (error) {
-    return recordFailure(context, error instanceof Error ? error.message : String(error));
+    outcome = await recordFailure(context, error instanceof Error ? error.message : String(error));
+    return outcome;
   } finally {
     if (state.usedSandbox) {
       try {
@@ -347,7 +420,7 @@ export async function runAgentOnTask(
         console.error(`Couldn't close the sandbox for task ${context.taskId}`, error);
       }
     }
-    await endRun(context);
+    await endRun(context, begun.answering, outcome);
   }
 }
 

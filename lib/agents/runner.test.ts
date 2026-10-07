@@ -291,6 +291,7 @@ describe("taskBrief", () => {
       body: `message ${i}`,
       createdAt: new Date(),
       attachments: [],
+      reactions: [],
     }));
     const brief = taskBrief({ task, messages, files: [], agent });
     expect(brief).toContain("message 0\n");

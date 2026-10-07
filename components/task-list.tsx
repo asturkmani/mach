@@ -158,8 +158,9 @@ export function TaskList({
                         </p>
                         <span className="label flex shrink-0 items-center gap-3">
                           {task.running && (
-                            <span className="flex items-center gap-1.5 text-accent">
-                              <LoaderCircle size={12} className="spin-slow" /> Working
+                            <span className="flex min-w-0 items-center gap-1.5 text-accent" title={task.activity ?? undefined}>
+                              <LoaderCircle size={12} className="spin-slow shrink-0" />
+                              <span className="max-w-56 truncate normal-case tracking-normal">{task.activity ?? "Working"}</span>
                             </span>
                           )}
                           {task.mentionedBy && <span className="text-accent">@ {task.mentionedBy}</span>}
