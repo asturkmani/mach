@@ -28,6 +28,7 @@ import {
   startSandbox,
   writeSandboxFile,
 } from "@/lib/agents/sandbox-steps";
+import { callApi, readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
 import { skillTool } from "@/lib/agents/skills";
 
 // Runs agents on a task. The agent sees everything on the task (its
@@ -77,10 +78,13 @@ const reportFields = {
 
 type RunState = { outcome?: RunOutcome; usedSandbox?: boolean; started?: Promise<string> };
 
-function sandboxTools(context: RunContext, state: RunState) {
-  // The first sandbox tool in a run starts (or resumes) the job's sandbox and
-  // syncs the company drive into it; it is closed when the run ends.
-  const using = async <T>(work: () => Promise<T>) => {
+/**
+ * Wraps sandbox work: the first sandbox tool in a run starts (or resumes) the
+ * job's sandbox, connects data sources and syncs the company drive into it;
+ * it is closed when the run ends.
+ */
+function sandboxUser(context: RunContext, state: RunState) {
+  return async <T>(work: () => Promise<T>) => {
     state.usedSandbox = true;
     state.started ??= startSandbox(context).catch((error) => {
       state.started = undefined; // the next sandbox tool tries again
@@ -89,6 +93,9 @@ function sandboxTools(context: RunContext, state: RunState) {
     await state.started;
     return work();
   };
+}
+
+function sandboxTools(context: RunContext, using: <T>(work: () => Promise<T>) => Promise<T>) {
   return {
     run_code: tool({
       description:
@@ -129,6 +136,37 @@ function sandboxTools(context: RunContext, state: RunState) {
         note: z.string().optional().describe("What this version is, e.g. 'rules ABD' or '70/30 mix'."),
       }),
       execute: (input) => using(() => attachSandboxFile(context, input)),
+    }),
+  } satisfies ToolSet;
+}
+
+function integrationTools(context: RunContext, sources: string[], using: <T>(work: () => Promise<T>) => Promise<T>): ToolSet {
+  if (sources.length === 0) return {};
+  const name = z.enum(sources as [string, ...string[]]);
+  return {
+    call_api: tool({
+      description:
+        "Call one of the company's data sources over HTTP. The request is signed for you; you never handle credentials. Read-only sources allow only GET. Pass save_as to write the whole response to a file in your sandbox or on the drive instead of reading it here.",
+      inputSchema: z.object({
+        integration: name,
+        method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+        path: z.string().min(1).describe("A path under the base URL, e.g. /v1/portfolios, or a full URL on its domain."),
+        query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+        body: z.unknown().optional().describe("A JSON body, for write requests."),
+        save_as: z.string().optional().describe("e.g. inputs/positions.json or /vercel/drive/masttro/positions-2026-10-07.json"),
+      }),
+      execute: (input) => (input.save_as ? using(() => callApi(context, input)) : callApi(context, input)),
+    }),
+    read_integration_guide: tool({
+      description: "Read how to use one of the company's integrations: its base URL, access, and the guide agents keep for it.",
+      inputSchema: z.object({ integration: name }),
+      execute: (input) => readIntegrationGuide(context, input),
+    }),
+    save_integration_guide: tool({
+      description:
+        "Replace an integration's guide with what you've learned (endpoints that work, paging, field meanings, gotchas), so the next agent doesn't have to rediscover it. Read the current guide first and keep what's still true.",
+      inputSchema: z.object({ integration: name, guide: z.string().min(1).describe("Markdown.") }),
+      execute: (input) => saveIntegrationGuide(context, input),
     }),
   } satisfies ToolSet;
 }
@@ -231,6 +269,7 @@ export async function runAgentOnTask(
   if (!begun.ok) return begun.outcome;
   const { context } = begun;
   const state: RunState = {};
+  const using = sandboxUser(context, state);
 
   try {
     const agent = new WorkflowAgent({
@@ -238,7 +277,8 @@ export async function runAgentOnTask(
       instructions: begun.instructions,
       tools: {
         ...runTools(context, begun.otherAgents, (outcome) => (state.outcome = outcome)),
-        ...sandboxTools(context, state),
+        ...sandboxTools(context, using),
+        ...integrationTools(context, begun.sources, using),
         ...(options.research === false ? {} : researchTools()),
         use_skill: skillTool(),
       },

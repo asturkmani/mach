@@ -15,6 +15,6 @@ export default defineConfig({
     include: ["**/*.test.ts"],
     exclude: ["node_modules/**"],
     testTimeout: 30_000,
-    env: { BLOB_READ_WRITE_TOKEN: "", BLOB_STORE_ID: "" },
+    env: { BLOB_READ_WRITE_TOKEN: "", BLOB_STORE_ID: "", MACH_SECRETS_KEY: "dGVzdC1rZXktdGVzdC1rZXktdGVzdC1rZXktdGVzdCE=" },
   },
 });

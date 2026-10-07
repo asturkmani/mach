@@ -5,6 +5,7 @@ import { prepareHistory } from "@/lib/agents/history";
 import { listAgents } from "@/lib/agents/store";
 import { loadChat, saveChat } from "@/lib/chats";
 import { listLibrary } from "@/lib/files";
+import { listIntegrations } from "@/lib/integrations";
 import { loadProfile } from "@/lib/profile/store";
 import { getSessionContext } from "@/lib/session";
 import { listTasks } from "@/lib/tasks";
@@ -40,11 +41,12 @@ export async function POST(request: Request) {
 
   let agent;
   try {
-    const [profile, agents, tasks, files] = await Promise.all([
+    const [profile, agents, tasks, files, integrations] = await Promise.all([
       loadProfile(context.organization.id),
       listAgents(context.organization.id),
       listTasks(context.organization.id, { closedLimit: 0 }),
       listLibrary(context.organization.id, { limit: 30 }),
+      listIntegrations(context.organization.id),
     ]);
     agent = createChiefOfStaff({
       organization: context.organization,
@@ -54,6 +56,7 @@ export async function POST(request: Request) {
       agents,
       openTasks: tasks,
       files,
+      integrations,
     });
   } catch (error) {
     // Configuration problems (e.g. no model set) are shown to the user as-is.

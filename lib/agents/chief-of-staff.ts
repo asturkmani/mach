@@ -13,6 +13,13 @@ import { z } from "zod";
 import { skillList, skillTool } from "@/lib/agents/skills";
 import { createAgent, type Agent } from "@/lib/agents/store";
 import { findFiles, type LibraryFile } from "@/lib/files";
+import {
+  callIntegration,
+  IntegrationError,
+  saveIntegration,
+  type ApiConfig,
+  type Integration,
+} from "@/lib/integrations";
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
 import { removePersonByName, renamePerson, savePerson, syncPeopleSection, type Person } from "@/lib/people";
 import {
@@ -39,6 +46,8 @@ type Context = {
   openTasks?: Task[];
   /** Recent files in the company library, which new jobs can start from. */
   files?: LibraryFile[];
+  /** The company's data sources and logins. */
+  integrations?: Integration[];
 };
 
 function onboardingInstructions({ organization }: Context): string {
@@ -72,7 +81,13 @@ Keeping the profile current:
 }
 
 function workInstructions(context: Context): string {
-  const { agents = [], openTasks = [], files = [] } = context;
+  const { agents = [], openTasks = [], files = [], integrations = [] } = context;
+  const integrationLines = integrations.map(
+    (i) =>
+      `- ${i.slug}: ${i.name} (${i.kind === "api" ? "data source" : "login"}, ${i.access === "read" ? "read-only" : "read and write"}, ${i.status.replace("_", " ")}${
+        i.agentIds ? `, ${i.agentIds.length} agent${i.agentIds.length === 1 ? "" : "s"} only` : ", every agent"
+      })${i.description ? `: ${i.description}` : ""}`,
+  );
   const agentLines = agents
     .filter((a) => a.kind === "defined" && a.status === "active")
     .map((a) => `- ${a.name}${a.role ? ` (${a.role})` : ""}${a.description ? `: ${a.description}` : ""}`);
@@ -98,6 +113,9 @@ ${agentLines.join("\n") || "(none yet)"}
 
 Open tasks:
 ${taskLines.join("\n") || "(none)"}
+
+Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and use connect_data_source; they enter the credentials in the card it shows, never in the chat. Answer quick questions from a connected data source with call_api.
+${integrationLines.join("\n") || "(none yet)"}
 
 Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in create_task's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
 ${fileLines.join("\n") || "(none yet)"}`;
@@ -300,6 +318,119 @@ function workTools(context: Context) {
           "error" in output
             ? `Not created: ${output.error}`
             : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
+      }),
+    }),
+    connect_data_source: tool({
+      description:
+        "Connect (or reconfigure) an HTTP API as a company data source agents can call without seeing its credentials. Shows the person a secure card to enter the credentials, which then tests the connection. Never put credentials in this call.",
+      inputSchema: z.object({
+        name: z.string().min(1).max(60).describe("The system's name, e.g. Masttro."),
+        slug: z.string().optional().describe("Short handle agents use, e.g. masttro. Defaults from the name; reuse it to reconfigure."),
+        description: z.string().describe("What data it holds and what it's for, in a sentence or two."),
+        baseUrl: z.string().describe("e.g. https://api.masttro.com/v1"),
+        domains: z.array(z.string()).optional().describe("Other hosts requests may go to (the base URL's host is included)."),
+        fields: z
+          .array(
+            z.object({
+              name: z.string().describe("e.g. apiKey, clientId, clientSecret"),
+              label: z.string().describe("What the person sees, e.g. API key"),
+              secret: z.boolean().optional(),
+              optional: z.boolean().optional(),
+            }),
+          )
+          .describe("The credentials the person enters."),
+        headers: z.record(z.string(), z.string()).optional().describe('Templates, e.g. { "Authorization": "Bearer {{apiKey}}" }.'),
+        query: z.record(z.string(), z.string()).optional().describe('Query parameter templates, e.g. { "api_key": "{{apiKey}}" }.'),
+        token: z
+          .object({
+            url: z.string(),
+            method: z.enum(["POST", "GET"]).optional(),
+            format: z.enum(["json", "form"]).optional(),
+            body: z.record(z.string(), z.string()).optional(),
+            headers: z.record(z.string(), z.string()).optional(),
+            path: z.string().describe("Where the token is in the JSON response, e.g. access_token."),
+            expiresInPath: z.string().optional(),
+            ttlSeconds: z.number().optional(),
+          })
+          .optional()
+          .describe("When the API swaps credentials for a short-lived token first; then sign requests with {{token}}."),
+        testPath: z.string().optional().describe("A cheap GET that succeeds when the credentials work."),
+        docsUrl: z.string().optional(),
+        access: z.enum(["read", "write"]).optional().describe("read (the default): agents can only GET."),
+        agents: z.array(z.string()).optional().describe("Exact names of the only agents allowed; leave out for every agent."),
+        guide: z.string().optional().describe("Markdown for agents: main endpoints and parameters, paging, limits, field meanings."),
+      }),
+      execute: async ({ agents: agentNames, ...input }) => {
+        try {
+          const team = agentNames ? await resolveTeam(orgId, { agents: agentNames }) : null;
+          const config: ApiConfig = {
+            baseUrl: input.baseUrl,
+            domains: input.domains ?? [],
+            fields: input.fields,
+            headers: input.headers,
+            query: input.query,
+            token: input.token,
+            testPath: input.testPath,
+            docsUrl: input.docsUrl,
+          };
+          const integration = await saveIntegration(orgId, {
+            kind: "api",
+            name: input.name,
+            slug: input.slug,
+            description: input.description,
+            config,
+            access: input.access,
+            agentIds: team ? team.agents.map((a) => a.id) : undefined,
+            guide: input.guide,
+            personId: context.person?.id,
+          });
+          return {
+            integration: {
+              id: integration.id,
+              slug: integration.slug,
+              name: integration.name,
+              baseUrl: (integration.config as ApiConfig).baseUrl,
+              fields: integration.config.fields,
+              hasCredentials: integration.hasCredentials,
+              status: integration.status,
+            },
+          };
+        } catch (error) {
+          if (error instanceof IntegrationError || error instanceof WorkError) return { error: error.message };
+          throw error;
+        }
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value:
+          "error" in output
+            ? `Not saved: ${output.error}`
+            : `Saved ${output.integration.name} (${output.integration.slug}). ${
+                output.integration.hasCredentials
+                  ? "Its saved credentials were kept."
+                  : "They now see a card to enter the credentials, which tests the connection. Don't ask for credentials in the chat."
+              }`,
+      }),
+    }),
+    call_api: tool({
+      description: "Read from one of the company's connected data sources (GET), to answer a question. Credentials are added for you.",
+      inputSchema: z.object({
+        integration: z.string().describe("Its slug."),
+        path: z.string().describe("A path under the base URL."),
+        query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+      }),
+      execute: async ({ integration, path, query }) => {
+        try {
+          const result = await callIntegration(orgId, integration, { path, query }, { personId: context.person?.id });
+          return { status: result.status, body: result.text.slice(0, 12_000) || `(${result.body.length} bytes of ${result.contentType})` };
+        } catch (error) {
+          if (error instanceof IntegrationError) return { error: error.message };
+          return { error: `The request failed: ${error instanceof Error ? error.message : String(error)}` };
+        }
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value: "error" in output ? `Failed: ${output.error}` : `Status ${output.status}\n${output.body}`,
       }),
     }),
     create_agent: tool({

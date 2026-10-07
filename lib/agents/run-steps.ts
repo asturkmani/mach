@@ -1,5 +1,6 @@
 import { getAgent } from "@/lib/agents/store";
 import { driveStats, listDrive } from "@/lib/drive";
+import { listIntegrations } from "@/lib/integrations";
 import { contentTypeFor, isText, listTaskFiles, readVersion, saveVersion } from "@/lib/files";
 import {
   agentInstructions,
@@ -45,6 +46,8 @@ export type BegunRun =
       prompt: string;
       /** The other agents on the task, which this one can hand off to. */
       otherAgents: { id: string; name: string }[];
+      /** The data sources this agent may call (slugs). */
+      sources: string[];
     };
 
 /** Checks the run can go ahead, takes the task's lease and gathers everything the agent will read. */
@@ -83,21 +86,23 @@ export async function beginRun(
   }
   if (!(await claimRun(organizationId, task.id, agent.id))) return { ok: false, outcome: { type: "busy" } };
 
-  const [profile, messages, files, schedule, drive] = await Promise.all([
+  const [profile, messages, files, schedule, drive, integrations] = await Promise.all([
     loadProfile(organizationId),
     listMessages(task.id),
     briefFiles(organizationId, task.id),
     getSchedule(task.id),
     briefDrive(organizationId),
+    listIntegrations(organizationId, { agentId: agent.id }),
   ]);
   const others = agentsOn(task).filter((m) => m.id !== agent.id);
   return {
     ok: true,
     context,
     model,
-    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent, schedule, drive }) }),
+    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations }) }),
     prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
+    sources: integrations.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
   };
 }
 

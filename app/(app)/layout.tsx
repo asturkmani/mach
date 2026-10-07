@@ -7,11 +7,12 @@ import { listPeople } from "@/lib/people";
 import { onboardingChecklist } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { requireAppContext } from "@/lib/session";
+import { listIntegrations } from "@/lib/integrations";
 import { anyRunning, listInbox, listInProgress, listSuggestionStatuses } from "@/lib/tasks";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { organization, user, person, isAdmin } = await requireAppContext();
-  const [chat, profile, people, agents, inbox, inProgress, suggestionStatus, running] = await Promise.all([
+  const [chat, profile, people, agents, inbox, inProgress, suggestionStatus, running, integrations] = await Promise.all([
     getOrCreateChat<ChiefOfStaffMessage>(organization.id, user.id),
     loadProfile(organization.id),
     listPeople(organization.id),
@@ -20,6 +21,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     listInProgress(organization.id, person.id),
     listSuggestionStatuses(organization.id, person.id),
     anyRunning(organization.id),
+    listIntegrations(organization.id),
   ]);
 
   return (
@@ -49,6 +51,9 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         initialMessages: chat.messages,
         checklist: onboardingChecklist(profile),
         suggestionStatus,
+        integrationStatus: Object.fromEntries(
+          integrations.map((i) => [i.id, { status: i.status, detail: i.statusDetail, hasCredentials: i.hasCredentials }]),
+        ),
       }}
     >
       <LiveRefresh running={running} />

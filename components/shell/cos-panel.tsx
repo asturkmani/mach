@@ -10,6 +10,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { pickOptionAction } from "@/app/(app)/tasks/actions";
+import { CredentialsForm, StatusLine } from "@/components/credentials-form";
+import type { IntegrationStatus } from "@/lib/integrations";
 import type { ChiefOfStaffMessage } from "@/lib/agents/chief-of-staff";
 import type { ChecklistItem } from "@/lib/profile/markdown";
 import type { TaskStatus } from "@/lib/task-words";
@@ -34,18 +36,23 @@ const REFRESHING_TOOLS = new Set([
   "save_person",
   "remove_person",
   "complete_onboarding",
+  "connect_data_source",
 ]);
+
+export type IntegrationState = Record<string, { status: IntegrationStatus; detail: string; hasCredentials: boolean }>;
 
 export function CosPanel({
   chatId,
   initialMessages: loadedMessages,
   checklist,
   suggestionStatus,
+  integrationStatus,
 }: {
   chatId: string;
   initialMessages: ChiefOfStaffMessage[];
   checklist: ChecklistItem[];
   suggestionStatus: Record<string, TaskStatus>;
+  integrationStatus: IntegrationState;
 }) {
   const { data, setCosOpen } = useShell();
   const router = useRouter();
@@ -145,7 +152,9 @@ export function CosPanel({
                   );
                 }
                 if (isToolUIPart(part)) {
-                  return <ToolPart key={i} part={part as ToolPart} suggestionStatus={suggestionStatus} />;
+                  return (
+                    <ToolPart key={i} part={part as ToolPart} suggestionStatus={suggestionStatus} integrationStatus={integrationStatus} />
+                  );
                 }
                 return null;
               })}
@@ -213,7 +222,15 @@ function Checklist({ items }: { items: ChecklistItem[] }) {
 
 const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
-function ToolPart({ part, suggestionStatus }: { part: ToolPart; suggestionStatus: Record<string, TaskStatus> }) {
+function ToolPart({
+  part,
+  suggestionStatus,
+  integrationStatus,
+}: {
+  part: ToolPart;
+  suggestionStatus: Record<string, TaskStatus>;
+  integrationStatus: IntegrationState;
+}) {
   const name = getToolName(part);
   const done = part.state === "output-available";
 
@@ -236,8 +253,15 @@ function ToolPart({ part, suggestionStatus }: { part: ToolPart; suggestionStatus
     return <SuggestionCard suggestion={suggestion} status={suggestionStatus[suggestion.id]} />;
   }
 
+  if (part.type === "tool-connect_data_source" && done && part.output.integration) {
+    const { integration } = part.output;
+    return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} />;
+  }
+
   const input = (part.input ?? {}) as Record<string, string | undefined>;
   const labels: Record<string, string> = {
+    connect_data_source: `Connecting ${input.name ?? "a data source"}`,
+    call_api: `Read ${input.integration ?? "a data source"}${input.path ? ` ${truncate(input.path, 40)}` : ""}`,
     set_company_name: `Company name: ${input.name ?? ""}`,
     update_section: `Updated ${input.section ?? "a section"}`,
     save_person: `Saved ${input.name ?? "a person"}${input.reportsTo ? ` → ${input.reportsTo}` : ""}`,
@@ -263,6 +287,54 @@ function ToolPart({ part, suggestionStatus }: { part: ToolPart; suggestionStatus
       <span>{failed ? "✕" : done ? "✓" : "…"}</span>
       <span className="truncate">{labels[name] ?? name}</span>
     </p>
+  );
+}
+
+function IntegrationCard({
+  integration,
+  live,
+}: {
+  integration: { id: string; slug: string; name: string; baseUrl: string; fields: { name: string; label: string; secret?: boolean; optional?: boolean }[] };
+  live?: { status: IntegrationStatus; detail: string; hasCredentials: boolean };
+}) {
+  const [editing, setEditing] = useState(false);
+  // Deleted since: the card stays in the chat's history, but there's nothing to connect.
+  if (!live) {
+    return (
+      <div className="border border-line bg-raised px-3.5 py-3">
+        <p className="label mb-1">Data source · {integration.name}</p>
+        <p className="text-xs text-faint">Removed.</p>
+      </div>
+    );
+  }
+  const connected = live.hasCredentials && live.status !== "needs_credentials";
+  return (
+    <div className="border border-line bg-raised">
+      <div className="border-b border-line-soft px-3.5 py-3">
+        <p className="label mb-1 flex items-center gap-2">
+          <span className="h-1.5 w-1.5 bg-accent" /> Data source · {integration.slug}
+        </p>
+        <p className="text-[15px]">{integration.name}</p>
+        <p className="mt-0.5 truncate font-mono text-xs text-faint">{integration.baseUrl}</p>
+        <div className="mt-1.5">
+          <StatusLine status={live.status} detail={live.detail} />
+        </div>
+      </div>
+      <div className="px-3.5 py-3">
+        {connected && !editing ? (
+          <div className="flex items-center gap-4 text-xs">
+            <button onClick={() => setEditing(true)} className="text-muted hover:text-ink">
+              Update credentials
+            </button>
+            <Link href="/integrations" className="text-muted hover:text-ink">
+              Manage in Integrations
+            </Link>
+          </div>
+        ) : (
+          <CredentialsForm id={integration.id} fields={integration.fields} hasCredentials={live.hasCredentials} onDone={() => setEditing(false)} />
+        )}
+      </div>
+    </div>
   );
 }
 

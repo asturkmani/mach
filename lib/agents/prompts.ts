@@ -1,6 +1,7 @@
 import type { Agent } from "@/lib/agents/store";
 import { skillList } from "@/lib/agents/skills";
 import type { DriveFile } from "@/lib/drive";
+import type { ApiConfig, Integration } from "@/lib/integrations";
 import type { Organization } from "@/lib/orgs";
 import type { Schedule } from "@/lib/schedules";
 import type { Task, TaskMessage } from "@/lib/tasks";
@@ -91,6 +92,18 @@ function driveListing(drive: BriefDrive | undefined): string {
   return `The company drive (/vercel/drive), ${drive.count} file${drive.count === 1 ? "" : "s"}, ${size(drive.bytes)}, newest first:\n${lines.join("\n")}${more}`;
 }
 
+function integrationListing(integrations: Integration[] = []): string {
+  const sources = integrations.filter((i) => i.kind === "api" && i.status !== "disabled");
+  if (!sources.length) return "No data sources are connected. If the work needs one, say so: the Chief of Staff can connect it.";
+  return sources
+    .map((i) => {
+      const config = i.config as ApiConfig;
+      const state = i.status === "connected" ? "" : ` [${i.status.replace("_", " ")}${i.statusDetail ? `: ${i.statusDetail}` : ""}]`;
+      return `- ${i.slug}: ${i.name}, ${i.access === "read" ? "read-only" : "read and write"}, ${config.baseUrl}${state}${i.description ? `\n  ${i.description}` : ""}`;
+    })
+    .join("\n");
+}
+
 export function taskBrief({
   task,
   messages,
@@ -98,6 +111,7 @@ export function taskBrief({
   agent,
   schedule,
   drive,
+  integrations,
 }: {
   task: Task;
   messages: TaskMessage[];
@@ -105,6 +119,7 @@ export function taskBrief({
   agent: Agent;
   schedule?: Schedule | null;
   drive?: BriefDrive;
+  integrations?: Integration[];
 }): string {
   const members = task.members
     .map((m) =>
@@ -150,7 +165,11 @@ ${task.memory ? `\nJob notes (NOTES.md, kept from earlier runs):\n${clip(task.me
 
 <drive>
 ${driveListing(drive)}
-</drive>`;
+</drive>
+
+<data_sources>
+${integrationListing(integrations)}
+</data_sources>`;
 }
 
 export function agentInstructions({
@@ -191,6 +210,13 @@ The company drive (/vercel/drive):
 - A folder every job in the company shares, kept in storage, so data one run collects is there for the next run and for other jobs. Put datasets worth reusing there, in folders named for what they hold (/vercel/drive/option-flow/2026-10-07.csv, /vercel/drive/prices/mu.parquet). Read what other jobs left before fetching it again.
 - The drive is not how you deliver: whatever people asked for (a CSV, a chart, a model) goes in outputs/ and is attached with attach_file, even when a copy also goes on the drive. Write outputs/ first, then copy to the drive if others will reuse it.
 - It syncs by itself: what changed on the drive is copied in when your sandbox starts, and files you write there are saved after each command. Files over 100 MB stay in this sandbox only. Deleting a file here doesn't remove it from the drive; never overwrite another job's data unless that's the point.
+
+Company data sources (listed under <data_sources>):
+- They are the company's other systems, connected for every agent to read: use them instead of asking people for numbers or exports. Read a source's guide with read_integration_guide before first use.
+- Call them with call_api. For big pulls, pass save_as to write the response to a file in your sandbox or on the drive. From code in your sandbox, call the API's URL directly with no auth headers: the credentials are added on the way out. You never see credentials, so never print, log or hard-code them.
+- Read-only sources refuse anything but GET. A source marked "needs credentials" or "failing" isn't usable yet; say so in your report.
+- When you work out how an API really behaves (endpoints that work, paging, what fields mean, gotchas), save it with save_integration_guide so the next agent doesn't rediscover it.
+- Never ask people to paste passwords, API keys or sign-in codes into the thread. If the work needs a system that isn't connected, say so: the Chief of Staff can connect it.
 
 Recurring jobs:
 - When people want something done regularly ("every weekday at 4pm", "each Monday"), call set_schedule, then do the first run now. Each run lands on this same task and works in this same sandbox with the same files, notes and drive. Use the timezone they mention, else the company's (${organization.timezone ?? "not known yet, so ask"}).

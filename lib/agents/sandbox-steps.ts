@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { DRIVE_DIR, drivePath, listDrive, MAX_DRIVE_FILE_BYTES, readDriveFile, writeDriveFile } from "@/lib/drive";
 import { contentTypeFor, isText, listTaskFiles, readTaskFiles, saveVersion } from "@/lib/files";
+import { sandboxPolicy } from "@/lib/integrations";
 import { versionPreview } from "@/lib/previews";
 import type { RunContext } from "@/lib/agents/prompts";
 import { JOB_DIR, sandboxes, sandboxNameFor, type CommandResult, type JobSandbox } from "@/lib/sandbox";
@@ -187,11 +188,33 @@ function driveNote({ saved, problems }: { saved: string[]; problems: string[] })
   ].join("");
 }
 
-/** Starts (or resumes) the job's sandbox for this run and brings its copy of the drive up to date. */
+/**
+ * Lets this run's code reach the company's data sources: requests to them
+ * get their credentials added on the way out of the sandbox.
+ */
+async function connectSources(context: RunContext, sandbox: JobSandbox): Promise<string[]> {
+  const { policy, sources } = await sandboxPolicy(context.organizationId, context.agentId);
+  await sandbox.setNetworkPolicy(policy);
+  return sources;
+}
+
+/** Starts (or resumes) the job's sandbox for this run, connects data sources and brings its copy of the drive up to date. */
 export async function startSandbox(context: RunContext): Promise<string> {
   "use step";
   const sandbox = await open(context);
-  return pullDrive(context, sandbox);
+  const sources = await connectSources(context, sandbox);
+  const pulled = await pullDrive(context, sandbox);
+  return [pulled, sources.length ? `data sources connected: ${sources.join(", ")}` : ""].filter(Boolean).join("; ");
+}
+
+/** Writes bytes to a file in the job folder or on the drive (saved to the drive straight away). */
+export async function saveIntoSandbox(context: RunContext, path: string, bytes: Buffer): Promise<string> {
+  const sandbox = await open(context);
+  const target = sandboxPath(path);
+  await sandbox.run("mkdir", ["-p", target.slice(0, target.lastIndexOf("/"))]);
+  await sandbox.writeFiles([{ path: target, content: bytes }]);
+  const drive = target.startsWith(`${DRIVE_DIR}/`) ? driveNote(await pushDrive(context, sandbox)) : "";
+  return `${target}${drive}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +369,7 @@ export function summaryLine(stdout: string): string | null {
 export async function replayScript(context: RunContext, label: string): Promise<ReplayResult> {
   "use step";
   const sandbox = await open(context);
+  await connectSources(context, sandbox);
   await pullDrive(context, sandbox);
   if (!(await sandbox.readFile(`${JOB_DIR}/run.sh`))) {
     return { ok: false, reason: "no_script", log: "There is no run.sh in the job folder." };
@@ -383,6 +407,8 @@ export async function closeSandbox(context: RunContext): Promise<void> {
   const sandbox = await sandboxes().find(sandboxNameFor(context.taskId));
   if (!sandbox) return;
   await pushDrive(context, sandbox).catch((error) => console.error("Drive sync failed", error));
+  // Credentials only live in the sandbox's network policy while a run is going.
+  await sandbox.setNetworkPolicy("allow-all").catch((error) => console.error("Couldn't reset the network policy", error));
   const notes = await sandbox.readFile(`${JOB_DIR}/NOTES.md`).catch(() => null);
   if (notes) await saveMemory(context.taskId, notes.toString("utf8").slice(0, 50_000));
 

@@ -103,6 +103,23 @@ Checks before you attach:
 - Run recalc on the file (the attach step also does this) and read it back with openpyxl(data_only=True) to make sure no cell shows an error (#REF!, #DIV/0!, #NAME?) and the key numbers match what your script computed.
 - Report the headline numbers from the recalculated file, not from memory.`,
   },
+  {
+    name: "connecting-integrations",
+    description: "Connecting one of the company's systems as a data source from its API docs, so every agent can use it.",
+    body: `A data source lets agents call a company system's API without ever seeing its credentials.
+
+1. Read the API docs (fetch_page on the URL they gave, or a file they attached). Find: the base URL, how requests are authenticated, a cheap GET that proves the credentials work (a "me", "accounts" or "ping" endpoint), and whether it's read-only.
+2. Call connect_data_source with:
+   - fields: what the person must enter, e.g. [{ name: "apiKey", label: "API key" }] or client id and secret. Mark non-secret ones (a tenant id) secret: false.
+   - headers (or query) as templates: "Authorization": "Bearer {{apiKey}}", "X-Api-Key": "{{apiKey}}", "Authorization": "Basic {{basic:username:password}}".
+   - token, when the API swaps credentials for a short-lived token first (OAuth client credentials or a login endpoint): its url, format (form or json), body templates, path to the token in the response and expiresInPath; then sign requests with "Bearer {{token}}".
+   - testPath: the cheap GET.
+   - access: read unless they asked for agents to change data there.
+   - agents: leave out to give every agent access; name agents to limit it.
+   - guide: a short markdown guide for agents: what data it holds, the main endpoints with their parameters, paging, rate limits, field meanings and gotchas.
+3. Never ask for credentials in the chat. The tool shows them a secure card to enter them, which tests the connection. If they paste a key in the chat anyway, tell them to enter it in the card instead (Mach scrubs it from the chat when they do) and to consider rotating it.
+4. Once it's connected, you can answer quick questions from it with call_api, and jobs can use it. For regular pulls (positions every morning), create a recurring task that saves them to the company drive.`,
+  },
 ];
 
 export function skillList(skills: Skill[] = SKILLS): string {

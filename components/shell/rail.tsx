@@ -3,6 +3,7 @@
 import { Bell, BellOff,
   Bot,
   Building,
+  Cable,
   Command as CommandIcon,
   FolderOpen,
   House,
@@ -46,6 +47,7 @@ export function Rail() {
   const company: Item[] = [
     { href: "/agents", label: "Agents", icon: Bot },
     { href: "/files", label: "Files", icon: FolderOpen },
+    { href: "/integrations", label: "Integrations", icon: Cable },
     { href: "/team", label: "Team", icon: Users },
     { href: "/company", label: "Company profile", icon: Building },
   ];

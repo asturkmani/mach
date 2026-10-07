@@ -271,6 +271,7 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
       { id: "go-list", group: "Go to", label: "Home as a list", run: () => router.push("/?view=list") },
       { id: "go-agents", group: "Go to", label: "Agents", run: () => router.push("/agents") },
       { id: "go-files", group: "Go to", label: "Files", run: () => router.push("/files") },
+      { id: "go-integrations", group: "Go to", label: "Integrations", run: () => router.push("/integrations") },
       { id: "go-team", group: "Go to", label: "Team", run: () => router.push("/team") },
       { id: "go-company", group: "Go to", label: "Company profile", run: () => router.push("/company") },
       { id: "new-task", group: "Create", label: "New task", keys: ["N"], run: () => setNewTask(true) },

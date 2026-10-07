@@ -1,6 +1,6 @@
 import "server-only";
 
-import { APIError, Sandbox } from "@vercel/sandbox";
+import { APIError, Sandbox, type NetworkPolicy } from "@vercel/sandbox";
 
 import { getDb } from "@/lib/db";
 import template from "@/sandbox/template.json";
@@ -29,6 +29,8 @@ export interface JobSandbox {
    * doesn't exist.
    */
   changedFiles(dir: string, marker: string): Promise<{ path: string; size: number }[]>;
+  /** Sets what the sandbox may reach and which requests get credentials added on the way out. */
+  setNetworkPolicy(policy: NetworkPolicy): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -95,6 +97,9 @@ function wrap(sandbox: Sandbox): JobSandbox {
           const [path, size] = line.split("\t");
           return { path, size: Number(size) };
         });
+    },
+    async setNetworkPolicy(policy) {
+      await sandbox.update({ networkPolicy: policy });
     },
     async stop() {
       await sandbox.stop();

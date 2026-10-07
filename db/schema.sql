@@ -234,3 +234,47 @@ create table if not exists drive_files (
 );
 
 create unique index if not exists drive_files_path on drive_files (organization_id, path);
+
+-- Integrations: company data sources (APIs every agent can read) and website
+-- logins (accounts chosen agents use in a browser). Credentials are sealed
+-- with MACH_SECRETS_KEY and never shown to models or people.
+create table if not exists integrations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  kind text not null check (kind in ('api', 'login')),
+  slug text not null, -- the short name agents use, e.g. masttro
+  name text not null,
+  description text not null default '', -- what it holds or is for
+  config jsonb not null default '{}'::jsonb, -- base URL, domains, how to sign requests or log in (no secrets)
+  secrets bytea, -- sealed credentials
+  session bytea, -- sealed: a cached access token (api) or a saved browser session (login)
+  session_expires_at timestamptz,
+  access text not null default 'read' check (access in ('read', 'write')),
+  agent_ids uuid[], -- null: every agent; otherwise only these agents
+  guide text not null default '', -- how to use it: endpoints, paging, quirks (markdown)
+  status text not null default 'needs_credentials' check (status in ('needs_credentials', 'connected', 'failing', 'disabled')),
+  status_detail text not null default '',
+  last_checked_at timestamptz,
+  last_used_at timestamptz,
+  created_by_person_id uuid references people (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists integrations_slug on integrations (organization_id, slug);
+
+-- Every request made through an integration, for its activity log.
+create table if not exists integration_calls (
+  id uuid primary key default gen_random_uuid(),
+  integration_id uuid not null references integrations (id) on delete cascade,
+  task_id uuid references tasks (id) on delete set null,
+  agent_id uuid references agents (id) on delete set null,
+  person_id uuid references people (id) on delete set null,
+  method text not null,
+  path text not null,
+  status integer,
+  duration_ms integer,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists integration_calls_recent on integration_calls (integration_id, created_at desc);

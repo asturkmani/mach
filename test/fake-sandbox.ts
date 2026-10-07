@@ -7,7 +7,14 @@ import { JOB_DIR, type JobSandbox, type SandboxProvider } from "@/lib/sandbox";
 
 type Handler = (files: Map<string, Buffer>) => { stdout?: string; stderr?: string; exitCode?: number } | void;
 
-type Machine = { files: Map<string, Buffer>; written: Map<string, number>; marks: Map<string, number>; running: boolean };
+type Machine = {
+  files: Map<string, Buffer>;
+  written: Map<string, number>;
+  marks: Map<string, number>;
+  running: boolean;
+  /** Every network policy set, in order. */
+  policies: unknown[];
+};
 
 const ok = { exitCode: 0, stdout: "", stderr: "" };
 const hidden = (relative: string) => relative.split("/").some((part) => part.startsWith("."));
@@ -78,6 +85,9 @@ export function fakeSandboxes(scripts: Record<string, Handler> = {}) {
           .filter((p) => (m.written.get(`${dir}/${p}`) ?? 0) > since)
           .map((p) => ({ path: p, size: m.files.get(`${dir}/${p}`)!.length }));
       },
+      async setNetworkPolicy(policy) {
+        m.policies.push(policy);
+      },
       async stop() {
         m.running = false;
         log.push(`stop ${name}`);
@@ -88,7 +98,7 @@ export function fakeSandboxes(scripts: Record<string, Handler> = {}) {
   const provider: SandboxProvider = {
     async open(name, seed) {
       if (!machines.has(name)) {
-        machines.set(name, { files: new Map(), written: new Map(), marks: new Map(), running: true });
+        machines.set(name, { files: new Map(), written: new Map(), marks: new Map(), running: true, policies: [] });
         log.push(`create ${name}`);
         await seed(sandbox(name));
       }
