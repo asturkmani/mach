@@ -1,5 +1,6 @@
 import "server-only";
 
+import { loginCodeFrom, sealLoginCode } from "@/lib/agents/browser-steps";
 import { agentToWake, dispatchRun, dispatchScheduled, startIfReady } from "@/lib/agents/dispatch";
 import { createWorker, findAgentByName, listAgents, updateAgent, type Agent } from "@/lib/agents/store";
 import { attachToTask, listTaskFiles } from "@/lib/files";
@@ -29,6 +30,7 @@ import {
   isRunning,
   listMessages,
   resetAgentTurns,
+  saveLoginCode,
   setArchived,
   setSandboxName,
   updateTask,
@@ -120,7 +122,15 @@ export async function replyToTask(organizationId: string, taskId: string, by: Ac
   const task = await mustGet(organizationId, taskId);
   const body = text.trim();
   if (!body) throw new WorkError("Write something first.");
-  await addMessage(task.id, { author: by.name, personId: by.personId, kind: "comment", body });
+  // A website sign-in waiting for a code: a reply that is one goes to the sign-in, sealed, not into the thread.
+  const code = task.pendingLogin ? loginCodeFrom(body) : null;
+  if (code) await saveLoginCode(task.id, sealLoginCode(code));
+  await addMessage(task.id, {
+    author: by.name,
+    personId: by.personId,
+    kind: "comment",
+    body: code ? `Sent the ${task.pendingLogin} sign-in code.` : body,
+  });
   await resetAgentTurns(task.id);
 
   // Replying on a done job reopens it: the same agent picks it up in the same sandbox.

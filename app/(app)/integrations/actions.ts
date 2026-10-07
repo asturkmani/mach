@@ -4,6 +4,7 @@ import { refresh } from "next/cache";
 
 import {
   deleteIntegration,
+  forgetSession,
   getIntegration,
   IntegrationError,
   saveCredentials,
@@ -67,5 +68,12 @@ export async function updateIntegrationAction(
 export async function deleteIntegrationAction(id: string): Promise<IntegrationResult> {
   return attempt(async (organizationId) => {
     await deleteIntegration(organizationId, id);
+  });
+}
+
+/** Forgets a login's saved session: the next agent to use it signs in afresh. */
+export async function forgetSessionAction(id: string): Promise<IntegrationResult> {
+  return attempt(async (organizationId) => {
+    await forgetSession(organizationId, id);
   });
 }

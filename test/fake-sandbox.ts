@@ -57,6 +57,9 @@ export function fakeSandboxes(scripts: Record<string, Handler> = {}) {
           const listed = under(JOB_DIR).filter((p) => p.startsWith("code/") || /^(run\.sh|config\.\w+|requirements\.txt)$/.test(p));
           return { ...ok, stdout: listed.join("\n") };
         }
+        if (script.includes("/.logins/*.json")) {
+          return { ...ok, stdout: [...m.files.keys()].filter((p) => /\/\.logins\/[^/]+\.json$/.test(p)).join("\n") };
+        }
         const listing = script.match(/cd (\S+) 2>\/dev\/null && find \. -type f/);
         if (listing) return { ...ok, stdout: under(listing[1]).sort().join("\n") };
         const removing = script.match(/^-c rm -f (.+)$/);
@@ -69,6 +72,10 @@ export function fakeSandboxes(scripts: Record<string, Handler> = {}) {
         }
         log.push(`shell ${script}`);
         return ok;
+      },
+      // Background commands run to completion straight away (handlers can't wait).
+      async start(cmd, args, options) {
+        await this.run(cmd, args, options);
       },
       async writeFiles(files) {
         for (const f of files) write(f.path, f.content);

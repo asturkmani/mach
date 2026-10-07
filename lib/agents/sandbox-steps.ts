@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { DRIVE_DIR, drivePath, listDrive, MAX_DRIVE_FILE_BYTES, readDriveFile, writeDriveFile } from "@/lib/drive";
 import { contentTypeFor, isText, listTaskFiles, readTaskFiles, saveVersion } from "@/lib/files";
+import { saveLoginSessions } from "@/lib/agents/browser-steps";
 import { knownSecrets, sandboxPolicy } from "@/lib/integrations";
 import { redact } from "@/lib/secrets";
 import { versionPreview } from "@/lib/previews";
@@ -431,5 +432,8 @@ export async function closeSandbox(context: RunContext): Promise<void> {
     if (!bytes || bytes.includes(0)) continue;
     await saveVersion(context.organizationId, { name, kind: "code", bytes, taskId: context.taskId, agentId: context.agentId });
   }
+  await saveLoginSessions(context, sandbox).catch((error) => console.error("Couldn't save browser sessions", error));
+  // A sign-in waiting for someone's code keeps the sandbox (and its browser) running until it times out.
+  if ((await getTask(context.organizationId, context.taskId))?.pendingLogin) return;
   await sandbox.stop();
 }

@@ -278,3 +278,8 @@ create table if not exists integration_calls (
 );
 
 create index if not exists integration_calls_recent on integration_calls (integration_id, created_at desc);
+
+-- A website sign-in waiting on a person: the login it's for, and the code
+-- they replied with (sealed, used once, never shown in the thread).
+alter table tasks add column if not exists pending_login text;
+alter table tasks add column if not exists login_code bytea;

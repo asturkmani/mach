@@ -82,6 +82,8 @@ export type Integration = {
   status: IntegrationStatus;
   statusDetail: string;
   hasCredentials: boolean;
+  /** A cached token (data source) or saved signed-in session (login). */
+  hasSession: boolean;
   lastCheckedAt: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
@@ -100,13 +102,14 @@ type Row = {
   status: IntegrationStatus;
   status_detail: string;
   has_credentials: boolean;
+  has_session: boolean;
   last_checked_at: Date | null;
   last_used_at: Date | null;
   created_at: Date;
 };
 
 const COLUMNS = `id, kind, slug, name, description, config, access, agent_ids, guide, status, status_detail,
-  secrets is not null as has_credentials, last_checked_at, last_used_at, created_at`;
+  secrets is not null as has_credentials, session is not null as has_session, last_checked_at, last_used_at, created_at`;
 
 const toIntegration = (r: Row): Integration => ({
   id: r.id,
@@ -121,6 +124,7 @@ const toIntegration = (r: Row): Integration => ({
   status: r.status,
   statusDetail: r.status_detail,
   hasCredentials: r.has_credentials,
+  hasSession: r.has_session,
   lastCheckedAt: r.last_checked_at,
   lastUsedAt: r.last_used_at,
   createdAt: r.created_at,
@@ -374,6 +378,48 @@ export async function scrubConversations(organizationId: string, secrets: string
   }
 }
 
+/** A login's credentials and saved browser session (Playwright storage state), for the sign-in helper only. */
+export async function readLogin(organizationId: string, id: string): Promise<{ secrets: Secrets; session: string | null }> {
+  const [row] = await getDb().query<{ secrets: Uint8Array | null; session: Uint8Array | null }>(
+    "select secrets, session from integrations where organization_id = $1 and id = $2 and kind = 'login'",
+    [organizationId, id],
+  );
+  if (!row?.secrets) throw new IntegrationError("Its credentials haven't been entered yet.");
+  return {
+    secrets: unseal<Secrets>(row.secrets),
+    session: row.session ? unseal<{ state: string }>(row.session).state : null,
+  };
+}
+
+/** Keeps a signed-in browser session (sealed), so later runs and jobs skip the sign-in. */
+export async function saveLoginSession(organizationId: string, slug: string, state: string): Promise<void> {
+  await getDb().query(
+    `update integrations set session = $3, session_expires_at = null, last_used_at = now(),
+       status = case when status = 'disabled' then status else 'connected' end,
+       status_detail = case when status = 'disabled' then status_detail else 'Signed in; the session is saved.' end
+     where organization_id = $1 and slug = $2 and kind = 'login'`,
+    [organizationId, slug, seal({ state })],
+  );
+}
+
+export async function setLoginStatus(organizationId: string, slug: string, status: IntegrationStatus, detail: string): Promise<void> {
+  const [row] = await getDb().query<{ id: string }>("select id from integrations where organization_id = $1 and slug = $2", [
+    organizationId,
+    slug,
+  ]);
+  if (row) await setStatus(row.id, status, detail);
+}
+
+/** Forgets a login's saved session, so the next sign-in starts afresh. */
+export async function forgetSession(organizationId: string, id: string): Promise<void> {
+  await getDb().query(
+    `update integrations set session = null, session_expires_at = null,
+       status_detail = case when kind = 'login' then 'Session forgotten; signs in again next time.' else status_detail end
+     where organization_id = $1 and id = $2`,
+    [organizationId, id],
+  );
+}
+
 async function setStatus(id: string, status: IntegrationStatus, detail = ""): Promise<void> {
   await getDb().query(
     "update integrations set status = $2, status_detail = $3, last_checked_at = now(), updated_at = now() where id = $1 and status <> 'disabled'",
@@ -559,7 +605,11 @@ export async function callIntegration(
 export async function testIntegration(organizationId: string, id: string): Promise<Integration> {
   const integration = await getIntegration(organizationId, id);
   if (!integration) throw new IntegrationError("That integration doesn't exist.");
-  if (integration.kind !== "api") return integration;
+  if (integration.kind !== "api") {
+    // A login is checked by signing in, which happens in an agent's browser the first time it's used.
+    await setStatus(integration.id, "connected", "Credentials saved; an agent signs in the first time it uses it.");
+    return (await getIntegration(organizationId, integration.id))!;
+  }
   const config = integration.config as ApiConfig;
   try {
     if (config.testPath) {
@@ -583,14 +633,18 @@ export async function testIntegration(organizationId: string, id: string): Promi
  * echoes its key would otherwise put it in front of the model.
  */
 export async function knownSecrets(organizationId: string): Promise<string[]> {
-  const rows = await getDb().query<{ secrets: Uint8Array | null; session: Uint8Array | null }>(
-    "select secrets, session from integrations where organization_id = $1 and (secrets is not null or session is not null)",
+  const rows = await getDb().query<{ config: ApiConfig | LoginConfig; secrets: Uint8Array | null; session: Uint8Array | null }>(
+    "select config, secrets, session from integrations where organization_id = $1 and (secrets is not null or session is not null)",
     [organizationId],
   );
   const values: string[] = [];
   for (const row of rows) {
     try {
-      if (row.secrets) values.push(...Object.values(unseal<Secrets>(row.secrets)));
+      // Only fields marked secret: a login's username, say, can show on pages agents read.
+      const secretFields = new Set(row.config.fields.filter((f) => f.secret !== false).map((f) => f.name));
+      if (row.secrets) {
+        for (const [name, value] of Object.entries(unseal<Secrets>(row.secrets))) if (secretFields.has(name)) values.push(value);
+      }
       if (row.session) {
         const session = unseal<{ token?: string }>(row.session);
         if (typeof session.token === "string") values.push(session.token);

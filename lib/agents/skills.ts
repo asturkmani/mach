@@ -118,7 +118,9 @@ Checks before you attach:
    - agents: leave out to give every agent access; name agents to limit it.
    - guide: a short markdown guide for agents: what data it holds, the main endpoints with their parameters, paging, rate limits, field meanings and gotchas.
 3. Never ask for credentials in the chat. The tool shows them a secure card to enter them, which tests the connection. If they paste a key in the chat anyway, tell them to enter it in the card instead (Mach scrubs it from the chat when they do) and to consider rotating it.
-4. Once it's connected, you can answer quick questions from it with call_api, and jobs can use it. For regular pulls (positions every morning), create a recurring task that saves them to the company drive.`,
+4. Once it's connected, you can answer quick questions from it with call_api, and jobs can use it. For regular pulls (positions every morning), create a recurring task that saves them to the company drive.
+
+Website logins: when the work needs a website with no API, or changes the API can't make (an API that's read-only, data entry), use connect_login instead: the sign-in page, a page that only shows when signed in, and the agents allowed to use it (usually one defined agent for that work, e.g. "Masttro data entry"; create it first). The card asks for the username and password, and optionally an authenticator setup key so agents can answer sign-in codes themselves; without it, codes come to the people on the job as a question. A company can have both for one system: a read-only data source every agent reads, and a login one agent uses for changes.`,
   },
 ];
 

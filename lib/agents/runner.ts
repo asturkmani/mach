@@ -28,6 +28,7 @@ import {
   startSandbox,
   writeSandboxFile,
 } from "@/lib/agents/sandbox-steps";
+import { askForLoginCode, browserLogin } from "@/lib/agents/browser-steps";
 import { callApi, readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
 import { skillTool } from "@/lib/agents/skills";
 
@@ -171,6 +172,30 @@ function integrationTools(context: RunContext, sources: string[], using: <T>(wor
   } satisfies ToolSet;
 }
 
+function browserTools(
+  context: RunContext,
+  logins: string[],
+  using: <T>(work: () => Promise<T>) => Promise<T>,
+  end: (outcome: RunOutcome) => void,
+): ToolSet {
+  if (logins.length === 0) return {};
+  return {
+    browser_login: tool({
+      description:
+        "Sign this job's browser in to one of the company's website logins with its saved credentials (you never see them), or finish a sign-in that was waiting for a code. Returns where the signed-in session is for your Playwright scripts. If the site asks for a sign-in code, the people on the task are asked for it and your run ends; call this again on your next run.",
+      inputSchema: z.object({ login: z.enum(logins as [string, ...string[]]) }),
+      execute: (input) =>
+        using(async () => {
+          const result = await browserLogin(context, input);
+          if (!result.needsCode) return result.text;
+          const asked = await askForLoginCode(context, result.needsCode);
+          end({ type: "asked" });
+          return asked;
+        }),
+    }),
+  };
+}
+
 function runTools(context: RunContext, otherAgents: { id: string; name: string }[], end: (outcome: RunOutcome) => void) {
   return {
     post_update: tool({
@@ -279,10 +304,12 @@ export async function runAgentOnTask(
         ...runTools(context, begun.otherAgents, (outcome) => (state.outcome = outcome)),
         ...sandboxTools(context, using),
         ...integrationTools(context, begun.sources, using),
+        ...browserTools(context, begun.logins, using, (outcome) => (state.outcome = outcome)),
         ...(options.research === false ? {} : researchTools()),
         use_skill: skillTool(),
       },
-      stopWhen: [isStepCount(40), hasToolCall("ask", "finish", "hand_off")],
+      // A run also ends when a tool ended it (e.g. a sign-in that asked for a code).
+      stopWhen: [isStepCount(40), hasToolCall("ask", "finish", "hand_off"), () => state.outcome !== undefined],
       // Long runs keep their lease fresh before each model call.
       prepareStep: async () => {
         await keepLease(context);

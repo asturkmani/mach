@@ -37,6 +37,7 @@ const REFRESHING_TOOLS = new Set([
   "remove_person",
   "complete_onboarding",
   "connect_data_source",
+  "connect_login",
 ]);
 
 export type IntegrationState = Record<string, { status: IntegrationStatus; detail: string; hasCredentials: boolean }>;
@@ -257,10 +258,15 @@ function ToolPart({
     const { integration } = part.output;
     return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} />;
   }
+  if (part.type === "tool-connect_login" && done && part.output.integration) {
+    const { integration } = part.output;
+    return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} login />;
+  }
 
   const input = (part.input ?? {}) as Record<string, string | undefined>;
   const labels: Record<string, string> = {
     connect_data_source: `Connecting ${input.name ?? "a data source"}`,
+    connect_login: `Connecting ${input.name ?? "a login"}`,
     call_api: `Read ${input.integration ?? "a data source"}${input.path ? ` ${truncate(input.path, 40)}` : ""}`,
     set_company_name: `Company name: ${input.name ?? ""}`,
     update_section: `Updated ${input.section ?? "a section"}`,
@@ -293,16 +299,18 @@ function ToolPart({
 function IntegrationCard({
   integration,
   live,
+  login = false,
 }: {
   integration: { id: string; slug: string; name: string; baseUrl: string; fields: { name: string; label: string; secret?: boolean; optional?: boolean }[] };
   live?: { status: IntegrationStatus; detail: string; hasCredentials: boolean };
+  login?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   // Deleted since: the card stays in the chat's history, but there's nothing to connect.
   if (!live) {
     return (
       <div className="border border-line bg-raised px-3.5 py-3">
-        <p className="label mb-1">Data source · {integration.name}</p>
+        <p className="label mb-1">{login ? "Login" : "Data source"} · {integration.name}</p>
         <p className="text-xs text-faint">Removed.</p>
       </div>
     );
@@ -312,7 +320,7 @@ function IntegrationCard({
     <div className="border border-line bg-raised">
       <div className="border-b border-line-soft px-3.5 py-3">
         <p className="label mb-1 flex items-center gap-2">
-          <span className="h-1.5 w-1.5 bg-accent" /> Data source · {integration.slug}
+          <span className="h-1.5 w-1.5 bg-accent" /> {login ? "Login" : "Data source"} · {integration.slug}
         </p>
         <p className="text-[15px]">{integration.name}</p>
         <p className="mt-0.5 truncate font-mono text-xs text-faint">{integration.baseUrl}</p>

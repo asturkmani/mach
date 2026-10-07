@@ -40,6 +40,7 @@ export default async function IntegrationsPage() {
       status: i.status,
       statusDetail: i.statusDetail,
       hasCredentials: i.hasCredentials,
+      hasSession: i.hasSession,
       lastUsedAt: i.lastUsedAt ? new Date(i.lastUsedAt).toISOString() : null,
       calls: (await recentCalls(i.id, 10)).map((c) => ({
         method: c.method,
@@ -58,8 +59,9 @@ export default async function IntegrationsPage() {
       <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-8 py-6">
         <div className="max-w-4xl space-y-6">
           <p className="max-w-2xl text-[15px] text-muted">
-            The company&apos;s other systems, connected so agents can use them. Data sources are APIs agents read (and, if you
-            allow it, write) without ever seeing the credentials. Ask the Chief of Staff to connect one from its API docs.
+            The company&apos;s other systems, connected so agents can use them without ever seeing the credentials. Data sources
+            are APIs agents read (and, if you allow it, write). Logins are website accounts chosen agents use in a browser, for
+            sites without an API; sign-in codes come to you as a question on the job. Ask the Chief of Staff to connect either.
           </p>
           <Integrations
             integrations={views}

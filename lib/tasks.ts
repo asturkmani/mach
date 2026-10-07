@@ -46,6 +46,8 @@ export type Task = {
   archivedAt: Date | null;
   /** It has an active (unpaused) schedule. */
   repeats: boolean;
+  /** A website sign-in waiting on a person's code (the login's slug). */
+  pendingLogin: string | null;
   createdAt: Date;
   updatedAt: Date;
   closedAt: Date | null;
@@ -87,6 +89,7 @@ type TaskRow = {
   sandbox_name: string | null;
   archived_at: Date | null;
   repeats: boolean;
+  pending_login: string | null;
   created_at: Date;
   updated_at: Date;
   closed_at: Date | null;
@@ -107,7 +110,7 @@ type MemberRow = {
 const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary, t.context, t.progress, t.status,
   t.priority, t.options, t.payload, t.later_until, t.created_by_person_id, t.created_by_agent_id, t.run_agent_id,
   t.run_started_at, t.agent_turns, t.memory, t.sandbox_name, t.archived_at,
-  exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats,
+  exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats, t.pending_login,
   t.created_at, t.updated_at, t.closed_at`;
 
 /** Sorts urgent first, then high, medium, low. */
@@ -140,6 +143,7 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     sandboxName: row.sandbox_name,
     archivedAt: row.archived_at,
     repeats: row.repeats,
+    pendingLogin: row.pending_login,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     closedAt: row.closed_at,
@@ -455,6 +459,25 @@ export async function addMessage(
     [taskId, message.author, message.kind ?? "comment", body, message.personId ?? null, message.agentId ?? null],
   );
   await getDb().query("update tasks set updated_at = now() where id = $1", [taskId]);
+}
+
+/** Marks a website sign-in as waiting on a person's code (or clears it), dropping any code already given. */
+export async function setPendingLogin(taskId: string, slug: string | null): Promise<void> {
+  await getDb().query("update tasks set pending_login = $2, login_code = null where id = $1", [taskId, slug]);
+}
+
+/** Keeps the (sealed) sign-in code a person replied with until the agent uses it. */
+export async function saveLoginCode(taskId: string, sealed: Buffer): Promise<void> {
+  await getDb().query("update tasks set login_code = $2 where id = $1", [taskId, sealed]);
+}
+
+/** The sealed sign-in code, removed as it's read so it's used once. */
+export async function takeLoginCode(taskId: string): Promise<Uint8Array | null> {
+  const [row] = await getDb().query<{ code: Uint8Array | null }>(
+    "update tasks t set login_code = null from (select login_code from tasks where id = $1 for update) old where t.id = $1 returning old.login_code as code",
+    [taskId],
+  );
+  return row?.code ?? null;
 }
 
 export async function saveMemory(taskId: string, memory: string): Promise<void> {

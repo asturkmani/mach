@@ -48,6 +48,8 @@ export type BegunRun =
       otherAgents: { id: string; name: string }[];
       /** The data sources this agent may call (slugs). */
       sources: string[];
+      /** The website logins this agent may use (slugs). */
+      logins: string[];
     };
 
 /** Checks the run can go ahead, takes the task's lease and gathers everything the agent will read. */
@@ -103,6 +105,7 @@ export async function beginRun(
     prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
     sources: integrations.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
+    logins: integrations.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
   };
 }
 

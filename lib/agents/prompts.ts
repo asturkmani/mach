@@ -1,7 +1,7 @@
 import type { Agent } from "@/lib/agents/store";
 import { skillList } from "@/lib/agents/skills";
 import type { DriveFile } from "@/lib/drive";
-import type { ApiConfig, Integration } from "@/lib/integrations";
+import type { ApiConfig, Integration, LoginConfig } from "@/lib/integrations";
 import type { Organization } from "@/lib/orgs";
 import type { Schedule } from "@/lib/schedules";
 import type { Task, TaskMessage } from "@/lib/tasks";
@@ -104,6 +104,16 @@ function integrationListing(integrations: Integration[] = []): string {
     .join("\n");
 }
 
+function loginListing(integrations: Integration[] = []): string {
+  const logins = integrations.filter((i) => i.kind === "login" && i.status !== "disabled");
+  if (!logins.length) return "";
+  const lines = logins.map((i) => {
+    const state = i.status === "connected" ? "" : ` [${i.status.replace("_", " ")}${i.statusDetail ? `: ${i.statusDetail}` : ""}]`;
+    return `- ${i.slug}: ${i.name}, signs in at ${(i.config as LoginConfig).loginUrl}${state}${i.description ? `\n  ${i.description}` : ""}`;
+  });
+  return `\n\n<logins>\nWebsite accounts you can use in your sandbox's browser (call browser_login first):\n${lines.join("\n")}\n</logins>`;
+}
+
 export function taskBrief({
   task,
   messages,
@@ -144,7 +154,7 @@ export function taskBrief({
 Title: ${task.title}
 Status: ${task.status} · Priority: ${task.priority}
 Created: ${time(task.createdAt)}
-${scheduleLine(schedule)}
+${scheduleLine(schedule)}${task.pendingLogin ? `\nSign-in waiting: ${task.pendingLogin} asked for a code. If the newest reply sent it, call browser_login to finish signing in.` : ""}
 
 Description:
 ${task.description || "(none)"}
@@ -169,7 +179,7 @@ ${driveListing(drive)}
 
 <data_sources>
 ${integrationListing(integrations)}
-</data_sources>`;
+</data_sources>${loginListing(integrations)}`;
 }
 
 export function agentInstructions({
@@ -217,6 +227,11 @@ Company data sources (listed under <data_sources>):
 - Read-only sources refuse anything but GET. A source marked "needs credentials" or "failing" isn't usable yet; say so in your report.
 - When you work out how an API really behaves (endpoints that work, paging, what fields mean, gotchas), save it with save_integration_guide so the next agent doesn't rediscover it.
 - Never ask people to paste passwords, API keys or sign-in codes into the thread. If the work needs a system that isn't connected, say so: the Chief of Staff can connect it.
+
+Website logins (listed under <logins>, if you have any):
+- For work in a website with no API, such as entering data into a system. Call browser_login: it signs your sandbox's browser in with the saved credentials (you never see the password) and tells you where the session is for your Playwright scripts. Open pages with that session and save it back when you're done.
+- If the site asks for a sign-in code, browser_login asks the people on the task and ends your run. Their reply finishes the sign-in on your next run.
+- Before you change anything in a system of record (submit a form, enter or edit data), show people exactly what you'll enter, as a table, and ask for approval, unless they already approved it on this task. Take screenshots before and after, attach them, and report what you entered.
 
 Recurring jobs:
 - When people want something done regularly ("every weekday at 4pm", "each Monday"), call set_schedule, then do the first run now. Each run lands on this same task and works in this same sandbox with the same files, notes and drive. Use the timezone they mention, else the company's (${organization.timezone ?? "not known yet, so ask"}).

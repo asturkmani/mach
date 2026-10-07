@@ -6,7 +6,12 @@ import { useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { deleteIntegrationAction, testIntegrationAction, updateIntegrationAction } from "@/app/(app)/integrations/actions";
+import {
+  deleteIntegrationAction,
+  forgetSessionAction,
+  testIntegrationAction,
+  updateIntegrationAction,
+} from "@/app/(app)/integrations/actions";
 import { CredentialsForm, StatusLine } from "@/components/credentials-form";
 import { useShell } from "@/components/shell/shell";
 import { When } from "@/components/ui";
@@ -33,6 +38,7 @@ export type IntegrationView = {
   status: IntegrationStatus;
   statusDetail: string;
   hasCredentials: boolean;
+  hasSession: boolean;
   lastUsedAt: string | null;
   calls: { method: string; path: string; status: number | null; by: string; taskNumber: number | null; at: string }[];
 };
@@ -123,18 +129,39 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
             <dd className="text-muted">{i.signing}</dd>
           </>
         )}
-        <dt className="label pt-0.5">Access</dt>
-        <dd>
-          <select
-            value={i.access}
-            disabled={pending}
-            onChange={(e) => act(() => updateIntegrationAction(i.id, { access: e.target.value as "read" | "write" }))}
-            className="bg-transparent text-sm outline-none"
-          >
-            <option value="read">Read-only (GET)</option>
-            <option value="write">Read and write</option>
-          </select>
-        </dd>
+        {i.kind === "login" && (
+          <>
+            <dt className="label pt-0.5">Session</dt>
+            <dd className="flex items-center gap-3">
+              <span className="text-muted">{i.hasSession ? "Signed in · saved for the next run" : "Not signed in yet"}</span>
+              {i.hasSession && (
+                <button
+                  disabled={pending}
+                  onClick={() => act(() => forgetSessionAction(i.id), "Session forgotten")}
+                  className="text-xs text-faint hover:text-ink"
+                >
+                  Forget
+                </button>
+              )}
+            </dd>
+          </>
+        )}
+        {i.kind === "api" && (
+          <>
+            <dt className="label pt-0.5">Access</dt>
+            <dd>
+              <select
+                value={i.access}
+                disabled={pending}
+                onChange={(e) => act(() => updateIntegrationAction(i.id, { access: e.target.value as "read" | "write" }))}
+                className="bg-transparent text-sm outline-none"
+              >
+                <option value="read">Read-only (GET)</option>
+                <option value="write">Read and write</option>
+              </select>
+            </dd>
+          </>
+        )}
         <dt className="label pt-0.5">Who can use it</dt>
         <dd>
           <button onClick={() => setChoosing(!choosing)} className="flex items-center gap-1 text-left hover:text-ink">

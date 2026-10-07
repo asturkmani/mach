@@ -19,6 +19,7 @@ import {
   saveIntegration,
   type ApiConfig,
   type Integration,
+  type LoginConfig,
 } from "@/lib/integrations";
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
 import { removePersonByName, renamePerson, savePerson, syncPeopleSection, type Person } from "@/lib/people";
@@ -114,7 +115,7 @@ ${agentLines.join("\n") || "(none yet)"}
 Open tasks:
 ${taskLines.join("\n") || "(none)"}
 
-Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and use connect_data_source; they enter the credentials in the card it shows, never in the chat. Answer quick questions from a connected data source with call_api.
+Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and use connect_data_source; they enter the credentials in the card it shows, never in the chat. Answer quick questions from a connected data source with call_api. For a website with no API, or changes its API can't make (data entry in Masttro, say), connect a login with connect_login for the agents who'll do that work (create a defined agent for it first if none fits); they sign in with the browser in their sandbox, and sign-in codes come to the people on the job.
 ${integrationLines.join("\n") || "(none yet)"}
 
 Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in create_task's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
@@ -409,6 +410,82 @@ function workTools(context: Context) {
                 output.integration.hasCredentials
                   ? "Its saved credentials were kept."
                   : "They now see a card to enter the credentials, which tests the connection. Don't ask for credentials in the chat."
+              }`,
+      }),
+    }),
+    connect_login: tool({
+      description:
+        "Connect (or reconfigure) a website account that chosen agents use in their sandbox's browser, for sites without an API or changes the API can't make. Shows the person a secure card for the username, password and, optionally, an authenticator setup key. Never put credentials in this call.",
+      inputSchema: z.object({
+        name: z.string().min(1).max(60).describe("e.g. Masttro (web)"),
+        slug: z.string().optional().describe("Short handle, e.g. masttro-web. Reuse it to reconfigure."),
+        description: z.string().describe("What agents do there."),
+        loginUrl: z.string().describe("The sign-in page, e.g. https://app.masttro.com/login"),
+        checkUrl: z.string().optional().describe("A page that only shows when signed in, e.g. the dashboard."),
+        domains: z.array(z.string()).optional(),
+        agents: z.array(z.string()).min(1).describe("Exact names of the agents allowed to use it."),
+        selectors: z
+          .object({ username: z.string().optional(), password: z.string().optional(), submit: z.string().optional(), code: z.string().optional() })
+          .optional()
+          .describe("CSS selectors for the sign-in form, only if the usual ones won't find it."),
+        guide: z.string().optional().describe("Markdown for agents: where things are on the site, how to enter data, what to avoid."),
+      }),
+      execute: async ({ agents: agentNames, ...input }) => {
+        try {
+          const team = await resolveTeam(orgId, { agents: agentNames });
+          const config: LoginConfig = {
+            loginUrl: input.loginUrl,
+            checkUrl: input.checkUrl,
+            domains: input.domains ?? [],
+            selectors: input.selectors,
+            fields: [
+              { name: "username", label: "Username or email", secret: false },
+              { name: "password", label: "Password" },
+              {
+                name: "totp",
+                label: "Authenticator setup key (lets agents answer sign-in codes themselves)",
+                optional: true,
+              },
+            ],
+          };
+          const integration = await saveIntegration(orgId, {
+            kind: "login",
+            name: input.name,
+            slug: input.slug,
+            description: input.description,
+            config,
+            access: "write",
+            agentIds: team.agents.map((a) => a.id),
+            guide: input.guide,
+            personId: context.person?.id,
+          });
+          return {
+            integration: {
+              id: integration.id,
+              slug: integration.slug,
+              name: integration.name,
+              baseUrl: (integration.config as LoginConfig).loginUrl,
+              fields: integration.config.fields,
+              hasCredentials: integration.hasCredentials,
+              status: integration.status,
+              kind: "login" as const,
+            },
+            agents: team.agents.map((a) => a.name),
+          };
+        } catch (error) {
+          if (error instanceof IntegrationError || error instanceof WorkError) return { error: error.message };
+          throw error;
+        }
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value:
+          "error" in output
+            ? `Not saved: ${output.error}`
+            : `Saved ${output.integration.name} (${output.integration.slug}) for ${output.agents.join(", ")}. ${
+                output.integration.hasCredentials
+                  ? "Its saved credentials were kept."
+                  : "They now see a card to enter the username and password. Don't ask for them in the chat."
               }`,
       }),
     }),
