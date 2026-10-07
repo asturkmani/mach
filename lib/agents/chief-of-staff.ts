@@ -14,7 +14,7 @@ import { skillList, skillTool } from "@/lib/agents/skills";
 import { createAgent, type Agent } from "@/lib/agents/store";
 import { findFiles, type LibraryFile } from "@/lib/files";
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
-import { removePersonByName, savePerson, syncPeopleSection, type Person } from "@/lib/people";
+import { removePersonByName, renamePerson, savePerson, syncPeopleSection, type Person } from "@/lib/people";
 import {
   isCaptured,
   onboardingChecklist,
@@ -108,7 +108,7 @@ export function chiefOfStaffInstructions(context: Context): string {
   const today = new Date().toISOString().slice(0, 10);
   return `You are the Chief of Staff of ${organization.name}, a company that uses Mach, a command center where people and AI agents run the business together.
 
-You are talking to ${user.name} (${user.email}), who is already in the people list. If you learn their role or manager, save it.
+You are talking to ${context.person?.name ?? user.name} (${user.email}), who is already in the people list under that name. If you learn their role or manager, save it.
 
 ${organization.onboardingCompletedAt ? afterOnboardingInstructions(context) : onboardingInstructions(context)}
 
@@ -117,7 +117,7 @@ ${workInstructions(context)}
 Recording facts:
 - The company profile below is a markdown document and your memory of the company. Record facts as soon as you learn them; don't ask permission to save.
 - Write in the company's own words, concise and factual. Never invent facts.
-- Use save_person / remove_person for people. Never write the "${PEOPLE_SECTION}" section with update_section; it is generated from the people list.
+- Use save_person / remove_person for people. To change someone's name (including the person you're talking to), call save_person with their current name and newName; never remove someone and add them again, which would take them off their tasks. Never write the "${PEOPLE_SECTION}" section with update_section; it is generated from the people list.
 ${
     organization.onboardingCompletedAt
       ? "- Use suggest_profile_update for every other section, passing the complete new body (markdown, no \"## \" heading). It replaces what was there when applied, so keep anything that should stay."
@@ -143,8 +143,8 @@ const sectionNames = SECTIONS.filter((s) => s !== PEOPLE_SECTION) as [string, ..
 // request, so repeating it in each tool result would just bloat the context.
 const confirm = (value: string) => () => ({ type: "text" as const, value });
 
-function profileTools({ organization }: Context) {
-  const orgId = organization.id;
+function profileTools(context: Context) {
+  const orgId = context.organization.id;
   return {
     set_company_name: tool({
       description: "Correct the company's name.",
@@ -169,31 +169,51 @@ function profileTools({ organization }: Context) {
     }),
     save_person: tool({
       description:
-        "Add a person to the organisation or update their details. Only the fields you pass are changed. reportsTo is the exact name of their manager (an unknown manager is added too); use an empty string for someone who reports to no one.",
+        "Add a person to the organisation or update their details. Only the fields you pass are changed. reportsTo is the exact name of their manager (an unknown manager is added too); use an empty string for someone who reports to no one. To rename someone, pass their current name as name and the new one as newName.",
       inputSchema: z.object({
-        name: z.string().min(1).describe("Full name, used as the person's identifier."),
+        name: z.string().min(1).describe("Full name, used as the person's identifier (their current name when renaming)."),
+        newName: z.string().optional().describe("Their new name, when renaming them."),
         role: z.string().optional().describe("Job title or role."),
         reportsTo: z.string().optional().describe("Exact name of the person they report to, or empty."),
         responsibilities: z.string().optional().describe("What they own, in a short phrase."),
         email: z.string().optional(),
         phone: z.string().optional().describe("Phone or WhatsApp number."),
       }),
-      execute: async ({ reportsTo, ...person }) => {
-        await savePerson(orgId, { ...person, managerName: reportsTo });
+      execute: async ({ reportsTo, newName, ...person }) => {
+        let name = person.name;
+        if (newName?.trim() && newName.trim().toLowerCase() !== name.trim().toLowerCase()) {
+          try {
+            const renamed = await renamePerson(orgId, name, newName);
+            if (!renamed) return { error: `No one called ${name} is in the people list.`, profile: await syncPeopleSection(orgId) };
+            name = renamed.name;
+          } catch (error) {
+            return { error: error instanceof Error ? error.message : "Couldn't rename them.", profile: await syncPeopleSection(orgId) };
+          }
+        }
+        await savePerson(orgId, { ...person, name, managerName: reportsTo });
         return { profile: await syncPeopleSection(orgId) };
-      },
-      toModelOutput: confirm("Saved."),
-    }),
-    remove_person: tool({
-      description: "Remove a person from the organisation. Anyone who reported to them is left without a manager.",
-      inputSchema: z.object({ name: z.string().min(1) }),
-      execute: async ({ name }) => {
-        const removed = await removePersonByName(orgId, name);
-        return { removed, profile: await syncPeopleSection(orgId) };
       },
       toModelOutput: ({ output }) => ({
         type: "text" as const,
-        value: output.removed ? "Removed." : "No one by that name was in the people list.",
+        value: "error" in output && output.error ? `Not saved: ${output.error}` : "Saved.",
+      }),
+    }),
+    remove_person: tool({
+      description:
+        "Remove a person from the organisation, which also takes them off every task. Not for renaming (use save_person with newName), and not for anyone who has signed in to Mach: an admin removes those on the Team page.",
+      inputSchema: z.object({ name: z.string().min(1) }),
+      execute: async ({ name }) => {
+        const result = await removePersonByName(orgId, name, { protect: context.person ? [context.person.id] : [] });
+        return { removed: result === "removed", result, profile: await syncPeopleSection(orgId) };
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value:
+          output.result === "removed"
+            ? "Removed."
+            : output.result === "has_account"
+              ? "Not removed: they have a Mach account (or it's the person you're talking to). To rename someone use save_person with newName; to remove an account, an admin uses the Team page."
+              : "No one by that name was in the people list.",
       }),
     }),
     complete_onboarding: tool({

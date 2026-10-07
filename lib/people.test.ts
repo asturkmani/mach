@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createOrganization } from "@/lib/orgs";
-import { linkMember, listPeople, markInvited, removePersonByName, savePerson, syncPeopleSection } from "@/lib/people";
+import { linkMember, listPeople, markInvited, removePersonByName, renamePerson, savePerson, syncPeopleSection } from "@/lib/people";
 import { getSection } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { useTestDb } from "@/test/db";
@@ -45,8 +45,23 @@ describe("people", () => {
 
   it("removing a manager leaves their reports without one", async () => {
     await savePerson(ORG, { name: "Mustapha", managerName: "Ahmed" });
-    expect(await removePersonByName(ORG, "Ahmed")).toBe(true);
+    expect(await removePersonByName(ORG, "Ahmed")).toBe("removed");
     expect((await listPeople(ORG)).map((p) => [p.name, p.managerName])).toEqual([["Mustapha", null]]);
+  });
+
+  it("renames people in place and never removes someone who has signed in", async () => {
+    const me = await linkMember(ORG, { id: "user_1", email: "kj@cedar.example", name: "kjdhf kjhdfs" });
+    await savePerson(ORG, { name: "Mustapha", managerName: "kjdhf kjhdfs" });
+    const renamed = await renamePerson(ORG, "kjdhf kjhdfs", "Abdel Wahab Turkmani");
+    expect(renamed).toMatchObject({ id: me.id, name: "Abdel Wahab Turkmani", status: "active" });
+    expect((await listPeople(ORG)).find((p) => p.name === "Mustapha")!.managerName).toBe("Abdel Wahab Turkmani");
+    await expect(renamePerson(ORG, "Mustapha", "abdel wahab turkmani")).rejects.toThrow(/already/);
+    expect(await renamePerson(ORG, "Nobody", "X")).toBeNull();
+
+    expect(await removePersonByName(ORG, "Abdel Wahab Turkmani")).toBe("has_account");
+    const sam = await savePerson(ORG, { name: "Sam" });
+    expect(await removePersonByName(ORG, "Sam", { protect: [sam.id] })).toBe("has_account");
+    expect(await removePersonByName(ORG, "Nobody")).toBe("not_found");
   });
 
   it("links a signed-in user to their invited entry by email", async () => {

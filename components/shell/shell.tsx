@@ -12,6 +12,8 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import type { InboxItem } from "@/lib/inbox-arrivals";
+
 import { HelpDialog, LaterDialog, NewTaskDialog } from "./dialogs";
 import { Palette, type Command } from "./palette";
 
@@ -26,12 +28,15 @@ export type ShellData = {
   people: { id: string; name: string; role: string }[];
   agents: { id: string; name: string; role: string }[];
   inboxCount: number;
+  /** What's in this person's inbox now, so the shell can notify them when something arrives. */
+  inbox: InboxItem[];
   inProgressCount: number;
 };
 
+
 type KeyHandler = (event: KeyboardEvent) => void;
 type KeyMap = Record<string, KeyHandler>;
-type Toast = { id: number; text: string; undo?: boolean };
+type Toast = { id: number; text: string; undo?: boolean; href?: string };
 type Undo = { label: string; run: () => Promise<void> };
 export type Theme = "system" | "light" | "dark";
 
@@ -42,7 +47,7 @@ type Shell = {
   openPalette: (mode?: "commands" | "search") => void;
   openNewTask: () => void;
   openLater: (taskId: string) => void;
-  toast: (text: string) => void;
+  toast: (text: string, options?: { href?: string }) => void;
   /** Shows a toast and lets Z put things back. */
   pushUndo: (label: string, run: () => Promise<void>) => void;
   registerKeys: (keys: KeyMap) => () => void;
@@ -176,10 +181,10 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
   const keyStack = useRef<KeyMap[]>([]);
   const [pageCommands, setPageCommands] = useState<Command[][]>([]);
 
-  const toast = useCallback((text: string, undo = false) => {
+  const toast = useCallback((text: string, undo = false, href?: string) => {
     const id = Date.now() + Math.random();
-    setToasts((all) => [...all.slice(-2), { id, text, undo }]);
-    setTimeout(() => setToasts((all) => all.filter((t) => t.id !== id)), undo ? 6000 : 3500);
+    setToasts((all) => [...all.slice(-2), { id, text, undo, href }]);
+    setTimeout(() => setToasts((all) => all.filter((t) => t.id !== id)), undo ? 6000 : href ? 9000 : 3500);
   }, []);
 
   const pushUndo = useCallback(
@@ -294,7 +299,7 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
       openPalette: (mode = "commands") => setPalette(mode),
       openNewTask: () => setNewTask(true),
       openLater: (taskId) => setLaterFor(taskId),
-      toast: (text) => toast(text),
+      toast: (text, options) => toast(text, false, options?.href),
       pushUndo,
       registerKeys,
       registerCommands,
@@ -325,6 +330,17 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
             className="pointer-events-auto flex items-center gap-3 border border-line bg-raised px-4 py-2 text-sm shadow-[var(--shadow)]"
           >
             <span>{t.text}</span>
+            {t.href && (
+              <button
+                onClick={() => {
+                  setToasts((all) => all.filter((x) => x.id !== t.id));
+                  router.push(t.href!);
+                }}
+                className="text-accent hover:underline"
+              >
+                Open
+              </button>
+            )}
             {t.undo && (
               <button onClick={() => void undo()} className="flex items-center gap-1.5 text-muted hover:text-ink">
                 <kbd className="kbd">Z</kbd> Undo

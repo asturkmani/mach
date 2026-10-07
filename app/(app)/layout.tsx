@@ -7,16 +7,16 @@ import { listPeople } from "@/lib/people";
 import { onboardingChecklist } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { requireAppContext } from "@/lib/session";
-import { anyRunning, countInbox, listInProgress, listSuggestionStatuses } from "@/lib/tasks";
+import { anyRunning, listInbox, listInProgress, listSuggestionStatuses } from "@/lib/tasks";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { organization, user, person, isAdmin } = await requireAppContext();
-  const [chat, profile, people, agents, inboxCount, inProgress, suggestionStatus, running] = await Promise.all([
+  const [chat, profile, people, agents, inbox, inProgress, suggestionStatus, running] = await Promise.all([
     getOrCreateChat<ChiefOfStaffMessage>(organization.id, user.id),
     loadProfile(organization.id),
     listPeople(organization.id),
     listAgents(organization.id),
-    countInbox(organization.id, person.id),
+    listInbox(organization.id, person.id),
     listInProgress(organization.id, person.id),
     listSuggestionStatuses(organization.id, person.id),
     anyRunning(organization.id),
@@ -33,7 +33,15 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         },
         people: people.map((p) => ({ id: p.id, name: p.name, role: p.role })),
         agents: agents.filter((a) => a.kind === "defined" && a.status === "active").map((a) => ({ id: a.id, name: a.name, role: a.role })),
-        inboxCount,
+        inboxCount: inbox.length,
+        inbox: inbox.map((t) => ({
+          id: t.id,
+          number: t.number,
+          title: t.title,
+          summary: t.summary,
+          status: t.status,
+          updatedAt: new Date(t.updatedAt).toISOString(),
+        })),
         inProgressCount: inProgress.length,
       }}
       cos={{
@@ -43,7 +51,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         suggestionStatus,
       }}
     >
-      <LiveRefresh active={running} />
+      <LiveRefresh running={running} />
       {children}
     </AppFrame>
   );

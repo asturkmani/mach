@@ -1,6 +1,6 @@
 "use client";
 
-import {
+import { Bell, BellOff,
   Bot,
   Building,
   CircleDashed,
@@ -24,6 +24,7 @@ import { usePathname } from "next/navigation";
 import { signOutAction } from "@/app/(app)/actions";
 import { Face } from "@/components/ui";
 
+import { useNotificationPermission } from "./inbox-notifier";
 import { useShell } from "./shell";
 
 // The left menu: a column of icons that widens into labels while the pointer
@@ -38,7 +39,8 @@ function isActive(pathname: string, href: string): boolean {
 
 export function Rail() {
   const pathname = usePathname();
-  const { data, openPalette, openNewTask, cosOpen, setCosOpen, theme, setTheme } = useShell();
+  const { data, openPalette, openNewTask, cosOpen, setCosOpen, theme, setTheme, toast } = useShell();
+  const notifications = useNotificationPermission();
 
   const workspace: Item[] = [
     { href: "/", label: "Inbox", icon: Inbox, count: data.inboxCount, accent: true },
@@ -121,6 +123,20 @@ export function Rail() {
           {button("New task", Plus, openNewTask, "N")}
           {button(cosOpen ? "Hide Chief of Staff" : "Chief of Staff", PanelRight, () => setCosOpen(!cosOpen), "C")}
           {button("Commands", CommandIcon, () => openPalette(), "⌘K")}
+          {notifications.state !== "unsupported" &&
+            button(
+              notifications.state === "granted" ? "Notifications on" : "Turn on notifications",
+              notifications.state === "granted" ? Bell : BellOff,
+              async () => {
+                if (notifications.state === "granted") return toast("Notifications are on. Turn them off in your browser's site settings.");
+                const result = await notifications.request();
+                toast(
+                  result === "granted"
+                    ? "You'll get a notification when something lands in your inbox."
+                    : "Notifications are blocked. Allow them for this site in your browser's settings.",
+                );
+              },
+            )}
           {button(
             `Theme: ${theme === "system" ? "match system" : theme}`,
             theme === "light" ? Sun : theme === "dark" ? Moon : Monitor,

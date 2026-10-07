@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { rememberTimezoneAction } from "@/app/(app)/actions";
 
 import { CosPanel } from "./cos-panel";
+import { InboxNotifier } from "./inbox-notifier";
 import { Rail } from "./rail";
 import { ShellProvider, useShell, type ShellData } from "./shell";
 
@@ -34,6 +35,7 @@ export function AppFrame({ data, cos, children }: { data: ShellData; cos: CosPro
   }, [knowsTimezone]);
   return (
     <ShellProvider data={data}>
+      <InboxNotifier />
       <Layout cos={cos}>{children}</Layout>
     </ShellProvider>
   );
