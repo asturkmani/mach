@@ -35,8 +35,12 @@ export const getSessionContext = cache(async function getSessionContext(): Promi
 
   let organization = await getOrganization(auth.organizationId);
   if (!organization) {
-    // Org exists in WorkOS but not here yet (e.g. created in the WorkOS dashboard).
-    const workosOrg = await getWorkOS().organizations.getOrganization(auth.organizationId);
+    // Org exists in WorkOS but not here yet (e.g. created in the WorkOS dashboard), or the
+    // company was deleted, when it's gone from WorkOS too: then they start again at /welcome.
+    const workosOrg = await getWorkOS()
+      .organizations.getOrganization(auth.organizationId)
+      .catch(() => null);
+    if (!workosOrg) return { user, organization: null };
     await createOrganization({ id: workosOrg.id, name: workosOrg.name });
     organization = (await getOrganization(auth.organizationId))!;
   }

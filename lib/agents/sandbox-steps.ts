@@ -7,7 +7,7 @@ import { knownSecrets, sandboxPolicy } from "@/lib/integrations";
 import { redact } from "@/lib/secrets";
 import { versionPreview } from "@/lib/previews";
 import type { AgentContext, RunContext } from "@/lib/agents/prompts";
-import { JOB_DIR, sandboxes, sandboxNameOf, type CommandResult, type JobSandbox } from "@/lib/sandbox";
+import { JOB_DIR, openCompanySandbox, sandboxes, sandboxNameOf, type CommandResult, type JobSandbox } from "@/lib/sandbox";
 import { getTask, saveMemory, setSandboxName } from "@/lib/tasks";
 
 // The sandbox tools every agent uses, each a durable workflow step. An agent
@@ -112,7 +112,7 @@ async function syncTaskFiles(context: RunContext, sandbox: JobSandbox): Promise<
 
 async function open(context: AgentContext): Promise<JobSandbox> {
   const name = sandboxNameOf(context);
-  const sandbox = await sandboxes().open(name, (created) => seed(context, created));
+  const sandbox = await openCompanySandbox(context.organizationId, name, (created) => seed(context, created));
   if (context.taskId) await setSandboxName(context.taskId, name);
   return sandbox;
 }

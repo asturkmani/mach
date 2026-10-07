@@ -1,5 +1,5 @@
 import type { AgentContext, RunContext } from "@/lib/agents/prompts";
-import { JOB_DIR, sandboxes, sandboxNameOf, workspaceSandboxName, type JobSandbox } from "@/lib/sandbox";
+import { JOB_DIR, openCompanySandbox, sandboxes, sandboxNameOf, workspaceSandboxName, type JobSandbox } from "@/lib/sandbox";
 import {
   allowedFor,
   getIntegration,
@@ -253,7 +253,7 @@ export type LoginResult = { text: string; needsCode?: { slug: string; name: stri
 
 async function open(context: AgentContext): Promise<JobSandbox> {
   // The sandbox was started by the tool wrapper (startSandbox); this resumes it.
-  return sandboxes().open(sandboxNameOf(context), async () => {});
+  return openCompanySandbox(context.organizationId, sandboxNameOf(context), async () => {});
 }
 
 async function waitForHelper(sandbox: JobSandbox, slug: string, seconds: number): Promise<string> {

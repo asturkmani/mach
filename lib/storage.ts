@@ -1,6 +1,6 @@
 import "server-only";
 
-import { del as deleteBlob, get as getBlob, put as putBlob } from "@vercel/blob";
+import { del as deleteBlob, get as getBlob, list as listBlobs, put as putBlob } from "@vercel/blob";
 
 // Where file content lives: Vercel Blob (private) when a store is connected to
 // the project, otherwise a bytea column next to the row that describes it.
@@ -44,4 +44,18 @@ export async function loadBytes(row: { blob_pathname: string | null; content: Ui
 export async function removeBytes(blobPathname: string | null): Promise<void> {
   if (!blobPathname || !blobConnected()) return;
   await deleteBlob(blobPathname).catch((error) => console.error(`Couldn't delete ${blobPathname} from Blob`, error));
+}
+
+/** Deletes everything stored under a prefix (e.g. a company's orgs/<id>/). Returns how many objects went. */
+export async function removePrefix(prefix: string): Promise<number> {
+  if (!blobConnected()) return 0;
+  let removed = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await listBlobs({ prefix, cursor, limit: 1000 });
+    if (page.blobs.length) await deleteBlob(page.blobs.map((b) => b.pathname));
+    removed += page.blobs.length;
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+  return removed;
 }

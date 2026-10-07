@@ -182,3 +182,17 @@ export function setSandboxProvider(next: SandboxProvider | null): void {
 export function sandboxes(): SandboxProvider {
   return provider;
 }
+
+/**
+ * Opens (or creates) a sandbox for a company, if the company still exists: an
+ * agent run still going when its company is deleted can't bring one back.
+ */
+export async function openCompanySandbox(
+  organizationId: string,
+  name: string,
+  seed: (sandbox: JobSandbox) => Promise<void>,
+): Promise<JobSandbox> {
+  const [exists] = await getDb().query("select 1 from organizations where id = $1", [organizationId]);
+  if (!exists) throw new Error("This company has been deleted.");
+  return sandboxes().open(name, seed);
+}

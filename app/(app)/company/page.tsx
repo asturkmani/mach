@@ -1,11 +1,12 @@
 import { CompanyProfile } from "@/components/company-profile";
+import { DeleteCompany } from "@/components/delete-company";
 import { PageHeader } from "@/components/page-header";
 import { onboardingChecklist } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { requireAppContext } from "@/lib/session";
 
 export default async function CompanyPage() {
-  const { organization } = await requireAppContext();
+  const { organization, isAdmin } = await requireAppContext();
   const profile = await loadProfile(organization.id);
   return (
     <>
@@ -15,6 +16,11 @@ export default async function CompanyPage() {
         checklist={onboardingChecklist(profile)}
         onboarded={Boolean(organization.onboardingCompletedAt)}
       />
+      {isAdmin && (
+        <div className="px-4 pb-12 sm:px-8">
+          <DeleteCompany name={organization.name} />
+        </div>
+      )}
     </>
   );
 }
