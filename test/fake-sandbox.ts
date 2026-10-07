@@ -52,7 +52,7 @@ export function fakeSandboxes(scripts: Record<string, Handler> = {}) {
           return { exitCode: result.exitCode ?? 0, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
         }
         const script = args.join(" ");
-        if (script.includes("[ -d /vercel/drive ]")) return ok;
+        if (script.includes("[ -d /vercel/drive ]") || script.includes("trust-network-proxy")) return ok;
         if (script.includes("find code")) {
           const listed = under(JOB_DIR).filter((p) => p.startsWith("code/") || /^(run\.sh|config\.\w+|requirements\.txt)$/.test(p));
           return { ...ok, stdout: listed.join("\n") };

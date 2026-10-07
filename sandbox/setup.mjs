@@ -3,7 +3,11 @@
 
 export const JOB_DIR = "/vercel/job";
 
-/** Runs as root: Python data stack, LibreOffice (to recalculate xlsx formulas) and the `recalc` helper. */
+/**
+ * Runs as root: the Python data stack, LibreOffice (to recalculate xlsx
+ * formulas) and the `recalc` helper, and headless Chromium for Playwright
+ * (installed for the ubuntu user, so scripts need no extra settings).
+ */
 export function setupScript(template) {
   return `set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -31,6 +35,31 @@ mv "$out/$(basename "$file")" "$file"
 rm -rf "$out"
 SH
 chmod +x /usr/local/bin/recalc
+cat > /usr/local/bin/trust-network-proxy <<'SH'
+#!/usr/bin/env bash
+# Makes Chromium trust the sandbox's network proxy, which signs requests to
+# data sources on their way out. curl, Python and Node already trust it
+# through the system bundle; Chromium keeps its own certificate store.
+set -euo pipefail
+dir="$(mktemp -d)"
+csplit -s -z -f "$dir/c-" /etc/ssl/certs/ca-certificates.crt '/-----BEGIN CERTIFICATE-----/' '{*}'
+for f in "$dir"/c-*; do
+  if openssl x509 -in "$f" -noout -subject 2>/dev/null | grep -q "Vercel Network Proxy CA"; then
+    mkdir -p "$HOME/.pki/nssdb"
+    [ -f "$HOME/.pki/nssdb/cert9.db" ] || certutil -d "sql:$HOME/.pki/nssdb" -N --empty-password
+    certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n vercel-network-proxy -i "$f"
+    break
+  fi
+done
+rm -rf "$dir"
+SH
+chmod +x /usr/local/bin/trust-network-proxy
 mkdir -p ${JOB_DIR} /vercel/drive && chown ubuntu:ubuntu ${JOB_DIR} /vercel/drive
+${
+  template.browsers?.length
+    ? `python3 -m playwright install-deps ${template.browsers.join(" ")} >/dev/null
+runuser -u ubuntu -- python3 -m playwright install ${template.browsers.join(" ")} >/dev/null`
+    : ""
+}
 `;
 }

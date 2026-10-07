@@ -195,6 +195,8 @@ function driveNote({ saved, problems }: { saved: string[]; problems: string[] })
 async function connectSources(context: RunContext, sandbox: JobSandbox): Promise<string[]> {
   const { policy, sources } = await sandboxPolicy(context.organizationId, context.agentId);
   await sandbox.setNetworkPolicy(policy);
+  // So the browser accepts the proxy that signs those requests (older templates lack the helper).
+  if (sources.length) await sandbox.run("bash", ["-c", "command -v trust-network-proxy >/dev/null && trust-network-proxy || true"]);
   return sources;
 }
 

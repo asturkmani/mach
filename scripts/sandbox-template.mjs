@@ -1,5 +1,6 @@
 // Builds the sandbox template every job sandbox starts from (the Python data
-// stack, LibreOffice, the recalc helper) and records its snapshot.
+// stack, LibreOffice, the recalc helper, headless Chromium) and records its
+// snapshot. The sandbox it was built in is deleted; the snapshot stays.
 // Usage: pnpm sandbox:template   (needs DATABASE_URL and Vercel credentials)
 import { neon } from "@neondatabase/serverless";
 import { Sandbox } from "@vercel/sandbox";
@@ -43,4 +44,5 @@ await neon(url).query(
    on conflict (key) do update set snapshot_id = excluded.snapshot_id, created_at = now()`,
   [template.key, snapshot.snapshotId],
 );
+await sandbox.delete();
 console.log(`Saved template ${template.key} as snapshot ${snapshot.snapshotId} in ${Math.round((Date.now() - started) / 1000)}s.`);
