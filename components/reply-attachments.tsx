@@ -13,6 +13,7 @@ type Pending = {
   key: string;
   name: string;
   size: number;
+  contentType: string;
   /** A local preview for images. */
   preview: string | null;
   percent: number;
@@ -55,7 +56,7 @@ export function useReplyAttachments({ prefix, enabled, onError }: { prefix: stri
       const key = `a${counter.current++}`;
       const name = nameFor(file, n);
       const preview = SHOWN.test(file.type) ? URL.createObjectURL(file) : null;
-      setPending((all) => [...all, { key, name, size: file.size, preview, percent: 0 }]);
+      setPending((all) => [...all, { key, name, size: file.size, contentType: file.type, preview, percent: 0 }]);
       upload(`${prefix}${name}`, file, {
         access: "private",
         handleUploadUrl: "/api/uploads",
@@ -75,9 +76,10 @@ export function useReplyAttachments({ prefix, enabled, onError }: { prefix: stri
       return all.filter((p) => p.key !== key);
     });
 
-  const clear = () =>
+  /** Empties the box; keepPreviews leaves the image previews for a message that still shows them. */
+  const clear = ({ keepPreviews = false } = {}) =>
     setPending((all) => {
-      all.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
+      if (!keepPreviews) all.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
       return [];
     });
 

@@ -2,6 +2,7 @@
 
 import { Command, Plus } from "lucide-react";
 
+import { CosToggle } from "@/components/shell/cos-toggle";
 import { useShell } from "@/components/shell/shell";
 
 export function PageHeader({
@@ -29,6 +30,7 @@ export function PageHeader({
         <button onClick={() => openPalette()} title="Commands (⌘K)" className="hidden p-2 hover:text-ink md:block">
           <Command size={18} strokeWidth={1.5} />
         </button>
+        <CosToggle />
       </div>
     </header>
   );

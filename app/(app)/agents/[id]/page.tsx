@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { AgentForm, AgentStatusControl } from "@/components/agent-form";
 import { Face, When } from "@/components/ui";
+import { CosToggle } from "@/components/shell/cos-toggle";
 import { getAgent } from "@/lib/agents/store";
 import { requireAppContext } from "@/lib/session";
 import { STATUS_WORDS } from "@/lib/task-words";
@@ -20,7 +21,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
     <>
       <header className="flex items-center justify-between gap-4 border-b border-line px-4 sm:px-8 pb-5 pt-7">
         <div className="flex min-w-0 items-center gap-4">
-          <Link href="/agents" className="text-muted hover:text-ink" title="Agents">
+          <Link href="/team?show=agents" className="text-muted hover:text-ink" title="Team">
             <ArrowLeft size={16} />
           </Link>
           <Face name={agent.name} agent size={32} />
@@ -31,7 +32,10 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
             </p>
           </div>
         </div>
-        <AgentStatusControl agentId={agent.id} status={agent.status} />
+        <div className="flex shrink-0 items-center gap-2">
+          <AgentStatusControl agentId={agent.id} status={agent.status} />
+          <CosToggle />
+        </div>
       </header>
       <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-4 sm:px-8 py-6">
         <div className="grid max-w-5xl gap-10 lg:grid-cols-[1fr_300px]">

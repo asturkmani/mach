@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { deleteCompanyAction } from "@/app/(app)/company/actions";
+import { SettingRow } from "@/components/setting-row";
 
 /** The admin's way to delete the company and everything it has in Mach. */
 export function DeleteCompany({ name }: { name: string }) {
@@ -13,18 +14,17 @@ export function DeleteCompany({ name }: { name: string }) {
   const matches = typed.trim().toLowerCase() === name.trim().toLowerCase();
 
   return (
-    <section className="mx-auto mt-14 max-w-3xl border border-danger/40 px-5 py-4 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[15px]">Delete company</h2>
-          <p className="mt-0.5 text-sm text-muted">Removes {name} and everything in it from Mach. This can&apos;t be undone.</p>
-        </div>
-        {!open && (
+    <SettingRow
+      title="Delete company"
+      description={<>Removes {name} and everything in it from Mach. This can&apos;t be undone.</>}
+      action={
+        !open && (
           <button onClick={() => setOpen(true)} className="btn hover:border-danger hover:text-danger">
-            Delete company…
+            Delete…
           </button>
-        )}
-      </div>
+        )
+      }
+    >
       {open && (
         <form
           className="mt-4 space-y-3"
@@ -60,6 +60,6 @@ export function DeleteCompany({ name }: { name: string }) {
           </div>
         </form>
       )}
-    </section>
+    </SettingRow>
   );
 }

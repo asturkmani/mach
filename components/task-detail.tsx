@@ -29,6 +29,7 @@ import { RepeatsPanel, type ScheduleView } from "@/components/task-schedule";
 import { linkMentions } from "@/lib/mentions";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
 import { Face, PriorityMark, useStoredFlag, When } from "@/components/ui";
+import { CosToggle } from "@/components/shell/cos-toggle";
 import { byline, type TaskView } from "@/lib/task-view";
 import { PRIORITIES, PRIORITY_WORDS, STATUS_WORDS, TASK_STATUSES, type Priority, type TaskStatus } from "@/lib/task-words";
 import type { TaskMember, TaskMessageKind } from "@/lib/tasks";
@@ -259,6 +260,7 @@ export function TaskDetail({
           <button onClick={approve} className="btn" disabled={pending || task.status === "done"}>
             {task.options.some((o) => o.recommended) ? "Approve" : "Done"} <kbd className="kbd hidden md:inline-flex">E</kbd>
           </button>
+          <CosToggle />
         </div>
       </header>
 
