@@ -1,5 +1,6 @@
 import { createAgentUIStreamResponse, type UIMessage } from "ai";
 
+import { forModel, MAX_CHAT_ATTACHMENTS, restoreOriginals, saveChatAttachments, type ChatUpload } from "@/lib/agents/chat-attachments";
 import { generateMessageId, loadChiefOfStaff } from "@/lib/agents/cos-turn";
 import { prepareHistory } from "@/lib/agents/history";
 import { loadChat, saveChat } from "@/lib/chats";
@@ -11,24 +12,36 @@ import { getSessionContext } from "@/lib/session";
 export const maxDuration = 300;
 
 /** Accepts only a plain user text message from the browser; history comes from the database. */
-function parseUserMessage(value: unknown): UIMessage | null {
+function parseUserMessage(value: unknown, hasFiles: boolean): UIMessage | null {
   const message = value as { id?: unknown; role?: unknown; parts?: unknown } | null;
   if (!message || typeof message.id !== "string" || message.role !== "user" || !Array.isArray(message.parts)) {
     return null;
   }
   const parts = message.parts
     .filter((part): part is { type: "text"; text: string } => part?.type === "text" && typeof part.text === "string")
+    .filter((part) => part.text.trim())
     .map((part) => ({ type: "text" as const, text: part.text }));
-  return parts.some((part) => part.text.trim()) ? { id: message.id, role: "user", parts } : null;
+  return parts.length > 0 || hasFiles ? { id: message.id, role: "user", parts } : null;
+}
+
+/** Files attached to the message: uploaded to Blob first (/api/uploads), named by the browser. */
+function parseUploads(value: unknown): ChatUpload[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_CHAT_ATTACHMENTS) return null;
+  const uploads = value.filter(
+    (u): u is ChatUpload => typeof u?.name === "string" && u.name.trim() !== "" && typeof u?.blobPathname === "string",
+  );
+  return uploads.length === value.length ? uploads : null;
 }
 
 export async function POST(request: Request) {
   const context = await getSessionContext();
   if (!context.organization) return new Response("Create your company first.", { status: 409 });
 
-  const body = (await request.json().catch(() => null)) as { id?: unknown; message?: unknown } | null;
-  const userMessage = parseUserMessage(body?.message);
-  if (typeof body?.id !== "string" || !userMessage) return new Response("Invalid message.", { status: 400 });
+  const body = (await request.json().catch(() => null)) as { id?: unknown; message?: unknown; uploads?: unknown } | null;
+  const uploads = parseUploads(body?.uploads);
+  const userMessage = parseUserMessage(body?.message, Boolean(uploads?.length));
+  if (typeof body?.id !== "string" || !userMessage || !uploads) return new Response("Invalid message.", { status: 400 });
 
   const chat = await loadChat(body.id, context.organization.id, context.user.id);
   if (!chat) return new Response("Conversation not found.", { status: 404 });
@@ -44,20 +57,34 @@ export async function POST(request: Request) {
     });
   }
 
+  // Attached files go into the company's file library; the message keeps a link to each.
+  if (uploads.length) {
+    try {
+      userMessage.parts.push(...(await saveChatAttachments(context.organization.id, context.person.id, uploads)));
+    } catch (error) {
+      await close();
+      return new Response(error instanceof Error ? error.message : "Couldn't attach those files.", { status: 400 });
+    }
+  }
+
   // Resending a message (e.g. retrying after an error) replaces it and anything after it.
   const history = await prepareHistory(chat.messages, agent.tools);
   const retryIndex = history.findIndex((message) => message.id === userMessage.id);
+  const retried = retryIndex === -1 ? null : history[retryIndex];
+  // A retry sends the text again but not the files, which are already saved with the first try.
+  if (retried && !uploads.length) userMessage.parts.push(...retried.parts.filter((p) => p.type === "file"));
   const messages = [...(retryIndex === -1 ? history : history.slice(0, retryIndex)), userMessage];
   // Save the question first so it isn't lost if the run fails.
   await saveChat(chat.id, messages);
 
   return createAgentUIStreamResponse({
     agent,
-    uiMessages: messages,
+    uiMessages: await forModel(context.organization.id, messages),
     abortSignal: request.signal,
     generateMessageId,
     onEnd: async ({ messages: finished }) => {
-      await saveChat(chat.id, await prepareHistory(finished, agent.tools));
+      // What the model was shown (attached images as data) is never stored; the conversation keeps its file links.
+      await saveChat(chat.id, await prepareHistory(restoreOriginals(finished, messages), agent.tools));
       // Stop the workspace sandbox if this turn used it (it keeps running while a sign-in waits for a code).
       await close();
     },

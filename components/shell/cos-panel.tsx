@@ -1,8 +1,8 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, getToolName, isToolUIPart } from "ai";
-import { ArrowUp, Square, X } from "lucide-react";
+import { DefaultChatTransport, getToolName, isToolUIPart, type FileUIPart } from "ai";
+import { ArrowUp, FileText, Paperclip, Square, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -12,6 +12,7 @@ import remarkGfm from "remark-gfm";
 import { sendSignInCodeAction } from "@/app/(app)/integrations/actions";
 import { pickOptionAction } from "@/app/(app)/tasks/actions";
 import { CredentialsForm, StatusLine } from "@/components/credentials-form";
+import { PendingAttachments, useReplyAttachments } from "@/components/reply-attachments";
 import type { IntegrationStatus } from "@/lib/integrations";
 import type { ChiefOfStaffMessage } from "@/lib/agents/chief-of-staff";
 import type { LoginOutput } from "@/lib/agents/toolkit";
@@ -22,10 +23,14 @@ import { cosFocus, useShell } from "./shell";
 
 type ToolPart = Extract<ChiefOfStaffMessage["parts"][number], { type: `tool-${string}` }>;
 
-// History is stored on the server, so only the newest message is sent.
+// History is stored on the server, so only the newest message is sent, with
+// the files attached to it (already uploaded to Blob; the server takes them
+// into the company's file library).
 const transport = new DefaultChatTransport<ChiefOfStaffMessage>({
   api: "/api/chat",
-  prepareSendMessagesRequest: ({ id, messages }) => ({ body: { id, message: messages.at(-1) } }),
+  prepareSendMessagesRequest: ({ id, messages, body }) => ({
+    body: { id, message: messages.at(-1), ...(body?.uploads ? { uploads: body.uploads } : {}) },
+  }),
 });
 
 // Tools whose results change what other screens show (tasks, the profile, the team).
@@ -50,14 +55,20 @@ export function CosPanel({
   checklist,
   suggestionStatus,
   integrationStatus,
+  uploadPrefix,
+  canAttach,
 }: {
   chatId: string;
   initialMessages: ChiefOfStaffMessage[];
   checklist: ChecklistItem[];
   suggestionStatus: Record<string, TaskStatus>;
   integrationStatus: IntegrationState;
+  /** Where this company's uploads go in Blob (see /api/uploads). */
+  uploadPrefix: string;
+  /** Whether files can be attached (a Blob store is connected). */
+  canAttach: boolean;
 }) {
-  const { data, setCosOpen } = useShell();
+  const { data, setCosOpen, toast } = useShell();
   const router = useRouter();
   // Page refreshes bring newer history from the server; the chat keeps its own copy from first load.
   const [initialMessages] = useState(loadedMessages);
@@ -94,10 +105,20 @@ export function CosPanel({
     cosFocus.requested = false;
   }, []);
 
+  const attachments = useReplyAttachments({ prefix: uploadPrefix, enabled: canAttach, onError: (message) => toast(message) });
+  const fileInput = useRef<HTMLInputElement>(null);
+  const canSend = (input.trim() !== "" || attachments.uploads.length > 0) && !attachments.uploading;
+
   const send = (text: string) => {
-    if (!text.trim() || busy) return;
-    sendMessage({ text });
+    const uploads = attachments.uploads;
+    if ((!text.trim() && uploads.length === 0) || busy || attachments.uploading) return;
+    // Shown in the message straight away; the server keeps links to the saved files.
+    const files: FileUIPart[] = attachments.pending
+      .filter((p) => p.blobPathname)
+      .map((p) => ({ type: "file", mediaType: p.contentType || "application/octet-stream", filename: p.name, url: p.preview ?? "" }));
+    sendMessage(text.trim() ? { text, files } : { files }, uploads.length ? { body: { uploads } } : undefined);
     setInput("");
+    attachments.clear({ keepPreviews: true });
   };
 
   const started = checklist.some((item) => item.done);
@@ -113,10 +134,15 @@ export function CosPanel({
           <h2 className="label text-ink">Chief of Staff</h2>
           <span className="label text-faint">{onboarded ? "" : "· Onboarding"}</span>
         </div>
-        <button onClick={() => setCosOpen(false)} aria-label="Close" className="flex items-center gap-2 text-faint hover:text-ink">
-          <kbd className="kbd">C</kbd>
-          <X size={16} />
-        </button>
+        <div className="flex items-center gap-4">
+          <Link href="/company" className="label text-faint hover:text-ink" title="The company profile the Chief of Staff keeps">
+            What I know
+          </Link>
+          <button onClick={() => setCosOpen(false)} aria-label="Close" className="flex items-center gap-2 text-faint hover:text-ink">
+            <kbd className="kbd">C</kbd>
+            <X size={16} />
+          </button>
+        </div>
       </header>
 
       <div ref={scrollRef} className="scroll-quiet min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
@@ -142,6 +168,7 @@ export function CosPanel({
             <div key={message.id} className="flex flex-col items-end gap-1">
               <div className="max-w-[88%] border border-line bg-raised px-3.5 py-2 text-[15px]">
                 {message.parts.map((part, i) => (part.type === "text" ? <p key={i} className="whitespace-pre-wrap">{part.text}</p> : null))}
+                <ChatFiles files={message.parts.filter((p): p is FileUIPart => p.type === "file")} />
               </div>
               {channelOf(message) && <span className="label text-[10px] text-faint">via {channelOf(message) === "whatsapp" ? "WhatsApp" : "email"}</span>}
             </div>
@@ -182,32 +209,70 @@ export function CosPanel({
           e.preventDefault();
           send(input);
         }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (!e.dataTransfer.files.length) return;
+          e.preventDefault();
+          attachments.add(Array.from(e.dataTransfer.files));
+        }}
         className="border-t border-line p-3"
       >
-        <div className="flex items-end gap-2 border border-line bg-raised px-3 py-2 focus-within:border-muted">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send(input);
-              }
-            }}
-            rows={2}
-            placeholder={onboarded ? "Ask, or say what needs doing…" : "Tell me about your company…"}
-            className="min-w-0 flex-1 resize-none bg-transparent text-[15px] outline-none placeholder:text-faint"
-          />
-          {busy ? (
-            <button type="button" onClick={stop} aria-label="Stop" className="btn px-2">
-              <Square size={14} />
-            </button>
-          ) : (
-            <button type="submit" disabled={!input.trim()} aria-label="Send" className="btn btn-primary px-2">
-              <ArrowUp size={15} />
-            </button>
+        <div className="border border-line bg-raised focus-within:border-muted">
+          {attachments.pending.length > 0 && (
+            <div className="pt-2">
+              <PendingAttachments pending={attachments.pending} onRemove={attachments.remove} />
+            </div>
           )}
+          <div className="flex items-end gap-2 px-3 py-2">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              onPaste={(e) => {
+                const pasted = Array.from(e.clipboardData.files);
+                if (!pasted.length) return;
+                e.preventDefault();
+                attachments.add(pasted);
+              }}
+              rows={2}
+              placeholder={onboarded ? "Ask, or say what needs doing…" : "Tell me about your company…"}
+              className="min-w-0 flex-1 resize-none bg-transparent text-[15px] outline-none placeholder:text-faint"
+            />
+            {canAttach && (
+              <>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    attachments.add(Array.from(e.target.files ?? []));
+                    e.target.value = "";
+                  }}
+                />
+                <button type="button" onClick={() => fileInput.current?.click()} aria-label="Attach files or photos" title="Attach files or photos" className="btn btn-ghost px-2">
+                  <Paperclip size={15} />
+                </button>
+              </>
+            )}
+            {busy ? (
+              <button type="button" onClick={stop} aria-label="Stop" className="btn px-2">
+                <Square size={14} />
+              </button>
+            ) : (
+              <button type="submit" disabled={!canSend} aria-label="Send" className="btn btn-primary px-2">
+                <ArrowUp size={15} />
+              </button>
+            )}
+          </div>
         </div>
       </form>
     </aside>
@@ -227,6 +292,38 @@ function Checklist({ items }: { items: ChecklistItem[] }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** Files attached to a message: images as thumbnails, anything else by name. Each opens from the company's files. */
+function ChatFiles({ files }: { files: FileUIPart[] }) {
+  if (!files.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {files.map((file, i) => {
+        const name = file.filename ?? "File";
+        const image = /^image\/(png|jpe?g|gif|webp)$/.test(file.mediaType) && file.url;
+        const opens = file.url.startsWith("/files/");
+        const body = image ? (
+          // eslint-disable-next-line @next/next/no-img-element -- a private file served by the app, or a local preview
+          <img src={file.url} alt={name} className="h-20 max-w-[180px] object-cover" />
+        ) : (
+          <span className="flex items-center gap-1.5 px-2 py-1 text-xs">
+            <FileText size={13} className="shrink-0 text-muted" />
+            <span className="max-w-40 truncate">{name}</span>
+          </span>
+        );
+        return opens ? (
+          <a key={i} href={file.url} target="_blank" rel="noreferrer" title={name} className="block border border-line bg-panel hover:border-muted">
+            {body}
+          </a>
+        ) : (
+          <span key={i} title={name} className="block border border-line bg-panel">
+            {body}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -366,7 +463,7 @@ function IntegrationCard({
             <button onClick={() => setEditing(true)} className="text-muted hover:text-ink">
               Update credentials
             </button>
-            <Link href="/integrations" className="text-muted hover:text-ink">
+            <Link href="/settings/integrations" className="text-muted hover:text-ink">
               Manage in Integrations
             </Link>
           </div>

@@ -7,7 +7,9 @@ import { listPeople } from "@/lib/people";
 import { onboardingChecklist } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { requireAppContext } from "@/lib/session";
+import { uploadsPrefix } from "@/lib/files";
 import { listIntegrations } from "@/lib/integrations";
+import { blobConnected } from "@/lib/storage";
 import { anyRunning, listInbox, listInProgress, listSuggestionStatuses, listWorking } from "@/lib/tasks";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -56,6 +58,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         integrationStatus: Object.fromEntries(
           integrations.map((i) => [i.id, { status: i.status, detail: i.statusDetail, hasCredentials: i.hasCredentials }]),
         ),
+        uploadPrefix: uploadsPrefix(organization.id),
+        canAttach: blobConnected(),
       }}
     >
       <LiveRefresh running={running} />
