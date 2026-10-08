@@ -32,7 +32,7 @@ Only people who have joined their company in Mach (signed in at least once) get 
 
 **Other attachments** sent on WhatsApp or by email aren't read yet. The Chief of Staff is told they arrived, and asks for them to be attached on a task in Mach.
 
-**Voice messages in the app:** the microphone next to the paperclip, in the chat panel and in a task's reply box, records a message. It's transcribed into the message box for you to check and send; the recording isn't kept. Transcription goes through the AI Gateway (`openai/gpt-4o-mini-transcribe` by default, or `TRANSCRIPTION_MODEL`), up to 5 minutes or 20MB a message. Esc while recording throws it away.
+**Voice messages in the app:** the microphone next to the paperclip, in the chat panel and in a task's reply box, records a message. It's transcribed into the message box for you to check and send; the recording isn't kept. Transcription goes through the AI Gateway (xAI's `spacexai/grok-stt` by default, about $0.0017 a minute and under a second for a short message; set `TRANSCRIPTION_MODEL` for another), up to 5 minutes or 20MB a message. Esc while recording throws it away.
 
 ## Setting it up
 
