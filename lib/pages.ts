@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { drivePath } from "@/lib/drive";
 import { saveVersion } from "@/lib/files";
+import { isMachSource, MACH_SOURCES } from "@/lib/mach-data";
 import { getSchedule, type Schedule } from "@/lib/schedules";
 import { loadBytes } from "@/lib/storage";
 import { getTask } from "@/lib/tasks";
@@ -22,7 +23,7 @@ export type Page = {
   slug: string;
   title: string;
   description: string;
-  /** Drive paths the page reads, e.g. "masttro/holdings.json". */
+  /** What the page reads: drive paths ("masttro/holdings.json") and Mach's own data ("mach:tasks"). */
   data: string[];
   /** The job that refreshes its data, if it has one. */
   taskId: string | null;
@@ -139,7 +140,7 @@ export async function savePage(
   if (Buffer.byteLength(input.html) > MAX_PAGE_HTML_BYTES) throw new PageError("The page's HTML is larger than 1 MB. Keep data in drive files, not in the page.");
   let data: string[];
   try {
-    data = [...new Set(input.data.map((path) => drivePath(path)))];
+    data = [...new Set(input.data.map((path) => (isMachSource(path.trim()) ? path.trim() : drivePath(path))))];
   } catch (error) {
     throw new PageError(error instanceof Error ? error.message : String(error));
   }
@@ -222,7 +223,9 @@ export async function deletePage(organizationId: string, slug: string, by: Actor
 
 export type PageDataFile = {
   path: string;
-  /** When its content last changed. Null when the file isn't on the drive (yet). */
+  /** Mach's own data (mach:tasks), read as the page opens: always current. */
+  live?: boolean;
+  /** When its content last changed. Null when the file isn't on the drive (yet), or it's live. */
   updatedAt: Date | null;
   size: number;
   /** JSON files arrive parsed, text files (CSV, Markdown…) as text. */
@@ -241,6 +244,7 @@ export async function pageDataStatus(organizationId: string, page: Pick<Page, "d
   );
   const byPath = new Map(rows.map((r) => [r.path, r]));
   return page.data.map((path) => {
+    if (isMachSource(path)) return { path, live: true, size: 0, updatedAt: null };
     const row = byPath.get(path);
     return row ? { path, size: row.size, updatedAt: row.updated_at } : { path, size: 0, updatedAt: null, problem: "Not on the drive yet." };
   });
@@ -256,6 +260,10 @@ export async function readPageData(organizationId: string, page: Pick<Page, "dat
   const stored = new Map(rows.map((r) => [r.path, r]));
   let budget = MAX_PAGE_DATA_BYTES;
   for (const file of files) {
+    if (file.live && isMachSource(file.path)) {
+      file.value = await MACH_SOURCES[file.path].load(organizationId);
+      continue;
+    }
     const row = stored.get(file.path);
     if (!row || file.problem) continue;
     if (file.size > budget) {
@@ -313,7 +321,7 @@ export async function setPageRefresh(
   if (task?.archivedAt || task?.status === "cancelled") task = null;
   const description = [
     `Keeps the data of the **${page.title}** page fresh. run.sh runs \`${command.split("\n")[0]}\`, which writes ${
-      page.data.map((p) => `/vercel/drive/${p}`).join(", ") || "the page's files on the drive"
+      page.data.filter((p) => !isMachSource(p)).map((p) => `/vercel/drive/${p}`).join(", ") || "the page's files on the drive"
     }.`,
     "",
     "Runs are quiet: they only reach people when one fails. If a run fails, find out why, fix the script, run it, and check it still writes the same files in the same shape, because the page reads them.",

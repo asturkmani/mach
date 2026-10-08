@@ -1,4 +1,5 @@
 import { tool } from "ai";
+import { machSourceList } from "@/lib/mach-sources";
 import { z } from "zod";
 
 // Skills are short playbooks an agent loads when a job calls for one. The
@@ -132,12 +133,15 @@ Website logins for work: when the work needs a website with no API, or changes t
     body: `A page is a view of the company's data that people keep coming back to (net worth by entity, cash across banks, the pipeline), shown as a tab on Home. Build one when someone asks for a dashboard, a view or a page, or to "see X every morning". Answer one-off questions in the chat instead.
 
 How a page works:
-- Its data is files on the company drive (/vercel/drive). The page is one HTML document that reads them from window.mach.data, keyed by drive path: "pages/net-worth/data.json" arrives parsed; CSV and text arrive as text, and mach.csv(path) turns CSV into objects.
+- Its data is files on the company drive (/vercel/drive), and Mach's own data. The page is one HTML document that reads them from window.mach.data, keyed by what you listed in save_page's data: a drive path ("pages/net-worth/data.json") arrives parsed, CSV and text as text (mach.csv(path) turns CSV into objects).
+- Mach's own data is read live each time the page opens, with no script or refresh job: list it by name in data.
+${machSourceList()}
+  For a page of the company's work (open tasks by person, what's overdue, what agents are doing), use mach:tasks and mach:people, not a script. Link a task with its url (an <a href> to /tasks/12): it opens in Mach.
 - It can't fetch anything (no fetch, no API calls, no images from the web): it runs sandboxed with no network. Everything it shows comes from its files.
 - Keep data and page apart: a script makes the data, the page only draws it. Shape the data for the page (a small JSON with exactly what it shows: totals, rows, series, and an as_of time), not a raw API dump.
 
 Steps:
-1. Get the data. If it lives in a system that isn't one of the company's data sources yet (say Masttro, with only a docs login connected), connect it first with the connecting-integrations skill, then come back to the page. From a data source: explore it with call_api (small requests), then write a script on the drive, /vercel/drive/pages/<slug>/refresh.py, that calls the API and writes /vercel/drive/pages/<slug>/data.json. Call the API at its normal URL with plain requests; Mach signs requests from the sandbox, so never put credentials in code. Run it (run_command: python3 /vercel/drive/pages/<slug>/refresh.py) and read the file back to check its shape. From data already on the drive, read it and, if it's big, write a smaller summary file for the page.
+1. Get the data (skip this for a page that only reads Mach's own data). If it lives in a system that isn't one of the company's data sources yet (say Masttro, with only a docs login connected), connect it first with the connecting-integrations skill, then come back to the page. From a data source: explore it with call_api (small requests), then write a script on the drive, /vercel/drive/pages/<slug>/refresh.py, that calls the API and writes /vercel/drive/pages/<slug>/data.json. Call the API at its normal URL with plain requests; Mach signs requests from the sandbox, so never put credentials in code. Run it (run_command: python3 /vercel/drive/pages/<slug>/refresh.py) and read the file back to check its shape. From data already on the drive, read it and, if it's big, write a smaller summary file for the page.
 2. Write the page with save_page, a whole HTML document:
    - Mach's look comes with it. Use its CSS variables (--ink, --muted, --faint, --line, --raised, --panel, --accent, --up, --down, --series-1 to --series-8) and classes: .label (small uppercase label), .stats holding .stat blocks (each with .label, .value and .note) for headline numbers, .table-wrap around a table (th.num and td.num right-align numbers), .card, .grid, .row, .stack, .muted, .up, .down, .empty. Don't restyle the body or load other fonts; light and dark mode then work by themselves.
    - Helpers: mach.money(value, "USD"), mach.number(value), mach.percent(0.123) gives "12.3%", mach.ago(date), mach.file(path).updatedAt, mach.csv(path).

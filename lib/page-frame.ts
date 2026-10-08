@@ -105,6 +105,13 @@ const HELPERS = `
     var n = Number(value);
     return isFinite(n) ? (n * 100).toFixed(digits === undefined ? 1 : digits) + "%" : "–";
   };
+  // The frame can't navigate the app; it asks, and the app opens its own pages (a task's url, another page).
+  m.open = function(path){ window.parent.postMessage({ type: "mach:open", path: String(path) }, "*"); };
+  document.addEventListener("click", function(e){
+    var link = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+    var href = link && link.getAttribute("href");
+    if (href && href.charAt(0) === "/" && href.charAt(1) !== "/") { e.preventDefault(); m.open(href); }
+  });
   m.ago = function(when){
     if (!when) return "never";
     var s = (Date.now() - new Date(when).getTime()) / 1000;

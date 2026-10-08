@@ -26,13 +26,15 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
   return {
     save_page: tool({
       description:
-        "Create a page (a view of company data, shown as a tab on Home), or save a new version of one. Load the building-pages skill first. The page is one HTML document that reads the drive files you list from window.mach.data; it can't fetch anything. It's checked in your sandbox browser after saving, and you get what rendered and any script errors.",
+        "Create a page (a view of company data, shown as a tab on Home), or save a new version of one. Load the building-pages skill first. The page is one HTML document that reads what you list in data (drive files, and Mach's own tasks, people and agents, live) from window.mach.data; it can't fetch anything. It's checked in your sandbox browser after saving, and you get what rendered and any script errors.",
       inputSchema: z.object({
         page: z.string().optional().describe("The slug of the page to change. Leave out to create a page."),
         title: z.string().min(1).max(40).describe("A short name for the tab, e.g. Net worth."),
         description: z.string().max(200).optional().describe("One line on what it shows and where the data comes from."),
         html: z.string().min(1).describe("The whole HTML document."),
-        data: z.array(z.string()).describe("The drive files it reads, e.g. masttro/holdings.json (paths under /vercel/drive)."),
+        data: z
+          .array(z.string())
+          .describe("What it reads: drive files (paths under /vercel/drive, e.g. masttro/holdings.json) and Mach's own data by name (mach:tasks, mach:people, mach:agents)."),
         note: z.string().max(120).optional().describe("What this version changed, e.g. 'Added the entity filter'."),
       }),
       execute: async (input) => {

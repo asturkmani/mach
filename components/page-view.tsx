@@ -3,7 +3,7 @@
 import { MessageSquare, Pin, PinOff, RotateCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useRef, useTransition } from "react";
 
 import { deletePageAction, refreshPageAction, restorePageAction, setPinnedAction } from "@/app/(app)/pages/actions";
 import { PageHeader } from "@/components/page-header";
@@ -15,7 +15,7 @@ import { When } from "@/components/ui";
 // over the page itself in a sandboxed frame. The frame's document comes from
 // /pages/[slug]/frame, which only scripts may run in and nothing may connect from.
 
-type FileStatus = { path: string; updatedAt: string | null; problem: string | null };
+type FileStatus = { path: string; live: boolean; updatedAt: string | null; problem: string | null };
 type Refresh = { number: number; running: boolean; schedule: string | null; lastRunAt: string | null; failing: boolean };
 
 export function PageView({
@@ -35,6 +35,18 @@ export function PageView({
   const router = useRouter();
   const { theme, toast, setCosOpen } = useShell();
   const [pending, startTransition] = useTransition();
+  const frame = useRef<HTMLIFrameElement>(null);
+
+  // A link in the page (a task's url, another page) asks to open it here: only the app's own paths are followed.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== frame.current?.contentWindow) return;
+      const { type, path } = (event.data ?? {}) as { type?: string; path?: unknown };
+      if (type === "mach:open" && typeof path === "string" && /^\/(?!\/)[\w\-/?=&.%#]*$/.test(path)) router.push(path);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [router]);
 
   const run = (work: () => Promise<{ error?: string }>, done?: string) =>
     startTransition(async () => {
@@ -132,8 +144,8 @@ export function PageView({
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line-soft px-4 py-2 text-xs text-muted sm:px-8">
         {page.description && <span className="min-w-0 truncate">{page.description}</span>}
         {files.length > 0 && (
-          <span title={files.map((f) => `/vercel/drive/${f.path}`).join("\n")}>
-            Data {oldest ? <When date={oldest} /> : "not there yet"}
+          <span title={files.map((f) => (f.live ? `${f.path} (live)` : `/vercel/drive/${f.path}`)).join("\n")}>
+            {files.every((f) => f.live) ? "Live data from Mach" : <>Data {oldest ? <When date={oldest} /> : "not there yet"}</>}
           </span>
         )}
         {refresh ? (
@@ -148,7 +160,7 @@ export function PageView({
             </Link>
           )
         ) : (
-          files.length > 0 && <span>Not refreshed on a schedule</span>
+          files.some((f) => !f.live) && <span>Not refreshed on a schedule</span>
         )}
         {missing.length > 0 && (
           <span className="text-warn">
@@ -183,6 +195,7 @@ export function PageView({
       )}
 
       <iframe
+        ref={frame}
         key={src}
         src={src}
         title={page.title}

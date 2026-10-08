@@ -18,10 +18,11 @@ import {
   restorePageVersion,
   savePage,
 } from "@/lib/pages";
-import { linkMember } from "@/lib/people";
+import { linkMember, savePerson } from "@/lib/people";
+import { pageDataStatus } from "@/lib/pages";
 import { setSandboxProvider, workspaceSandboxName } from "@/lib/sandbox";
 import { getSchedule } from "@/lib/schedules";
-import { getTask, listInbox, listMessages } from "@/lib/tasks";
+import { createTask, getTask, listInbox, listMessages } from "@/lib/tasks";
 import { useTestDb } from "@/test/db";
 import { fakeSandboxes } from "@/test/fake-sandbox";
 import { scriptedModel, type Step } from "@/test/scripted-model";
@@ -200,6 +201,33 @@ describe("pages", () => {
     ]);
   });
 
+  it("read Mach's own tasks and people live, with no script or refresh job", async () => {
+    const ahmed = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
+    await savePerson(ORG, { name: "Sara", role: "Analyst", managerName: "Ahmed", email: "sara@cedar.example", phone: "+44 7700 900999" });
+    await createTask(ORG, { title: "Close the Q3 books", priority: "high", people: [ahmed.id] });
+    const { page } = await savePage(ORG, { title: "Team work", html: "<p>work</p>", data: ["mach:tasks", "mach:people"], by });
+    expect(page.data).toEqual(["mach:tasks", "mach:people"]);
+    expect((await pageDataStatus(ORG, page)).map((f) => [f.path, f.live])).toEqual([
+      ["mach:tasks", true],
+      ["mach:people", true],
+    ]);
+
+    const [tasks, people] = await readPageData(ORG, page);
+    expect(tasks.value).toEqual([
+      expect.objectContaining({ number: 1, title: "Close the Q3 books", status: "ready", priority: "high", people: ["Ahmed"], url: "/tasks/1" }),
+    ]);
+    // A task made after the page was saved is there the next time it opens.
+    await createTask(ORG, { title: "Chase the auditors" });
+    expect(((await readPageData(ORG, page))[0].value as { title: string }[]).map((t) => t.title)).toContain("Chase the auditors");
+    // People without their contact details.
+    expect(people.value).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "Sara", role: "Analyst", reportsTo: "Ahmed", status: "not_invited" })]),
+    );
+    expect(JSON.stringify(people.value)).not.toMatch(/sara@|7700/);
+
+    await expect(savePage(ORG, { title: "Bad", html: "<p>x</p>", data: ["mach:secrets"], by })).rejects.toThrow(PageError);
+  });
+
   it("run as a document with Mach's look and data in front of their own HTML", () => {
     const files = [{ path: DATA, updatedAt: "2026-10-08T07:00:00.000Z", value: { note: "</script><script>alert(1)</script>" } }];
     const full = buildPageDocument({ html: PAGE_HTML.replace("<html lang=\"en\">", '<html lang="en" data-theme="dark">'), title: "Net worth", theme: "light", files });
@@ -207,6 +235,8 @@ describe("pages", () => {
     expect(full).toContain('<html lang="en" data-theme="light">');
     expect(full).not.toContain("</script><script>alert(1)");
     expect(full).toContain("\\u003c/script\\u003e");
+    // Links to the app's own pages (a task's url) are handed to the app to open.
+    expect(full).toContain('postMessage({ type: "mach:open"');
 
     // A fragment becomes a whole document; the system theme leaves the choice to the browser.
     const fragment = buildPageDocument({ html: "<h1>Hi</h1>", title: "Hi", theme: "system", files: [] });

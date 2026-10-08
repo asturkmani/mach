@@ -27,7 +27,7 @@ export default async function PagePage({ params, searchParams }: PageProps<"/pag
     <PageView
       page={{ slug: page.slug, title: page.title, description: page.description, version: page.version, pinned: page.pinned }}
       viewing={viewing}
-      files={files.map((f) => ({ path: f.path, updatedAt: f.updatedAt?.toISOString() ?? null, problem: f.problem ?? null }))}
+      files={files.map((f) => ({ path: f.path, live: Boolean(f.live), updatedAt: f.updatedAt?.toISOString() ?? null, problem: f.problem ?? null }))}
       versions={versions.map((v) => ({ version: v.version, note: v.note, byName: v.byName, createdAt: v.createdAt.toISOString() }))}
       refresh={
         task && !task.archivedAt

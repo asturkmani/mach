@@ -364,3 +364,12 @@ create unique index if not exists page_versions_number on page_versions (page_id
 -- A quiet recurring job only reaches someone's inbox when a run fails (a page's
 -- data refresh): runs that work are noted on its thread and leave it done.
 alter table task_schedules add column if not exists quiet boolean not null default false;
+
+-- Ideas for pages, written for each company from its profile, its integrations
+-- and the pages it has. Kept until any of those change (inputs_sha256).
+create table if not exists page_ideas (
+  organization_id text primary key references organizations (id) on delete cascade,
+  inputs_sha256 text not null,
+  ideas jsonb not null,
+  created_at timestamptz not null default now()
+);
