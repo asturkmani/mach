@@ -65,6 +65,8 @@ type Context = {
   integrations?: Integration[];
   /** The company's pages: reports on its data. */
   pages?: Page[];
+  /** What they're looking at in the app as they write, e.g. 'the "Net worth" page (…)'. */
+  viewing?: string | null;
   /** Set when this turn's message came by WhatsApp or email rather than the app. */
   channel?: Channel;
 };
@@ -165,7 +167,11 @@ You are talking to ${context.person?.name ?? user.name} (${user.email}), who is 
 ${organization.onboardingCompletedAt ? afterOnboardingInstructions(context) : onboardingInstructions(context)}
 
 ${workInstructions(context)}
-${context.channel ? `\n${channelInstructions(context.channel)}\n` : ""}
+${context.channel ? `\n${channelInstructions(context.channel)}\n` : ""}${
+    context.viewing
+      ? `\nRight now they're looking at ${context.viewing} in Mach, with this chat open beside it. When they say "this", "here" or "it" without saying what, they mean that.\n`
+      : ""
+  }
 Recording facts:
 - The company profile below is a markdown document and your memory of the company. Record facts as soon as you learn them; don't ask permission to save.
 - Write in the company's own words, concise and factual. Never invent facts.

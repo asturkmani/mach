@@ -30,7 +30,13 @@ type ToolPart = Extract<ChiefOfStaffMessage["parts"][number], { type: `tool-${st
 const transport = new DefaultChatTransport<ChiefOfStaffMessage>({
   api: "/api/chat",
   prepareSendMessagesRequest: ({ id, messages, body }) => ({
-    body: { id, message: messages.at(-1), ...(body?.uploads ? { uploads: body.uploads } : {}) },
+    body: {
+      id,
+      message: messages.at(-1),
+      // The screen they're on, so the Chief of Staff knows what "this" is.
+      viewing: window.location.pathname + window.location.search,
+      ...(body?.uploads ? { uploads: body.uploads } : {}),
+    },
   }),
 });
 

@@ -5,6 +5,7 @@ import { createAgentUIStream, createIdGenerator, type UIMessage } from "ai";
 import { createChiefOfStaff, workspaceOf, type Channel } from "@/lib/agents/chief-of-staff";
 import { forModel, restoreOriginals } from "@/lib/agents/chat-attachments";
 import { prepareHistory } from "@/lib/agents/history";
+import { describeViewing } from "@/lib/agents/viewing";
 import { closeSandbox } from "@/lib/agents/sandbox-steps";
 import { listAgents } from "@/lib/agents/store";
 import type { SandboxSession } from "@/lib/agents/toolkit";
@@ -30,7 +31,13 @@ export const generateMessageId = createIdGenerator({ prefix: "msg", size: 16 });
 /** The Chief of Staff for this person and company, with what it reads loaded, and its sandbox session. */
 export async function loadChiefOfStaff(
   context: ChiefOfStaffContext,
-  options: { channel?: Channel; model?: LanguageModel; research?: boolean } = {},
+  options: {
+    channel?: Channel;
+    model?: LanguageModel;
+    research?: boolean;
+    /** The path of the screen they're on in the app, if the message came from the chat panel. */
+    viewing?: string;
+  } = {},
 ) {
   const organizationId = context.organization.id;
   const [profile, agents, tasks, files, integrations, pages] = await Promise.all([
@@ -41,9 +48,10 @@ export async function loadChiefOfStaff(
     listIntegrations(organizationId),
     listPages(organizationId),
   ]);
+  const viewing = options.viewing ? await describeViewing(organizationId, options.viewing).catch(() => null) : null;
   const sandbox: SandboxSession = {};
   const agent = createChiefOfStaff(
-    { ...context, profile, agents, openTasks: tasks, files, integrations, pages, channel: options.channel },
+    { ...context, profile, agents, openTasks: tasks, files, integrations, pages, channel: options.channel, viewing },
     { sandbox, model: options.model, research: options.research },
   );
   return {

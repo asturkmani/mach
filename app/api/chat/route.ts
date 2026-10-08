@@ -39,7 +39,9 @@ export async function POST(request: Request) {
   const context = await getSessionContext();
   if (!context.organization) return new Response("Create your company first.", { status: 409 });
 
-  const body = (await request.json().catch(() => null)) as { id?: unknown; message?: unknown; uploads?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { id?: unknown; message?: unknown; uploads?: unknown; viewing?: unknown } | null;
+  // The screen they're on (a path in the app); what's there is looked up on the server.
+  const viewing = typeof body?.viewing === "string" && body.viewing.startsWith("/") && body.viewing.length < 300 ? body.viewing : undefined;
   const uploads = parseUploads(body?.uploads);
   const userMessage = parseUserMessage(body?.message, Boolean(uploads?.length));
   if (typeof body?.id !== "string" || !userMessage || !uploads) return new Response("Invalid message.", { status: 400 });
@@ -50,7 +52,7 @@ export async function POST(request: Request) {
   let agent;
   let close: () => Promise<void>;
   try {
-    ({ agent, close } = await loadChiefOfStaff({ organization: context.organization, user: context.user, person: context.person }));
+    ({ agent, close } = await loadChiefOfStaff({ organization: context.organization, user: context.user, person: context.person }, { viewing }));
   } catch (error) {
     // Configuration problems (e.g. no model set) are shown to the user as-is.
     return new Response(error instanceof Error ? error.message : "Could not start the Chief of Staff.", {
