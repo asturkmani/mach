@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { signOutAction } from "@/app/(app)/actions";
 import { Elapsed, TypingDots } from "@/components/agent-status";
+import { MachMark } from "@/components/brand";
 import { Face } from "@/components/ui";
 
 import { useNotificationPermission } from "./inbox-notifier";
@@ -118,7 +119,7 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[80dvh] overflow-y-auto border-t border-line bg-panel pb-2 shadow-[var(--shadow)]">
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <p className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-[24px] w-[24px] shrink-0 items-center justify-center bg-ink font-mono text-sm font-semibold text-panel">M</span>
+            <MachMark size={24} />
             <span className="truncate text-[15px] font-medium">{data.organization.name}</span>
           </p>
           <button onClick={onClose} aria-label="Close" className="p-1 text-muted">

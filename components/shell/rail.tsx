@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { signOutAction } from "@/app/(app)/actions";
 import { Elapsed, TypingDots } from "@/components/agent-status";
+import { MachMark } from "@/components/brand";
 import { Face } from "@/components/ui";
 
 import { useNotificationPermission } from "./inbox-notifier";
@@ -144,9 +145,7 @@ export function Rail() {
             aria-label={`${data.organization.name}: company menu`}
             className="flex h-10 w-full items-center gap-3 overflow-hidden px-[9px] whitespace-nowrap hover:bg-hover"
           >
-            <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center bg-ink font-mono text-sm font-semibold text-panel">
-              M
-            </span>
+            <MachMark size={26} />
             <span className={`${text} min-w-0 flex-1 truncate text-left text-[15px] font-medium`}>{data.organization.name}</span>
             <ChevronDown size={15} className={`${text} shrink-0 text-faint`} />
           </button>
