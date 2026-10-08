@@ -57,3 +57,272 @@ create table if not exists chats (
 );
 
 create unique index if not exists chats_org_user on chats (organization_id, user_id);
+
+-- Agents other than the Chief of Staff. "defined" agents have a standing
+-- profile and do the same kind of work again and again (sales outbound,
+-- financial analysis); "worker" agents are made for one task and archived
+-- when it ends.
+create table if not exists agents (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  kind text not null check (kind in ('defined', 'worker')),
+  name text not null,
+  role text not null default '',
+  description text not null default '', -- what it's responsible for and what good looks like
+  instructions text not null default '', -- detailed do's and don'ts
+  status text not null default 'active' check (status in ('active', 'paused', 'archived')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists agents_org_name on agents (organization_id, lower(name)) where status <> 'archived';
+
+-- Jobs. Any mix of people and agents can be on one; agents on a task see all
+-- of it (description, summary, members and the whole thread) when they run.
+create table if not exists tasks (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  number integer not null, -- shown as #12, counted per organization
+  kind text not null default 'task' check (kind in ('task', 'suggestion')),
+  title text not null,
+  description text not null default '',
+  summary text not null default '', -- one sentence: what happened and what's needed now
+  context text not null default '', -- a few sentences that bring the task back to someone who forgot it
+  progress text not null default '', -- steps done so far, one per line
+  status text not null default 'ready' check (status in ('backlog', 'ready', 'in_progress', 'waiting', 'review', 'done', 'cancelled')),
+  priority text not null default 'medium' check (priority in ('urgent', 'high', 'medium', 'low')),
+  options jsonb not null default '[]'::jsonb, -- answers to the current ask: [{ "label": "...", "recommended": true }]
+  payload jsonb, -- for suggestions: the profile change waiting to be applied
+  later_until timestamptz, -- put off until then
+  created_by_person_id uuid references people (id) on delete set null,
+  created_by_agent_id uuid references agents (id) on delete set null,
+  run_agent_id uuid references agents (id) on delete set null, -- the agent running now
+  run_started_at timestamptz, -- lease: a run older than this is considered dead
+  agent_turns integer not null default 0, -- agent runs since a person last spoke, to stop hand-off loops
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  closed_at timestamptz
+);
+
+create unique index if not exists tasks_org_number on tasks (organization_id, number);
+create index if not exists tasks_org_status on tasks (organization_id, status);
+
+create table if not exists task_members (
+  task_id uuid not null references tasks (id) on delete cascade,
+  person_id uuid references people (id) on delete cascade,
+  agent_id uuid references agents (id) on delete cascade,
+  added_at timestamptz not null default now(),
+  check ((person_id is null) <> (agent_id is null))
+);
+
+create unique index if not exists task_members_person on task_members (task_id, person_id) where person_id is not null;
+create unique index if not exists task_members_agent on task_members (task_id, agent_id) where agent_id is not null;
+
+-- The task's thread: comments, agent updates, questions, results and events.
+create table if not exists task_messages (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks (id) on delete cascade,
+  person_id uuid references people (id) on delete set null,
+  agent_id uuid references agents (id) on delete set null,
+  author text not null, -- name at the time, so the thread survives renames and removals
+  kind text not null default 'comment' check (kind in ('comment', 'update', 'ask', 'result', 'event')),
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists task_messages_task on task_messages (task_id, created_at);
+
+-- Jobs keep a memory (the agent's NOTES.md) and, once code has run, a
+-- sandbox. Done ends a round; archiving retires the job and its sandbox.
+alter table tasks add column if not exists memory text not null default '';
+alter table tasks add column if not exists sandbox_name text;
+alter table tasks add column if not exists archived_at timestamptz;
+
+-- The company file library. Every deliverable an agent attaches and every
+-- script it runs is a file with versions, so later jobs can build on it.
+create table if not exists files (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  name text not null,
+  kind text not null default 'deliverable' check (kind in ('deliverable', 'code')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists files_org on files (organization_id, updated_at desc);
+
+create table if not exists file_versions (
+  id uuid primary key default gen_random_uuid(),
+  file_id uuid not null references files (id) on delete cascade,
+  version integer not null,
+  content_type text not null,
+  size integer not null,
+  sha256 text not null,
+  blob_pathname text, -- stored in Vercel Blob when a store is connected
+  content bytea, -- otherwise stored here
+  task_id uuid references tasks (id) on delete set null,
+  agent_id uuid references agents (id) on delete set null,
+  person_id uuid references people (id) on delete set null,
+  based_on integer, -- the version this one was built from
+  note text not null default '', -- e.g. "rules ABD", or a script's last run output
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists file_versions_number on file_versions (file_id, version);
+
+-- A read-only preview (sheet tables, CSV rows, text), built once when the
+-- version is saved or first opened.
+alter table file_versions add column if not exists preview jsonb;
+
+-- Which library files a job works with: inputs someone attached, and outputs it produced.
+create table if not exists task_files (
+  task_id uuid not null references tasks (id) on delete cascade,
+  file_id uuid not null references files (id) on delete cascade,
+  role text not null default 'output' check (role in ('input', 'output')),
+  added_at timestamptz not null default now(),
+  primary key (task_id, file_id)
+);
+
+-- Prebuilt sandbox snapshots (the data stack), so job sandboxes boot ready.
+create table if not exists sandbox_templates (
+  key text primary key,
+  snapshot_id text not null,
+  created_at timestamptz not null default now()
+);
+
+-- The company's timezone (IANA name, e.g. Europe/London), for schedules. Set
+-- from the first browser that opens the app; people can change it.
+alter table organizations add column if not exists timezone text;
+
+-- Recurring jobs: a schedule on the card. Each run lands on the same card and
+-- works in the same sandbox. "script" replays the job's run.sh (the agent is
+-- woken only if it fails, or when there is no run.sh yet); "agent" has the
+-- agent do the job each time.
+create table if not exists task_schedules (
+  task_id uuid primary key references tasks (id) on delete cascade,
+  cron text not null, -- five fields, in the schedule's timezone
+  timezone text not null,
+  mode text not null default 'script' check (mode in ('script', 'agent')),
+  paused boolean not null default false,
+  next_run_at timestamptz,
+  last_run_at timestamptz,
+  created_by_person_id uuid references people (id) on delete set null,
+  created_by_agent_id uuid references agents (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists task_schedules_due on task_schedules (next_run_at) where not paused;
+
+-- The company data drive: shared datasets every job's sandbox sees at
+-- /vercel/drive. Content lives in Vercel Blob (or here, without a store);
+-- each path holds its latest content.
+create table if not exists drive_files (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  path text not null, -- e.g. option-flow/2026-10-07.parquet
+  content_type text not null,
+  size integer not null,
+  sha256 text not null,
+  blob_pathname text,
+  content bytea,
+  task_id uuid references tasks (id) on delete set null, -- the job that last wrote it
+  agent_id uuid references agents (id) on delete set null,
+  person_id uuid references people (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists drive_files_path on drive_files (organization_id, path);
+
+-- Integrations: company data sources (APIs every agent can read) and website
+-- logins (accounts chosen agents use in a browser). Credentials are sealed
+-- with MACH_SECRETS_KEY and never shown to models or people.
+create table if not exists integrations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  kind text not null check (kind in ('api', 'login')),
+  slug text not null, -- the short name agents use, e.g. masttro
+  name text not null,
+  description text not null default '', -- what it holds or is for
+  config jsonb not null default '{}'::jsonb, -- base URL, domains, how to sign requests or log in (no secrets)
+  secrets bytea, -- sealed credentials
+  session bytea, -- sealed: a cached access token (api) or a saved browser session (login)
+  session_expires_at timestamptz,
+  access text not null default 'read' check (access in ('read', 'write')),
+  agent_ids uuid[], -- null: every agent; otherwise only these agents
+  guide text not null default '', -- how to use it: endpoints, paging, quirks (markdown)
+  status text not null default 'needs_credentials' check (status in ('needs_credentials', 'connected', 'failing', 'disabled')),
+  status_detail text not null default '',
+  last_checked_at timestamptz,
+  last_used_at timestamptz,
+  created_by_person_id uuid references people (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists integrations_slug on integrations (organization_id, slug);
+
+-- Every request made through an integration, for its activity log.
+create table if not exists integration_calls (
+  id uuid primary key default gen_random_uuid(),
+  integration_id uuid not null references integrations (id) on delete cascade,
+  task_id uuid references tasks (id) on delete set null,
+  agent_id uuid references agents (id) on delete set null,
+  person_id uuid references people (id) on delete set null,
+  method text not null,
+  path text not null,
+  status integer,
+  duration_ms integer,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists integration_calls_recent on integration_calls (integration_id, created_at desc);
+
+-- A website sign-in waiting on a person: the login it's for, and the code
+-- they replied with (sealed, used once, never shown in the thread).
+alter table tasks add column if not exists pending_login text;
+alter table tasks add column if not exists login_code bytea;
+
+-- People @-mentioned on a task: it shows in their Needs you until they open it.
+create table if not exists task_mentions (
+  task_id uuid not null references tasks (id) on delete cascade,
+  person_id uuid not null references people (id) on delete cascade,
+  by_name text not null, -- who mentioned them
+  created_at timestamptz not null default now(),
+  seen_at timestamptz,
+  primary key (task_id, person_id)
+);
+
+-- Files attached to a message in a task's thread (they're also on the task, as inputs).
+create table if not exists task_message_files (
+  message_id uuid not null references task_messages (id) on delete cascade,
+  version_id uuid not null references file_versions (id) on delete cascade,
+  primary key (message_id, version_id)
+);
+
+-- A run's live status: when it began and what the agent is doing now ("Running summarise.py").
+alter table tasks add column if not exists run_began_at timestamptz;
+alter table tasks add column if not exists run_activity text not null default '';
+
+-- An agent's reaction to a message in the thread: 👀 when it picks the message
+-- up, then ✅ done, 💬 asked, 🤝 handed off or ⚠️ hit a problem.
+create table if not exists task_message_reactions (
+  message_id uuid not null references task_messages (id) on delete cascade,
+  agent_id uuid not null references agents (id) on delete cascade,
+  emoji text not null,
+  updated_at timestamptz not null default now(),
+  primary key (message_id, agent_id)
+);
+
+-- The company's email address for the Chief of Staff (an AgentMail inbox id, which is the address).
+alter table organizations add column if not exists email_inbox text;
+create unique index if not exists organizations_email_inbox on organizations (lower(email_inbox)) where email_inbox is not null;
+
+-- Messages from WhatsApp and email already handled, so a provider's retry isn't answered twice.
+create table if not exists inbound_messages (
+  provider text not null,
+  external_id text not null,
+  received_at timestamptz not null default now(),
+  primary key (provider, external_id)
+);

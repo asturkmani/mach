@@ -1,0 +1,131 @@
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { createAgent, createWorker, listAgents } from "@/lib/agents/store";
+import { createOrganization } from "@/lib/orgs";
+import { linkMember, savePerson } from "@/lib/people";
+import {
+  addMember,
+  addMessage,
+  claimRun,
+  countInbox,
+  createTask,
+  getTaskByNumber,
+  listInbox,
+  listInProgress,
+  listMessages,
+  listTasks,
+  releaseRun,
+  searchTasks,
+  updateTask,
+} from "@/lib/tasks";
+import { useTestDb } from "@/test/db";
+
+const ORG = "org_cedar";
+
+async function setUp() {
+  await createOrganization({ id: ORG, name: "Cedar Legacy" });
+  const ahmed = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
+  const lina = await savePerson(ORG, { name: "Lina", role: "Analyst" });
+  return { ahmed, lina };
+}
+
+describe("tasks", () => {
+  beforeEach(async () => {
+    await useTestDb();
+  });
+
+  it("numbers tasks per organization and keeps people and agents on them", async () => {
+    const { ahmed, lina } = await setUp();
+    const analyst = await createAgent(ORG, { name: "Analyst", role: "Financial analysis" });
+    const first = await createTask(ORG, { title: "Review Q3", people: [ahmed.id, lina.id], agents: [analyst.id] });
+    const second = await createTask(ORG, { title: "Book flights", people: [ahmed.id] });
+
+    expect([first.number, second.number]).toEqual([1, 2]);
+    expect(first.members.map((m) => [m.type, m.name])).toEqual([
+      ["person", "Ahmed"],
+      ["person", "Lina"],
+      ["agent", "Analyst"],
+    ]);
+    expect((await getTaskByNumber(ORG, 2))?.title).toBe("Book flights");
+
+    await addMember(second.id, { agentId: analyst.id });
+    await addMember(second.id, { agentId: analyst.id });
+    expect((await getTaskByNumber(ORG, 2))?.members).toHaveLength(2);
+  });
+
+  it("puts a task in your inbox only when it waits on a person", async () => {
+    const { ahmed, lina } = await setUp();
+    const analyst = await createAgent(ORG, { name: "Analyst" });
+    const agentTask = await createTask(ORG, { title: "Model Q4", people: [ahmed.id], agents: [analyst.id] });
+    const humanTask = await createTask(ORG, { title: "Call the bank", people: [ahmed.id], priority: "urgent" });
+    await createTask(ORG, { title: "Lina's job", people: [lina.id] });
+
+    // The agent is on it, so it isn't waiting on Ahmed yet; the human task is.
+    expect((await listInbox(ORG, ahmed.id)).map((t) => t.title)).toEqual(["Call the bank"]);
+    expect((await listInProgress(ORG, ahmed.id)).map((t) => t.title)).toEqual(["Model Q4"]);
+
+    await updateTask(ORG, agentTask.id, { status: "review", summary: "Model done. Send it?" });
+    expect((await listInbox(ORG, ahmed.id)).map((t) => t.title)).toEqual(["Call the bank", "Model Q4"]);
+    expect(await countInbox(ORG, ahmed.id)).toBe(2);
+
+    // Put off until tomorrow: out of the inbox, into In progress.
+    await updateTask(ORG, humanTask.id, { laterUntil: new Date(Date.now() + 86_400_000) });
+    expect((await listInbox(ORG, ahmed.id)).map((t) => t.title)).toEqual(["Model Q4"]);
+
+    await updateTask(ORG, agentTask.id, { status: "done" });
+    expect(await countInbox(ORG, ahmed.id)).toBe(0);
+    expect((await getTaskByNumber(ORG, agentTask.number))?.closedAt).toBeInstanceOf(Date);
+  });
+
+  it("lets only one run hold a task", async () => {
+    const { ahmed } = await setUp();
+    const analyst = await createAgent(ORG, { name: "Analyst" });
+    const task = await createTask(ORG, { title: "Model Q4", people: [ahmed.id], agents: [analyst.id] });
+
+    expect(await claimRun(ORG, task.id, analyst.id)).toBe(true);
+    expect(await claimRun(ORG, task.id, analyst.id)).toBe(false);
+    const running = await getTaskByNumber(ORG, task.number);
+    expect(running).toMatchObject({ status: "in_progress", runAgentId: analyst.id, agentTurns: 1 });
+
+    await releaseRun(task.id, analyst.id);
+    expect(await claimRun(ORG, task.id, analyst.id)).toBe(true);
+  });
+
+  it("keeps a thread, searches and lists open work first", async () => {
+    const { ahmed } = await setUp();
+    const task = await createTask(ORG, { title: "Micron earnings review", people: [ahmed.id] });
+    await createTask(ORG, { title: "Old job", people: [ahmed.id], status: "done" });
+    await addMessage(task.id, { author: "Ahmed", personId: ahmed.id, body: "Use the latest 10-Q." });
+    await addMessage(task.id, { author: "Ahmed", body: "   " });
+
+    expect((await listMessages(task.id)).map((m) => [m.author, m.kind, m.body])).toEqual([
+      ["Ahmed", "comment", "Use the latest 10-Q."],
+    ]);
+    expect((await searchTasks(ORG, "micron")).map((t) => t.number)).toEqual([1]);
+    expect((await searchTasks(ORG, "#2")).map((t) => t.title)).toEqual(["Old job"]);
+    expect((await listTasks(ORG)).map((t) => t.title)).toEqual(["Micron earnings review", "Old job"]);
+  });
+});
+
+describe("agents", () => {
+  beforeEach(async () => {
+    await useTestDb();
+  });
+
+  it("names workers after their role and keeps names unique", async () => {
+    await setUp();
+    await createAgent(ORG, { name: "Sales", role: "Outbound sales" });
+    await expect(createAgent(ORG, { name: "sales" })).rejects.toThrow(/already an agent/);
+
+    const first = await createWorker(ORG, "Research");
+    const second = await createWorker(ORG, "Research worker");
+    const general = await createWorker(ORG);
+    expect([first.name, second.name, general.name]).toEqual(["Research worker", "Research worker 2", "Worker"]);
+    expect((await listAgents(ORG)).map((a) => [a.kind, a.name])).toEqual([
+      ["defined", "Sales"],
+      ["worker", "Research worker"],
+      ["worker", "Research worker 2"],
+      ["worker", "Worker"],
+    ]);
+  });
+});

@@ -1,21 +1,34 @@
-import { Onboarding } from "@/components/onboarding";
-import type { ChiefOfStaffMessage } from "@/lib/agents/chief-of-staff";
-import { getOrCreateChat } from "@/lib/chats";
-import { loadProfile } from "@/lib/profile/store";
-import { requireAppContext } from "@/lib/session";
+import { cookies } from "next/headers";
 
-export default async function ChiefOfStaffPage() {
-  const { organization, user } = await requireAppContext();
-  const [chat, profile] = await Promise.all([
-    getOrCreateChat<ChiefOfStaffMessage>(organization.id, user.id),
-    loadProfile(organization.id),
+import { Home, type HomeScope, type HomeView } from "@/components/home";
+import { OnboardingNote } from "@/components/onboarding-note";
+import { requireAppContext } from "@/lib/session";
+import { toView } from "@/lib/task-view";
+import { listInbox, listTasks } from "@/lib/tasks";
+
+// Home: what needs this person, then all the company's work as a board or a
+// list. The view and scope are remembered in cookies; ?view= overrides.
+export default async function HomePage({ searchParams }: PageProps<"/">) {
+  const { organization, person } = await requireAppContext();
+  const [params, jar] = await Promise.all([searchParams, cookies()]);
+  const asked = typeof params.view === "string" ? params.view : jar.get("mach-home-view")?.value;
+  const view: HomeView = asked === "list" ? "list" : "board";
+  const scope: HomeScope = jar.get("mach-home-scope")?.value === "mine" ? "mine" : "everyone";
+
+  const [inbox, tasks] = await Promise.all([
+    listInbox(organization.id, person.id),
+    listTasks(organization.id, { closedLimit: 25 }),
   ]);
+  // Profile suggestions are approvals, not work: they only show under Needs you.
+  const work = tasks.filter((t) => t.kind === "task" && t.status !== "cancelled");
+
   return (
-    <Onboarding
-      chatId={chat.id}
-      initialMessages={chat.messages}
-      initialProfile={profile}
-      initiallyComplete={Boolean(organization.onboardingCompletedAt)}
+    <Home
+      view={view}
+      scope={scope}
+      needsYou={inbox.map((t) => toView(t))}
+      work={work.map((t) => toView(t))}
+      notice={!organization.onboardingCompletedAt ? <OnboardingNote /> : undefined}
     />
   );
 }

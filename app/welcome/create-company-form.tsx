@@ -4,8 +4,7 @@ import { useActionState } from "react";
 
 import { createCompany, type CreateCompanyState } from "./actions";
 
-const inputClass =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900";
+const inputClass = "field";
 
 export function CreateCompanyForm({ defaultWebsite, domain }: { defaultWebsite: string; domain: string | null }) {
   const [state, action, pending] = useActionState<CreateCompanyState, FormData>(createCompany, {});
@@ -13,29 +12,29 @@ export function CreateCompanyForm({ defaultWebsite, domain }: { defaultWebsite: 
   return (
     <form action={action} className="space-y-4">
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Company name</span>
+        <span className="label">Company name</span>
         <input name="name" required autoFocus className={inputClass} placeholder="Cedar Legacy" />
       </label>
       <label className="block space-y-1">
-        <span className="text-sm font-medium">
-          Website <span className="font-normal text-zinc-500">(optional)</span>
+        <span className="label">
+          Website <span className="text-faint">(optional)</span>
         </span>
         <input name="website" defaultValue={defaultWebsite} className={inputClass} placeholder="cedarlegacy.com" />
       </label>
       {domain && (
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-muted">
           Colleagues who sign in with an @{domain} email will be pointed to this company.
         </p>
       )}
       {state.error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+        <p className="border border-danger/40 px-3 py-2 text-sm text-danger">
           {state.error}
         </p>
       )}
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+        className="btn btn-primary w-full justify-center py-2"
       >
         {pending ? "Creating…" : "Create company"}
       </button>

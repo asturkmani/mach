@@ -1,0 +1,108 @@
+import "server-only";
+
+import { createAgentUIStream, createIdGenerator, type UIMessage } from "ai";
+
+import { createChiefOfStaff, workspaceOf, type Channel } from "@/lib/agents/chief-of-staff";
+import { prepareHistory } from "@/lib/agents/history";
+import { closeSandbox } from "@/lib/agents/sandbox-steps";
+import { listAgents } from "@/lib/agents/store";
+import type { SandboxSession } from "@/lib/agents/toolkit";
+import { getOrCreateChat, saveChat } from "@/lib/chats";
+import { listLibrary } from "@/lib/files";
+import { listIntegrations } from "@/lib/integrations";
+import type { Organization } from "@/lib/orgs";
+import type { Person } from "@/lib/people";
+import { loadProfile } from "@/lib/profile/store";
+import type { SessionUser } from "@/lib/session";
+import { listTasks } from "@/lib/tasks";
+import type { LanguageModel } from "ai";
+
+// One Chief of Staff, reached from the app's chat panel, WhatsApp or email.
+// Each person has one conversation with it per company, whichever way they
+// write: a WhatsApp message lands in the same history as the panel.
+
+export type ChiefOfStaffContext = { organization: Organization; user: SessionUser; person: Person };
+
+export const generateMessageId = createIdGenerator({ prefix: "msg", size: 16 });
+
+/** The Chief of Staff for this person and company, with what it reads loaded, and its sandbox session. */
+export async function loadChiefOfStaff(
+  context: ChiefOfStaffContext,
+  options: { channel?: Channel; model?: LanguageModel; research?: boolean } = {},
+) {
+  const organizationId = context.organization.id;
+  const [profile, agents, tasks, files, integrations] = await Promise.all([
+    loadProfile(organizationId),
+    listAgents(organizationId),
+    listTasks(organizationId, { closedLimit: 0 }),
+    listLibrary(organizationId, { limit: 30 }),
+    listIntegrations(organizationId),
+  ]);
+  const sandbox: SandboxSession = {};
+  const agent = createChiefOfStaff(
+    { ...context, profile, agents, openTasks: tasks, files, integrations, channel: options.channel },
+    { sandbox, model: options.model, research: options.research },
+  );
+  return {
+    agent,
+    /** Ends the turn: stops its workspace sandbox if it used one (unless a sign-in waits for a code). */
+    close: async () => {
+      if (!sandbox.used) return;
+      await closeSandbox(workspaceOf(context)).catch((error) => console.error("Couldn't close the Chief of Staff's sandbox", error));
+    },
+  };
+}
+
+/** The text of the Chief of Staff's reply in a turn: its last message's words. */
+export function replyText(messages: UIMessage[]): string {
+  const last = [...messages].reverse().find((m) => m.role === "assistant");
+  return (last?.parts ?? [])
+    .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
+ * A whole Chief of Staff turn for a message that came by WhatsApp or email:
+ * it joins the person's conversation, runs to the end, and the reply's text
+ * comes back to send the same way.
+ */
+export async function chiefOfStaffTurn(
+  context: ChiefOfStaffContext,
+  text: string,
+  channel: Channel,
+  options: { model?: LanguageModel; research?: boolean } = {},
+): Promise<string> {
+  const chat = await getOrCreateChat<UIMessage>(context.organization.id, context.user.id);
+  const { agent, close } = await loadChiefOfStaff(context, { channel, ...options });
+  const history = await prepareHistory(chat.messages, agent.tools);
+  const question: UIMessage = {
+    id: generateMessageId(),
+    role: "user",
+    parts: [{ type: "text", text }],
+    metadata: { channel },
+  };
+  const messages = [...history, question];
+  await saveChat(chat.id, messages);
+
+  let finished: UIMessage[] = messages;
+  try {
+    const stream = await createAgentUIStream({
+      agent,
+      uiMessages: messages,
+      originalMessages: messages as never,
+      generateMessageId,
+      onEnd: async ({ messages: all }) => {
+        finished = all as UIMessage[];
+      },
+    });
+    for await (const chunk of stream) {
+      // A failed model call ends the stream with an error chunk rather than throwing.
+      if (chunk.type === "error") throw new Error(chunk.errorText);
+    }
+    await saveChat(chat.id, await prepareHistory(finished, agent.tools));
+  } finally {
+    await close();
+  }
+  return replyText(finished.slice(messages.length - 1)) || "Done.";
+}

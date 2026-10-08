@@ -1,0 +1,12 @@
+{
+  "key": "data-v3",
+  "image": "vercel/sandbox/universal:latest",
+  "python": [
+    "pandas", "numpy", "scipy", "statsmodels", "scikit-learn", "numpy-financial",
+    "openpyxl", "xlsxwriter", "matplotlib", "seaborn", "pyarrow", "duckdb",
+    "requests", "httpx", "beautifulsoup4", "python-docx", "python-pptx", "tabulate",
+    "playwright"
+  ],
+  "apt": ["libreoffice-calc-nogui", "libnss3-tools"],
+  "browsers": ["chromium"]
+}

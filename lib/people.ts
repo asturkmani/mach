@@ -141,10 +141,41 @@ export async function removePerson(organizationId: string, id: string): Promise<
   await getDb().query("delete from people where organization_id = $1 and id = $2", [organizationId, id]);
 }
 
-export async function removePersonByName(organizationId: string, name: string): Promise<boolean> {
+/**
+ * Renames someone, keeping everything attached to them (tasks, reporting
+ * lines, their login). Returns null if no one has the current name.
+ */
+export async function renamePerson(organizationId: string, currentName: string, newName: string): Promise<Person | null> {
+  const id = await findIdByName(organizationId, currentName);
+  const name = newName.trim();
+  if (!id) return null;
+  if (!name) throw new Error("A person needs a name.");
+  const clash = await findIdByName(organizationId, name);
+  if (clash && clash !== id) throw new Error(`Someone called ${name} is already in the people list.`);
+  await getDb().query("update people set name = $3, updated_at = now() where organization_id = $1 and id = $2", [
+    organizationId,
+    id,
+    name,
+  ]);
+  return getPerson(organizationId, id);
+}
+
+/**
+ * Removes someone from the org chart, which also takes them off every task.
+ * People who have signed in are only removed from the Team page (which also
+ * removes their access); this refuses them, and anyone in `protect`.
+ */
+export async function removePersonByName(
+  organizationId: string,
+  name: string,
+  { protect = [] }: { protect?: string[] } = {},
+): Promise<"removed" | "not_found" | "has_account"> {
   const id = await findIdByName(organizationId, name);
-  if (id) await removePerson(organizationId, id);
-  return Boolean(id);
+  if (!id) return "not_found";
+  const person = await getPerson(organizationId, id);
+  if (protect.includes(id) || person?.status === "active") return "has_account";
+  await removePerson(organizationId, id);
+  return "removed";
 }
 
 export async function markInvited(
@@ -210,4 +241,14 @@ export async function syncPeopleSection(organizationId: string): Promise<string>
     })),
   );
   return updateProfile(organizationId, (markdown) => setSection(markdown, PEOPLE_SECTION, section));
+}
+
+/** A person's phone (their WhatsApp number), with its country code; empty clears it. */
+export async function setPhone(organizationId: string, personId: string, phone: string): Promise<void> {
+  const value = phone.trim();
+  await getDb().query("update people set phone = $3, updated_at = now() where organization_id = $1 and id = $2", [
+    organizationId,
+    personId,
+    value || null,
+  ]);
 }

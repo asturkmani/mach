@@ -1,4 +1,3 @@
-import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { chiefOfStaffInstructions, createChiefOfStaff } from "./chief-of-staff";
@@ -6,47 +5,18 @@ import { createOrganization, getOrganization } from "@/lib/orgs";
 import { linkMember, listPeople, syncPeopleSection } from "@/lib/people";
 import { getSection, onboardingChecklist } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
+import { setScheduler } from "@/lib/agents/dispatch";
+import { createAgent, listAgents } from "@/lib/agents/store";
+import { listTaskFiles } from "@/lib/files";
+import { getTaskByNumber, listInbox } from "@/lib/tasks";
+import { pickOption } from "@/lib/work";
 import { useTestDb } from "@/test/db";
+import { scriptedModel } from "@/test/scripted-model";
 
 const ORG = "org_cedar";
 const user = { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" };
 
-const usage = {
-  inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
-  outputTokens: { total: 10, text: 10, reasoning: undefined },
-};
-
-function toolCall(id: string, toolName: string, input: object) {
-  return { type: "tool-call" as const, toolCallId: id, toolName, input: JSON.stringify(input) };
-}
-
-type Step = Array<[toolName: string, input: object]> | string;
-
-// Plays back one model step per call: a list of (parallel) tool calls, or a final text reply.
-function scriptedModel(steps: Step[]) {
-  let call = 0;
-  return new MockLanguageModelV4({
-    doGenerate: async () => {
-      const step = steps[Math.min(call++, steps.length - 1)];
-      if (typeof step === "string") {
-        return {
-          content: [{ type: "text" as const, text: step }],
-          finishReason: { unified: "stop" as const, raw: undefined },
-          usage,
-          warnings: [],
-        };
-      }
-      return {
-        content: step.map(([name, input], i) => toolCall(`${call}-${i}`, name, input)),
-        finishReason: { unified: "tool-calls" as const, raw: undefined },
-        usage,
-        warnings: [],
-      };
-    },
-  });
-}
-
-const essentials: Step = [
+const essentials: Array<[string, object]> = [
   ["update_section", { section: "Overview", content: "Single-family office for the Cedar family." }],
   ["save_person", { name: "Ahmed", role: "Principal", reportsTo: "" }],
   ["save_person", { name: "Mustapha", role: "Finance lead", reportsTo: "Ahmed", responsibilities: "Masttro" }],
@@ -122,12 +92,92 @@ describe("Chief of Staff", () => {
 
     const done = { ...organization, onboardingCompletedAt: new Date() };
     expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).toContain("Onboarding is complete");
-    expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).not.toContain("fetch_page");
+    expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).not.toContain("read it with fetch_page");
   });
 
   it("refuses to start without a model", async () => {
     const organization = await setUpOrg();
     delete process.env.CHIEF_OF_STAFF_MODEL;
     expect(() => createChiefOfStaff({ organization, user, profile: "" })).toThrow(/CHIEF_OF_STAFF_MODEL/);
+  });
+
+  it("turns a request into a task with a worker agent, which runs and reports back", async () => {
+    const organization = { ...(await setUpOrg()), onboardingCompletedAt: new Date() };
+    const person = (await listPeople(ORG))[0];
+    const runs: Promise<void>[] = [];
+    // Agents run on their own script, in the test instead of after the response.
+    setScheduler((work) => runs.push(work()), {
+      model: scriptedModel([
+        [["save_output", { filename: "model.csv", content: "Line item,FQ1E\nRevenue ($M),100" }]],
+        [["finish", { summary: "Model ready: revenue grows to $100M. Share it?", report: "Done.", options: [{ label: "Share it" }] }]],
+      ]),
+      research: false,
+    });
+    const model = scriptedModel([
+      [["use_skill", { name: "writing-tasks" }]],
+      [
+        [
+          "create_task",
+          {
+            title: "Review Micron's latest earnings",
+            description: "Earnings review plus a model with projections for the next 4 quarters.",
+            workerRole: "Financial analysis",
+          },
+        ],
+      ],
+      "On it: a financial analysis worker is reviewing Micron. It'll land in your inbox.",
+    ]);
+    const agent = createChiefOfStaff({ organization, user, person, profile: await loadProfile(ORG) }, { model, research: false });
+    await agent.generate({ prompt: "Do Micron latest earnings review and create a financial model with projections for next 4 quarters" });
+    await Promise.all(runs);
+    setScheduler(null);
+
+    const task = (await getTaskByNumber(ORG, 1))!;
+    expect(task.members.map((m) => [m.type, m.name])).toEqual([
+      ["person", "Ahmed"],
+      ["agent", "Financial analysis worker"],
+    ]);
+    expect(task).toMatchObject({ status: "review", summary: "Model ready: revenue grows to $100M. Share it?" });
+    expect((await listTaskFiles(ORG, task.id)).map((f) => f.name)).toEqual(["model.csv"]);
+    expect((await listInbox(ORG, person.id)).map((t) => t.number)).toEqual([1]);
+    expect(JSON.stringify(model.doGenerateCalls.at(-1)!.prompt)).toContain("Created task #1 with Ahmed, Financial analysis worker.");
+  });
+
+  it("only offers profile edits that fit the moment, and suggests changes after onboarding", async () => {
+    const organization = { ...(await setUpOrg()), onboardingCompletedAt: new Date() };
+    const person = (await listPeople(ORG))[0];
+    await createAgent(ORG, { name: "Bookkeeper", role: "Bookkeeping" });
+    const model = scriptedModel([
+      [
+        [
+          "suggest_profile_update",
+          { section: "How We Work", content: "- Masttro for portfolio reporting", reason: "You use Masttro. Add it to How We Work?" },
+        ],
+      ],
+      "Noted.",
+    ]);
+    const agent = createChiefOfStaff(
+      { organization, user, person, profile: await loadProfile(ORG), agents: await listAgents(ORG) },
+      { model, research: false },
+    );
+    await agent.generate({ prompt: "We report on Masttro." });
+
+    const offered = model.doGenerateCalls[0].tools?.map((t) => t.name) ?? [];
+    expect(offered).toContain("suggest_profile_update");
+    expect(offered).not.toContain("update_section");
+    expect(JSON.stringify(model.doGenerateCalls[0].prompt)).toContain("- Bookkeeper (Bookkeeping)");
+
+    const [suggestion] = await listInbox(ORG, person.id);
+    expect(suggestion).toMatchObject({ kind: "suggestion", summary: "You use Masttro. Add it to How We Work?" });
+    expect(getSection(await loadProfile(ORG), "How We Work")).toBe("_Not yet captured._");
+    await pickOption(ORG, suggestion.id, { name: "Ahmed", personId: person.id }, 0);
+    expect(getSection(await loadProfile(ORG), "How We Work")).toBe("- Masttro for portfolio reporting");
+    expect(await listInbox(ORG, person.id)).toEqual([]);
+
+    const onboarding = scriptedModel(["Hi"]);
+    await createChiefOfStaff({ organization: await getOrganization(ORG).then((o) => ({ ...o!, onboardingCompletedAt: null })), user, profile: "" }, { model: onboarding, research: false }).generate({ prompt: "Hi" });
+    const duringOnboarding = onboarding.doGenerateCalls[0].tools?.map((t) => t.name) ?? [];
+    expect(duringOnboarding).toContain("update_section");
+    expect(duringOnboarding).not.toContain("suggest_profile_update");
   });
 });
