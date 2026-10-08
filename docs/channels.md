@@ -6,7 +6,7 @@ People can talk to the Chief of Staff outside the app: on WhatsApp from their ow
 
 Only people who have joined their company in Mach (signed in at least once) get an answer.
 
-- **WhatsApp:** the sender's number must match the WhatsApp number a person saved on the Company profile page. Spaces, `+` and a leading `00` don't matter, but the country code does.
+- **WhatsApp:** the sender's number must match the WhatsApp number a person saved in Settings → Account. Spaces, `+` and a leading `00` don't matter, but the country code does.
   - A number that isn't linked gets one reply explaining how to link it. The Chief of Staff isn't run for it.
   - Someone in several companies reaches the company they last talked to the Chief of Staff in.
 - **Email:** the sender's address must be a team member's email in that company.
@@ -37,7 +37,7 @@ Only people who have joined their company in Mach (signed in at least once) get 
 1. **Get a WhatsApp sender in Twilio.** For testing, Twilio's WhatsApp sandbox works: each person first sends its "join …" code to the sandbox number. For real use, register a WhatsApp sender for your number.
 2. **Point Twilio at Mach.** Set the sender's "When a message comes in" webhook to `https://<your-domain>/api/whatsapp` (HTTP POST).
 3. **Add the variables to Vercel:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` (e.g. `whatsapp:+14155238886`) and `APP_URL`.
-4. **Each person links their number.** On the Company profile page, they add their WhatsApp number under "Talk to the Chief of Staff from anywhere".
+4. **Each person links their number.** In Settings → Account, they add their WhatsApp number.
 
 The signature check uses the URL Twilio called. Behind a proxy that changes the host, set `TWILIO_WEBHOOK_URL` to the exact URL configured in Twilio.
 
@@ -45,7 +45,7 @@ The signature check uses the URL Twilio called. Behind a proxy that changes the 
 
 1. **Get an API key:** create an AgentMail account and set `AGENTMAIL_API_KEY`.
 2. **Register the webhook (once per deployment):** run `pnpm email:webhook https://<your-domain>/api/email`. Set the secret it prints as `AGENTMAIL_WEBHOOK_SECRET`.
-3. **Create the company's address:** an admin clicks "Create an email address" on the Company profile page. That creates an AgentMail inbox named after the company, e.g. `cedar-legacy@agentmail.to`, with a number added if the name is taken.
+3. **Create the company's address:** an admin clicks "Create address" in Settings → Channels. That creates an AgentMail inbox named after the company, e.g. `cedar-legacy@agentmail.to`, with a number added if the name is taken.
 
 Deleting a company deletes its inbox too.
 
@@ -64,5 +64,5 @@ Deleting a company deletes its inbox too.
 | `lib/channels/senders.ts` | Matching a number or an address to a person; handled message ids |
 | `lib/channels/twilio.ts`, `lib/channels/agentmail.ts` | The providers: signatures, sending, inboxes, WhatsApp formatting |
 | `lib/agents/cos-turn.ts` | One Chief of Staff turn, shared by the chat panel and both channels |
-| `components/reach-cos.tsx` | The Company page section: your WhatsApp number, the company's email address |
+| `components/channel-settings.tsx` | The Settings rows: the company's email address and WhatsApp sender (Channels), your WhatsApp number (Account) |
 | `scripts/agentmail-webhook.mjs` | Registers AgentMail's webhook and prints its secret |

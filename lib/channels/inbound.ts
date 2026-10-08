@@ -23,7 +23,7 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
   if (!context) {
     await sendWhatsApp(
       message.from,
-      `Hi, this is Mach's Chief of Staff. This number isn't linked to anyone in Mach yet: sign in at ${appUrl("/company")} and add it as your WhatsApp number, then message me again.`,
+      `Hi, this is Mach's Chief of Staff. This number isn't linked to anyone in Mach yet: sign in at ${appUrl("/settings/account")} and add it as your WhatsApp number, then message me again.`,
     );
     return;
   }
