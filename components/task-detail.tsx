@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArchiveRestore, ArrowLeft, LoaderCircle, Paperclip, Play, Repeat, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Paperclip, Play, Repeat, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -23,7 +23,7 @@ import {
 } from "@/app/(app)/tasks/actions";
 import { CodeSection, FilesSection, type FileView, type LibraryOption } from "@/components/task-files";
 import { MentionTextarea, type MentionCandidate } from "@/components/mention-textarea";
-import { Elapsed, Reactions, ThreadStatus, type ReactionView } from "@/components/agent-status";
+import { Elapsed, formatElapsed, Reactions, Sweep, ThreadStatus, type ReactionView } from "@/components/agent-status";
 import { MessageAttachments, PendingAttachments, useReplyAttachments, type MessageAttachmentView } from "@/components/reply-attachments";
 import { RepeatsPanel, type ScheduleView } from "@/components/task-schedule";
 import { linkMentions } from "@/lib/mentions";
@@ -58,6 +58,8 @@ type Message = {
   kind: TaskMessageKind;
   body: string;
   createdAt: string;
+  /** How long the run took, on an agent's result. */
+  durationMs: number | null;
   attachments: MessageAttachmentView[];
   reactions: ReactionView[];
 };
@@ -234,7 +236,7 @@ export function TaskDetail({
           </Link>
           <span className="label text-faint">/</span>
           <span className="label">#{task.number}</span>
-          {task.kind === "suggestion" && <span className="label text-accent">Profile suggestion</span>}
+          {task.kind === "suggestion" && <span className="label text-accent-ink">Profile suggestion</span>}
           {task.archived && <span className="label text-faint">Archived</span>}
           {task.schedule && (
             <span className="label flex items-center gap-1 text-faint" title={task.schedule.description}>
@@ -270,13 +272,13 @@ export function TaskDetail({
           <div className="mx-auto max-w-3xl px-4 pt-6 pb-10 sm:px-8 sm:pt-8">
             {task.running && (
               <div
-                className="mb-6 flex items-center gap-2 border border-accent/40 bg-accent-soft px-3 py-2 text-sm"
+                className="relative mb-6 flex items-center gap-2 border border-accent/40 bg-accent-soft px-3 py-2 text-sm"
                 title="It comes back to the top of Home when it's done."
               >
-                <LoaderCircle size={14} className="spin-slow shrink-0 text-accent" />
                 <span className="shrink-0">{task.runAgent ?? "An agent"} is working</span>
                 {task.activity && <span className="min-w-0 truncate text-muted">· {task.activity}</span>}
-                <Elapsed since={task.runSince} className="ml-auto shrink-0 text-xs text-muted" />
+                <Elapsed since={task.runSince} className="ml-auto shrink-0" />
+                <Sweep />
               </div>
             )}
 
@@ -307,7 +309,7 @@ export function TaskDetail({
                   >
                     <kbd className="kbd">{n + 1}</kbd>
                     <span className="flex-1 text-[15px]">{option.label}</span>
-                    {option.recommended && <span className="label text-accent">Recommended</span>}
+                    {option.recommended && <span className="label text-accent-ink">Recommended</span>}
                   </button>
                 ))}
               </div>
@@ -616,7 +618,7 @@ function EditableTitle({ task }: { task: Detail }) {
             setEditing(false);
           }
         }}
-        className="w-full bg-transparent text-[28px] leading-tight tracking-tight outline-none"
+        className="w-full bg-transparent text-[28px] leading-tight font-medium tracking-tight outline-none"
       />
     );
   }
@@ -624,7 +626,7 @@ function EditableTitle({ task }: { task: Detail }) {
     <h1
       onClick={() => setEditing(true)}
       title="Click to edit"
-      className={`cursor-text text-[28px] leading-tight tracking-tight ${task.priority === "urgent" ? "urgent-title" : ""}`}
+      className={`cursor-text text-[28px] leading-tight font-medium tracking-tight ${task.priority === "urgent" ? "urgent-title" : ""}`}
     >
       {task.title}
     </h1>
@@ -723,7 +725,7 @@ const KIND_LABEL: Partial<Record<TaskMessageKind, string>> = { ask: "Asked", res
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) =>
     href === "#mention" ? (
-      <span className="font-medium text-accent">{children}</span>
+      <span className="font-medium text-accent-ink">{children}</span>
     ) : (
       <a href={href} target="_blank" rel="noreferrer">
         {children}
@@ -750,7 +752,10 @@ function ThreadMessage({ message, names }: { message: Message; names: string[] }
         <p className="mb-1 flex items-center gap-2 text-sm">
           <span>{message.author}</span>
           {KIND_LABEL[message.kind] && (
-            <span className={`label text-[10px] ${message.kind === "ask" ? "text-accent" : ""}`}>{KIND_LABEL[message.kind]}</span>
+            <span className={`label text-[10px] ${message.kind === "ask" ? "text-accent-ink" : ""}`}>{KIND_LABEL[message.kind]}</span>
+          )}
+          {message.kind === "result" && message.durationMs !== null && (
+            <span className="readout">Done in {formatElapsed(Math.max(1, Math.round(message.durationMs / 1000)))}</span>
           )}
           <span className="text-xs text-faint">
             <When date={message.createdAt} />

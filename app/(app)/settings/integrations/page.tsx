@@ -55,7 +55,7 @@ export default async function IntegrationsSettingsPage() {
 
   return (
     <section>
-      <h2 className="text-[17px] tracking-tight">Integrations</h2>
+      <h2 className="text-[17px] font-medium tracking-tight">Integrations</h2>
       <p className="mt-1 mb-5 max-w-xl text-sm text-muted">
         The company&apos;s other systems, connected so agents can use them without seeing the credentials: APIs agents read
         (and write, if you allow it), and website logins for sites without one. Ask the Chief of Staff to connect either.

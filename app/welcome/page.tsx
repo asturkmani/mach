@@ -28,7 +28,7 @@ export default async function WelcomePage() {
       <div className="frame w-full max-w-md space-y-6 bg-panel p-6 sm:p-8">
         <div className="space-y-2">
           <p className="label">Mach</p>
-          <h1 className="text-2xl tracking-tight">
+          <h1 className="text-2xl font-medium tracking-tight">
             Welcome, {context.user.name}
           </h1>
           {!domainCompany && (

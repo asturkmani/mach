@@ -18,7 +18,7 @@ export function PageHeader({
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-line px-4 pt-5 pb-4 sm:px-8 sm:pt-7 sm:pb-5">
       <div className="flex min-w-0 items-baseline gap-3">
-        <h1 className="truncate text-[22px] tracking-tight">{title}</h1>
+        <h1 className="truncate text-[22px] font-medium tracking-tight">{title}</h1>
         {count !== undefined && <span className="label">{count}</span>}
       </div>
       <div className="flex max-w-full shrink-0 items-center gap-1 text-muted">

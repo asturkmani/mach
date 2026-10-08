@@ -19,7 +19,7 @@ import type { LoginOutput } from "@/lib/agents/toolkit";
 import type { ChecklistItem } from "@/lib/profile/markdown";
 import type { TaskStatus } from "@/lib/task-words";
 
-import { cosFocus, useShell } from "./shell";
+import { COS_DRAFT_EVENT, cosDraft, cosFocus, useShell } from "./shell";
 
 type ToolPart = Extract<ChiefOfStaffMessage["parts"][number], { type: `tool-${string}` }>;
 
@@ -45,6 +45,8 @@ const REFRESHING_TOOLS = new Set([
   "complete_onboarding",
   "connect_data_source",
   "connect_login",
+  "save_page",
+  "refresh_page",
 ]);
 
 export type IntegrationState = Record<string, { status: IntegrationStatus; detail: string; hasCredentials: boolean }>;
@@ -103,6 +105,24 @@ export function CosPanel({
     // Only when someone opened the panel; on page loads, keys stay with the page.
     if (cosFocus.requested) inputRef.current?.focus({ preventScroll: true });
     cosFocus.requested = false;
+  }, []);
+
+  useEffect(() => {
+    // A page asked to start a message ("About the Net worth page: "): put it in the box, ready to finish.
+    const take = () => {
+      if (!cosDraft.text) return;
+      const text = cosDraft.text;
+      cosDraft.text = "";
+      setInput(text);
+      requestAnimationFrame(() => {
+        const box = inputRef.current;
+        box?.focus({ preventScroll: true });
+        box?.setSelectionRange(text.length, text.length);
+      });
+    };
+    take();
+    window.addEventListener(COS_DRAFT_EVENT, take);
+    return () => window.removeEventListener(COS_DRAFT_EVENT, take);
   }, []);
 
   const attachments = useReplyAttachments({ prefix: uploadPrefix, enabled: canAttach, onError: (message) => toast(message) });
@@ -378,6 +398,19 @@ function ToolPart({
     const { integration } = part.output;
     return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} tell={tell} login />;
   }
+  if (part.type === "tool-save_page" && done && part.output.page) {
+    const { page, created } = part.output;
+    return (
+      <Link href={`/pages/${page.slug}`} className="block border border-line bg-raised px-3.5 py-3 hover:border-muted">
+        <p className="label mb-1">
+          Page {created ? "created" : `saved · v${page.version}`}
+          {page.pinned ? " · tab on Home" : ""}
+        </p>
+        <p className="text-[15px]">{page.title}</p>
+        <p className="mt-1 text-xs text-muted">Open it</p>
+      </Link>
+    );
+  }
   const needsCode = name === "browser_login" && done ? (part.output as unknown as LoginOutput).needsCode : undefined;
   if (needsCode && latest) return <SignInCodeCard login={needsCode} tell={tell} />;
 
@@ -411,6 +444,9 @@ function ToolPart({
     list_files: "Listed files",
     read_integration_guide: `Read the ${input.integration ?? ""} guide`,
     save_integration_guide: `Updated the ${input.integration ?? ""} guide`,
+    save_page: `Saving the ${input.title ?? ""} page`,
+    read_page: `Read the ${input.page ?? ""} page`,
+    refresh_page: `Scheduled the ${input.page ?? ""} page's refresh`,
   };
   const failed =
     part.state === "output-error" ||

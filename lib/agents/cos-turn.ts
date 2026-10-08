@@ -3,6 +3,7 @@ import "server-only";
 import { createAgentUIStream, createIdGenerator, type UIMessage } from "ai";
 
 import { createChiefOfStaff, workspaceOf, type Channel } from "@/lib/agents/chief-of-staff";
+import { forModel, restoreOriginals } from "@/lib/agents/chat-attachments";
 import { prepareHistory } from "@/lib/agents/history";
 import { closeSandbox } from "@/lib/agents/sandbox-steps";
 import { listAgents } from "@/lib/agents/store";
@@ -10,6 +11,7 @@ import type { SandboxSession } from "@/lib/agents/toolkit";
 import { getOrCreateChat, saveChat } from "@/lib/chats";
 import { listLibrary } from "@/lib/files";
 import { listIntegrations } from "@/lib/integrations";
+import { listPages } from "@/lib/pages";
 import type { Organization } from "@/lib/orgs";
 import type { Person } from "@/lib/people";
 import { loadProfile } from "@/lib/profile/store";
@@ -31,16 +33,17 @@ export async function loadChiefOfStaff(
   options: { channel?: Channel; model?: LanguageModel; research?: boolean } = {},
 ) {
   const organizationId = context.organization.id;
-  const [profile, agents, tasks, files, integrations] = await Promise.all([
+  const [profile, agents, tasks, files, integrations, pages] = await Promise.all([
     loadProfile(organizationId),
     listAgents(organizationId),
     listTasks(organizationId, { closedLimit: 0 }),
     listLibrary(organizationId, { limit: 30 }),
     listIntegrations(organizationId),
+    listPages(organizationId),
   ]);
   const sandbox: SandboxSession = {};
   const agent = createChiefOfStaff(
-    { ...context, profile, agents, openTasks: tasks, files, integrations, channel: options.channel },
+    { ...context, profile, agents, openTasks: tasks, files, integrations, pages, channel: options.channel },
     { sandbox, model: options.model, research: options.research },
   );
   return {
@@ -89,11 +92,12 @@ export async function chiefOfStaffTurn(
   try {
     const stream = await createAgentUIStream({
       agent,
-      uiMessages: messages,
+      // Files attached in the chat panel are stored as links to the app, which the model can't open: it's told their names.
+      uiMessages: await forModel(context.organization.id, messages),
       originalMessages: messages as never,
       generateMessageId,
       onEnd: async ({ messages: all }) => {
-        finished = all as UIMessage[];
+        finished = restoreOriginals(all as UIMessage[], messages);
       },
     });
     for await (const chunk of stream) {

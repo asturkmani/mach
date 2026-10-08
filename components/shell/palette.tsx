@@ -87,7 +87,7 @@ export function Palette({
       <div
         role="dialog"
         aria-label="Command palette"
-        className="w-full max-w-xl border border-line bg-raised shadow-[var(--shadow)]"
+        className="enter-drop w-full max-w-xl border border-line bg-raised shadow-[var(--shadow)]"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-line px-4">

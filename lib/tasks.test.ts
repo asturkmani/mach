@@ -1,3 +1,4 @@
+import type { PGlite } from "@electric-sql/pglite";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createAgent, createWorker, listAgents } from "@/lib/agents/store";
@@ -30,8 +31,9 @@ async function setUp() {
 }
 
 describe("tasks", () => {
+  let pg: PGlite;
   beforeEach(async () => {
-    await useTestDb();
+    pg = await useTestDb();
   });
 
   it("numbers tasks per organization and keeps people and agents on them", async () => {
@@ -89,6 +91,24 @@ describe("tasks", () => {
 
     await releaseRun(task.id, analyst.id);
     expect(await claimRun(ORG, task.id, analyst.id)).toBe(true);
+  });
+
+  it("records how long a run took on the agent's result, and only there", async () => {
+    const { ahmed } = await setUp();
+    const analyst = await createAgent(ORG, { name: "Analyst" });
+    const task = await createTask(ORG, { title: "Model Q4", people: [ahmed.id], agents: [analyst.id] });
+    await claimRun(ORG, task.id, analyst.id);
+    await pg.query("update tasks set run_began_at = now() - interval '252 seconds' where id = $1", [task.id]);
+
+    await addMessage(task.id, { author: "Analyst", agentId: analyst.id, kind: "update", body: "Halfway." });
+    await addMessage(task.id, { author: "Analyst", agentId: analyst.id, kind: "result", body: "Done." });
+    await addMessage(task.id, { author: "Ahmed", personId: ahmed.id, kind: "result", body: "Not a run." });
+
+    const [update, result, byPerson] = await listMessages(task.id);
+    expect(update.durationMs).toBeNull();
+    expect(result.durationMs).toBeGreaterThanOrEqual(252_000);
+    expect(result.durationMs).toBeLessThan(262_000);
+    expect(byPerson.durationMs).toBeNull();
   });
 
   it("keeps a thread, searches and lists open work first", async () => {

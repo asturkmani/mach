@@ -10,6 +10,7 @@ import { writeDriveFile } from "@/lib/drive";
 import { saveVersion } from "@/lib/files";
 import { saveCredentials, saveIntegration } from "@/lib/integrations";
 import { createOrganization, getOrganization } from "@/lib/orgs";
+import { savePage } from "@/lib/pages";
 import { linkMember } from "@/lib/people";
 import { setSandboxProvider, workspaceSandboxName } from "@/lib/sandbox";
 import { saveSchedule } from "@/lib/schedules";
@@ -43,6 +44,7 @@ async function companyWithEverything(id: string) {
   });
   await saveCredentials(id, source.id, { apiKey: "secret-key" });
   await saveSchedule(task.id, { cron: "0 9 * * 1-5", timezone: "Europe/London" });
+  await savePage(id, { title: "Prices", html: "<p>MU</p>", data: ["prices/mu.csv"], by: { name: "Ahmed" } });
   return task;
 }
 
@@ -55,6 +57,7 @@ const TABLES = [
   "files",
   "drive_files",
   "integrations",
+  "pages",
 ] as const;
 
 async function rowsFor(organizationId: string): Promise<Record<string, number>> {
@@ -67,7 +70,8 @@ async function rowsFor(organizationId: string): Promise<Record<string, number>> 
   const [orphans] = await getDb().query<{ n: number }>(
     `select (select count(*) from task_messages m where not exists (select 1 from tasks t where t.id = m.task_id))
           + (select count(*) from file_versions v where not exists (select 1 from files f where f.id = v.file_id))
-          + (select count(*) from task_schedules s where not exists (select 1 from tasks t where t.id = s.task_id)) as n`,
+          + (select count(*) from task_schedules s where not exists (select 1 from tasks t where t.id = s.task_id))
+          + (select count(*) from page_versions v where not exists (select 1 from pages p where p.id = v.page_id)) as n`,
   );
   counts.orphans = Number(orphans.n);
   return counts;

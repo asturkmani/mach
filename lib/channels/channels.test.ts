@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getOrCreateChat } from "@/lib/chats";
+import { getOrCreateChat, saveChat } from "@/lib/chats";
 import { svixSignature, validSvixSignature, inboxUsername } from "@/lib/channels/agentmail";
 import { handleEmail, handleWhatsApp } from "@/lib/channels/inbound";
 import { emailAddress, findByPhone, firstTime, phoneDigits } from "@/lib/channels/senders";
@@ -82,6 +82,33 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     await handleWhatsApp({ from: "+15550000000", body: "hi", media: 0 }, { model, research: false });
     expect(new URLSearchParams(sent[0].body).get("Body")).toContain("isn't linked to anyone in Mach");
     expect(model.doGenerateCalls).toHaveLength(0);
+  });
+
+  it("answers on WhatsApp after a photo was attached in the chat panel, telling the model its name", async () => {
+    await setUp();
+    // The panel stores an attachment as a link to the app's own file route, which a model can't fetch.
+    const chat = await getOrCreateChat(ORG, "user_ahmed");
+    await saveChat(chat.id, [
+      {
+        id: "m1",
+        role: "user",
+        parts: [
+          { type: "text", text: "Here's the statement." },
+          { type: "file", mediaType: "image/png", filename: "statement.png", url: "/files/7e3160d2-e1b2-40f9-864e-96b7eff28e85?inline=1" },
+        ],
+      },
+      { id: "m2", role: "assistant", parts: [{ type: "text", text: "Got it." }] },
+    ]);
+    const sent = stubProviders();
+    const model = scriptedModel(["It's in the company files."]);
+    await handleWhatsApp({ from: "+447700900123", body: "Where's that statement?", media: 0 }, { model, research: false });
+
+    expect(new URLSearchParams(sent[0].body).get("Body")).toBe("It's in the company files.");
+    expect(JSON.stringify(model.doGenerateCalls[0].prompt)).toContain("[Attached earlier, now in the company files: statement.png]");
+    // The stored conversation keeps the link, not what the model was shown.
+    const stored = (await getOrCreateChat(ORG, "user_ahmed")).messages;
+    expect(stored[0].parts[1]).toMatchObject({ type: "file", url: "/files/7e3160d2-e1b2-40f9-864e-96b7eff28e85?inline=1" });
+    expect(stored.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
   });
 
   it("matches WhatsApp numbers however they were typed, and only for people who use Mach", async () => {

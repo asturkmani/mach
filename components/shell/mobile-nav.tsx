@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { signOutAction } from "@/app/(app)/actions";
-import { Elapsed, TypingDots } from "@/components/agent-status";
+import { Elapsed, Sweep } from "@/components/agent-status";
 import { MachMark } from "@/components/brand";
 import { Face } from "@/components/ui";
 
@@ -48,7 +48,7 @@ export function MobileNav() {
           <House size={20} strokeWidth={1.6} />
           Home
           {data.inboxCount > 0 && (
-            <span className="absolute top-1.5 left-1/2 ml-2 min-w-4 rounded-full bg-accent px-1 text-center font-mono text-[10px] leading-4 text-white">
+            <span className="absolute top-1.5 left-1/2 ml-2 min-w-4 rounded-full bg-accent px-1 text-center font-mono text-[10px] leading-4 text-on-accent">
               {data.inboxCount}
             </span>
           )}
@@ -93,7 +93,13 @@ export function MobileNav() {
           className={`${item} relative ${menu ? "text-ink" : "text-muted"}`}
           aria-expanded={menu}
         >
-          {data.working.length > 0 && !menu ? <TypingDots className="h-5 text-accent" /> : <Menu size={20} strokeWidth={1.6} />}
+          {data.working.length > 0 && !menu ? (
+            <span className="flex h-5 items-center">
+              <Sweep inline />
+            </span>
+          ) : (
+            <Menu size={20} strokeWidth={1.6} />
+          )}
           Menu
         </button>
       </nav>
@@ -116,7 +122,7 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-label="Menu">
       <button aria-label="Close the menu" onClick={onClose} className="absolute inset-0 bg-black/30" />
-      <div className="absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[80dvh] overflow-y-auto border-t border-line bg-panel pb-2 shadow-[var(--shadow)]">
+      <div className="enter-rise absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[80dvh] overflow-y-auto border-t border-line bg-panel pb-2 shadow-[var(--shadow)]">
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <p className="flex min-w-0 items-center gap-2.5">
             <MachMark size={24} />
@@ -129,15 +135,15 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
 
         {data.working.length > 0 && (
           <div className="mx-5 mb-2 border border-line bg-raised py-1" role="status">
-            <p className="label flex items-center gap-2 px-3 py-1.5 text-accent">
-              <TypingDots /> {data.working.length} agent{data.working.length === 1 ? "" : "s"} working
+            <p className="label flex items-center gap-2 px-3 py-1.5 text-accent-ink">
+              <Sweep inline /> {data.working.length} agent{data.working.length === 1 ? "" : "s"} working
             </p>
             {data.working.slice(0, 5).map((w) => (
               <Link key={w.number} href={`/tasks/${w.number}`} className="block px-3 py-1.5 text-sm">
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-faint">#{w.number}</span>
                   <span className="min-w-0 flex-1 truncate">{w.agent}</span>
-                  <Elapsed since={w.since} className="text-xs text-faint" />
+                  <Elapsed since={w.since} className="text-faint" />
                 </span>
                 <span className="block truncate text-xs text-muted">{w.activity || "Working"}</span>
               </Link>

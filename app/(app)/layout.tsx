@@ -9,12 +9,13 @@ import { loadProfile } from "@/lib/profile/store";
 import { requireAppContext } from "@/lib/session";
 import { uploadsPrefix } from "@/lib/files";
 import { listIntegrations } from "@/lib/integrations";
+import { listPages } from "@/lib/pages";
 import { blobConnected } from "@/lib/storage";
 import { anyRunning, listInbox, listInProgress, listSuggestionStatuses, listWorking } from "@/lib/tasks";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { organization, user, person, isAdmin } = await requireAppContext();
-  const [chat, profile, people, agents, inbox, inProgress, suggestionStatus, running, integrations, working] = await Promise.all([
+  const [chat, profile, people, agents, inbox, inProgress, suggestionStatus, running, integrations, working, pages] = await Promise.all([
     getOrCreateChat<ChiefOfStaffMessage>(organization.id, user.id),
     loadProfile(organization.id),
     listPeople(organization.id),
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     anyRunning(organization.id),
     listIntegrations(organization.id),
     listWorking(organization.id),
+    listPages(organization.id),
   ]);
 
   return (
@@ -49,6 +51,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         })),
         inProgressCount: inProgress.length,
         working: working.map((w) => ({ ...w, since: w.since ? new Date(w.since).toISOString() : null })),
+        pages: pages.map((p) => ({ slug: p.slug, title: p.title, pinned: p.pinned })),
       }}
       cos={{
         chatId: chat.id,

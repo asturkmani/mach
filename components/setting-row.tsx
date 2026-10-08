@@ -12,7 +12,7 @@ export function SettingsGroup({
 }) {
   return (
     <section>
-      {title && <h2 className="text-[17px] tracking-tight">{title}</h2>}
+      {title && <h2 className="text-[17px] font-medium tracking-tight">{title}</h2>}
       {description && <p className="mt-1 max-w-xl text-sm text-muted">{description}</p>}
       <div className={`divide-y divide-line-soft border-y border-line ${title || description ? "mt-4" : ""}`}>{children}</div>
     </section>

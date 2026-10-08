@@ -33,6 +33,8 @@ export type ShellData = {
   inProgressCount: number;
   /** Agents working right now, for the status in the left menu. */
   working: { number: number; title: string; agent: string; activity: string; since: string | null }[];
+  /** The company's pages; pinned ones are tabs on Home. */
+  pages: { slug: string; title: string; pinned: boolean }[];
 };
 
 
@@ -132,6 +134,17 @@ function writeStorage(key: string, value: string | null): void {
 
 /** Set when someone opens the Chief of Staff, so the panel takes focus then and not on every page load. */
 export const cosFocus = { requested: false };
+
+/** Text to put in the Chief of Staff's message box, e.g. "About the Net worth page: ". */
+export const cosDraft = { text: "" };
+export const COS_DRAFT_EVENT = "mach:cos-draft";
+
+/** Opens the Chief of Staff with a message started for the person to finish. */
+export function startCosMessage(text: string, setCosOpen: (open: boolean) => void): void {
+  cosDraft.text = text;
+  setCosOpen(true);
+  window.dispatchEvent(new Event(COS_DRAFT_EVENT));
+}
 
 // The Chief of Staff panel's open state is a per-viewer preference kept in
 // localStorage; components read it through this tiny store.
@@ -361,7 +374,7 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
           <div
             key={t.id}
             role="status"
-            className="pointer-events-auto flex items-center gap-3 border border-line bg-raised px-4 py-2 text-sm shadow-[var(--shadow)]"
+            className="enter-rise pointer-events-auto flex items-center gap-3 border border-line bg-raised px-4 py-2 text-sm shadow-[var(--shadow)]"
           >
             <span>{t.text}</span>
             {t.href && (
@@ -370,7 +383,7 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
                   setToasts((all) => all.filter((x) => x.id !== t.id));
                   router.push(t.href!);
                 }}
-                className="text-accent hover:underline"
+                className="text-accent-ink hover:underline"
               >
                 Open
               </button>
