@@ -308,7 +308,7 @@ export async function runNow(organizationId: string, taskId: string, agentId: st
 // ---------------------------------------------------------------------------
 // Recurring jobs
 
-export type ScheduleInput = { cron: string; timezone: string; mode?: ScheduleMode };
+export type ScheduleInput = { cron: string; timezone: string; mode?: ScheduleMode; quiet?: boolean };
 
 function checkSchedule(input: ScheduleInput): void {
   const problem = scheduleProblem(input.cron, input.timezone);

@@ -33,6 +33,8 @@ export type ShellData = {
   inProgressCount: number;
   /** Agents working right now, for the status in the left menu. */
   working: { number: number; title: string; agent: string; activity: string; since: string | null }[];
+  /** The company's pages; pinned ones are tabs on Home. */
+  pages: { slug: string; title: string; pinned: boolean }[];
 };
 
 
@@ -132,6 +134,17 @@ function writeStorage(key: string, value: string | null): void {
 
 /** Set when someone opens the Chief of Staff, so the panel takes focus then and not on every page load. */
 export const cosFocus = { requested: false };
+
+/** Text to put in the Chief of Staff's message box, e.g. "About the Net worth page: ". */
+export const cosDraft = { text: "" };
+export const COS_DRAFT_EVENT = "mach:cos-draft";
+
+/** Opens the Chief of Staff with a message started for the person to finish. */
+export function startCosMessage(text: string, setCosOpen: (open: boolean) => void): void {
+  cosDraft.text = text;
+  setCosOpen(true);
+  window.dispatchEvent(new Event(COS_DRAFT_EVENT));
+}
 
 // The Chief of Staff panel's open state is a per-viewer preference kept in
 // localStorage; components read it through this tiny store.

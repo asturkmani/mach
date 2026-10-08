@@ -326,3 +326,41 @@ create table if not exists inbound_messages (
   received_at timestamptz not null default now(),
   primary key (provider, external_id)
 );
+
+-- Pages: views of the company's data that people ask the Chief of Staff for,
+-- shown as tabs on Home. A page is HTML (every version kept) that reads files
+-- on the company drive; a recurring job usually keeps those files fresh.
+create table if not exists pages (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  slug text not null,
+  title text not null,
+  description text not null default '',
+  data text[] not null default '{}', -- the drive paths it reads
+  task_id uuid references tasks (id) on delete set null, -- the job that refreshes its data
+  pinned boolean not null default true, -- a tab on Home
+  created_by_person_id uuid references people (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists pages_slug on pages (organization_id, slug);
+
+create table if not exists page_versions (
+  id uuid primary key default gen_random_uuid(),
+  page_id uuid not null references pages (id) on delete cascade,
+  version integer not null,
+  html text not null,
+  sha256 text not null,
+  note text not null default '',
+  by_name text not null default '',
+  person_id uuid references people (id) on delete set null,
+  agent_id uuid references agents (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists page_versions_number on page_versions (page_id, version);
+
+-- A quiet recurring job only reaches someone's inbox when a run fails (a page's
+-- data refresh): runs that work are noted on its thread and leave it done.
+alter table task_schedules add column if not exists quiet boolean not null default false;

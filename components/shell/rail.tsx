@@ -11,6 +11,7 @@ import { Bell, BellOff,
   Monitor,
   Moon,
   PanelRight,
+  PanelsTopLeft,
   Plus,
   Search,
   Sun,
@@ -53,6 +54,7 @@ export function Rail() {
 
   const workspace: Item[] = [
     { href: "/", label: "Home", icon: House, count: data.inboxCount, accent: true },
+    { href: "/pages", label: "Pages", icon: PanelsTopLeft, count: data.pages.length || undefined },
   ];
   const company = COMPANY_PAGES;
 

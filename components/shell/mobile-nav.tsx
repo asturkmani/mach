@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, BellOff, House, LogOut, Menu, MessageSquare, Monitor, Moon, Plus, Search, Sun, X } from "lucide-react";
+import { Bell, BellOff, House, LogOut, Menu, MessageSquare, Monitor, Moon, PanelsTopLeft, Plus, Search, Sun, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -144,7 +144,7 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
         )}
 
         <ul>
-          {COMPANY_PAGES.map((page) => {
+          {[{ href: "/pages", label: "Pages", icon: PanelsTopLeft }, ...COMPANY_PAGES].map((page) => {
             const Icon = page.icon;
             const active = isActive(pathname, page.href);
             return (

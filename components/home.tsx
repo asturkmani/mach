@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { Board } from "@/components/board";
 import { PageHeader } from "@/components/page-header";
+import { PageTabs } from "@/components/page-tabs";
 import { useKeys, useShell } from "@/components/shell/shell";
 import { TaskList, type Section } from "@/components/task-list";
 import type { TaskView } from "@/lib/task-view";
@@ -120,6 +121,7 @@ export function Home({
           )}
         </div>
       </PageHeader>
+      <PageTabs active={null} />
       {notice}
       {view === "list" ? (
         <TaskList sections={listSections(needsYou, shown)} showStatus empty={empty} />

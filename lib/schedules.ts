@@ -18,6 +18,8 @@ export type Schedule = {
   /** script: replay run.sh, waking the agent only if it fails or doesn't exist yet. agent: the agent does the job each time. */
   mode: ScheduleMode;
   paused: boolean;
+  /** Runs that work leave the job done instead of in someone's inbox; only failures reach people. */
+  quiet: boolean;
   nextRunAt: Date | null;
   lastRunAt: Date | null;
   /** e.g. "At 16:00, Monday through Friday (Europe/London)". */
@@ -75,6 +77,7 @@ type ScheduleRow = {
   timezone: string;
   mode: ScheduleMode;
   paused: boolean;
+  quiet: boolean;
   next_run_at: Date | null;
   last_run_at: Date | null;
 };
@@ -85,12 +88,13 @@ const toSchedule = (r: ScheduleRow): Schedule => ({
   timezone: r.timezone,
   mode: r.mode,
   paused: r.paused,
+  quiet: r.quiet,
   nextRunAt: r.next_run_at,
   lastRunAt: r.last_run_at,
   description: describeSchedule(r.cron, r.timezone),
 });
 
-const COLUMNS = "task_id, cron, timezone, mode, paused, next_run_at, last_run_at";
+const COLUMNS = "task_id, cron, timezone, mode, paused, quiet, next_run_at, last_run_at";
 
 export async function getSchedule(taskId: string): Promise<Schedule | null> {
   const [row] = await getDb().query<ScheduleRow>(`select ${COLUMNS} from task_schedules where task_id = $1`, [taskId]);
@@ -107,16 +111,23 @@ export async function schedulesFor(taskIds: string[]): Promise<Map<string, Sched
 /** Creates or replaces a job's schedule. Callers check scheduleProblem first. */
 export async function saveSchedule(
   taskId: string,
-  input: { cron: string; timezone: string; mode?: ScheduleMode; by?: { personId?: string; agentId?: string } },
+  input: {
+    cron: string;
+    timezone: string;
+    mode?: ScheduleMode;
+    /** Left as it was when not given. */
+    quiet?: boolean;
+    by?: { personId?: string; agentId?: string };
+  },
 ): Promise<Schedule> {
   const cron = input.cron.trim().split(/\s+/).join(" ");
   const problem = scheduleProblem(cron, input.timezone);
   if (problem) throw new Error(problem);
   const [row] = await getDb().query<ScheduleRow>(
-    `insert into task_schedules (task_id, cron, timezone, mode, paused, next_run_at, created_by_person_id, created_by_agent_id)
-     values ($1, $2, $3, $4, false, $5, $6, $7)
+    `insert into task_schedules (task_id, cron, timezone, mode, paused, next_run_at, created_by_person_id, created_by_agent_id, quiet)
+     values ($1, $2, $3, $4, false, $5, $6, $7, coalesce($8, false))
      on conflict (task_id) do update set cron = excluded.cron, timezone = excluded.timezone, mode = excluded.mode,
-       paused = false, next_run_at = excluded.next_run_at, updated_at = now()
+       quiet = coalesce($8, task_schedules.quiet), paused = false, next_run_at = excluded.next_run_at, updated_at = now()
      returning ${COLUMNS}`,
     [
       taskId,
@@ -126,6 +137,7 @@ export async function saveSchedule(
       nextRun(cron, input.timezone),
       input.by?.personId ?? null,
       input.by?.agentId ?? null,
+      input.quiet ?? null,
     ],
   );
   return toSchedule(row);

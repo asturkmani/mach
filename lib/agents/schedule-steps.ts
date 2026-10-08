@@ -81,8 +81,10 @@ export async function reportReplay(context: RunContext, result: Extract<ReplayRe
     kind: "result",
     body: lines.filter((l, i) => l || i === 1).join("\n").trim(),
   });
+  // A quiet job (a page's data refresh) only reaches people when a run fails.
+  const quiet = (await getSchedule(context.taskId))?.quiet ?? false;
   await updateTask(context.organizationId, context.taskId, {
-    status: "review",
+    status: quiet ? "done" : "review",
     summary: result.summary ? firstSentence(result.summary) : `${label}: ${updated.toLowerCase()}`,
     options: [],
     laterUntil: null,
