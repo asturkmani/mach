@@ -4,19 +4,39 @@ import { chiefOfStaffTurn } from "@/lib/agents/cos-turn";
 import { appUrl } from "@/lib/app-url";
 import { replyToEmail } from "@/lib/channels/agentmail";
 import { findByEmail, findByPhone } from "@/lib/channels/senders";
-import { sendWhatsApp } from "@/lib/channels/twilio";
+import { fetchTwilioMedia, sendWhatsApp } from "@/lib/channels/twilio";
 import { findOrganizationByInbox } from "@/lib/orgs";
-import type { LanguageModel } from "ai";
+import { MAX_AUDIO_BYTES, transcribeAudio } from "@/lib/transcribe";
+import type { LanguageModel, TranscriptionModel } from "ai";
 
 // What happens to a WhatsApp message or an email once its webhook has been
 // checked: find who sent it, run the Chief of Staff on it in their
 // conversation, and send the reply back the same way.
 
-type TurnOptions = { model?: LanguageModel; research?: boolean };
+type TurnOptions = { model?: LanguageModel; research?: boolean; transcriber?: TranscriptionModel };
 
 const trouble = () => `Sorry, something went wrong on my side. Try again, or open Mach: ${appUrl("/")}`;
 
-export type WhatsAppMessage = { from: string; body: string; media: number };
+export type WhatsAppMessage = {
+  from: string;
+  body: string;
+  media: number;
+  /** The first attachment, which is a voice note when its type is audio. */
+  mediaUrl?: string;
+  mediaType?: string;
+};
+
+/** A voice note, as words; null when it can't be heard. */
+async function voiceNote(message: WhatsAppMessage, transcriber?: TranscriptionModel): Promise<string | null> {
+  if (!message.mediaUrl) return null;
+  try {
+    const audio = await fetchTwilioMedia(message.mediaUrl, MAX_AUDIO_BYTES);
+    return (await transcribeAudio(audio, { model: transcriber })) || null;
+  } catch (error) {
+    console.error("WhatsApp voice note couldn't be transcribed", error);
+    return null;
+  }
+}
 
 export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOptions = {}): Promise<void> {
   const context = await findByPhone(message.from);
@@ -27,12 +47,20 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
     );
     return;
   }
-  const attached = message.media ? `\n\n[They sent ${message.media} attachment${message.media === 1 ? "" : "s"} by WhatsApp, which you can't open here. Ask them to attach it on a task in Mach if it matters.]` : "";
-  const text = `${message.body.trim()}${attached}`.trim();
+  const voice = message.mediaType?.startsWith("audio/") ?? false;
+  const spoken = voice ? await voiceNote(message, options.transcriber) : null;
+  const notes: string[] = [];
+  if (spoken) notes.push(`${spoken}\n\n[Sent as a voice note and transcribed: names and numbers may be off, so check anything that matters before acting on it.]`);
+  else if (voice) notes.push("[They sent a voice note that couldn't be transcribed. Ask them to try again or type it.]");
+  const others = message.media - (voice ? 1 : 0);
+  if (others > 0) {
+    notes.push(`[They sent ${others} ${voice ? "more " : ""}attachment${others === 1 ? "" : "s"} by WhatsApp, which you can't open here. Ask them to attach it on a task in Mach if it matters.]`);
+  }
+  const text = [message.body.trim(), ...notes].filter(Boolean).join("\n\n");
   if (!text) return;
   let reply: string;
   try {
-    reply = await chiefOfStaffTurn(context, text, "whatsapp", options);
+    reply = await chiefOfStaffTurn(context, text, "whatsapp", { model: options.model, research: options.research });
   } catch (error) {
     console.error("WhatsApp turn failed", error);
     reply = trouble();

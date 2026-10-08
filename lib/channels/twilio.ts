@@ -81,3 +81,20 @@ export async function sendWhatsApp(to: string, text: string): Promise<void> {
     if (!response.ok) throw new Error(`Twilio refused the message (${response.status}): ${(await response.text()).slice(0, 300)}`);
   }
 }
+
+/**
+ * Downloads media someone sent (a voice note): Twilio's media URLs need the
+ * account's credentials, so only its own API host is fetched with them.
+ */
+export async function fetchTwilioMedia(url: string, maxBytes: number): Promise<Uint8Array> {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || parsed.hostname !== "api.twilio.com") throw new Error(`Not a Twilio media URL: ${parsed.hostname}`);
+  const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
+  // Twilio redirects to its CDN; fetch drops the credentials on the way there.
+  const response = await fetch(parsed, { headers: { Authorization: `Basic ${auth}` } });
+  if (!response.ok) throw new Error(`Twilio wouldn't give the media (${response.status})`);
+  if (Number(response.headers.get("content-length") ?? 0) > maxBytes) throw new Error("The media is too big");
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length > maxBytes) throw new Error("The media is too big");
+  return bytes;
+}

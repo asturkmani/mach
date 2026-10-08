@@ -27,6 +27,7 @@ import { MentionTextarea, type MentionCandidate } from "@/components/mention-tex
 import { Elapsed, formatElapsed, Reactions, Sweep, ThreadStatus, type ReactionView } from "@/components/agent-status";
 import { MessageAttachments, PendingAttachments, useReplyAttachments, type MessageAttachmentView } from "@/components/reply-attachments";
 import { RepeatsPanel, type ScheduleView } from "@/components/task-schedule";
+import { appendDictation, VoiceButton } from "@/components/voice-input";
 import { linkMentions } from "@/lib/mentions";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
 import { Face, PriorityMark, useStoredFlag, When } from "@/components/ui";
@@ -422,6 +423,13 @@ export function TaskDetail({
                       >
                         <Paperclip size={15} />
                       </button>
+                      <VoiceButton
+                        onText={(text) => {
+                          setReply((current) => appendDictation(current, text));
+                          replyRef.current?.focus();
+                        }}
+                        className="text-muted hover:text-ink"
+                      />
                       <span className="hidden text-xs text-faint md:inline">
                         <kbd className="kbd">R</kbd> to reply · <kbd className="kbd">⌘↵</kbd> to send
                       </span>

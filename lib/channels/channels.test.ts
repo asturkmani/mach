@@ -1,3 +1,4 @@
+import { MockTranscriptionModelV4 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getOrCreateChat, saveChat } from "@/lib/chats";
@@ -24,6 +25,20 @@ function stubProviders() {
   );
   return sent;
 }
+
+/** Hears whatever audio it's given as `words`, and remembers the audio. */
+function hears(words: string) {
+  const heard: Uint8Array[] = [];
+  const model = new MockTranscriptionModelV4({
+    doGenerate: async ({ audio }) => {
+      heard.push(audio as Uint8Array);
+      return { text: words, segments: [], language: "en", durationInSeconds: 3, warnings: [], response: { timestamp: new Date(), modelId: "mock" } };
+    },
+  });
+  return { model, heard };
+}
+
+const MEDIA = "https://api.twilio.com/2010-04-01/Accounts/AC_test/Messages/MM1/Media/ME1";
 
 async function setUp() {
   await createOrganization({ id: ORG, name: "Cedar Legacy" });
@@ -73,6 +88,50 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     const sent = stubProviders();
     await handleWhatsApp({ from: "+447700900123", body: "What's open?", media: 0 }, { model: scriptedModel([new Error("gateway down")]), research: false });
     expect(new URLSearchParams(sent[0].body).get("Body")).toBe("Sorry, something went wrong on my side. Try again, or open Mach: https://mach.example/");
+  });
+
+  it("transcribes a WhatsApp voice note and answers what was said", async () => {
+    await setUp();
+    const sent = stubProviders();
+    const fetched: { url: string; auth: string | null }[] = [];
+    const twilio = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        if (String(input) !== MEDIA) return twilio(input, init);
+        fetched.push({ url: String(input), auth: new Headers(init?.headers).get("authorization") });
+        return new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "audio/ogg" } });
+      }),
+    );
+    const voice = hears("Remind Sara about the Q3 capital call tomorrow.");
+    const model = scriptedModel(["Will do."]);
+    await handleWhatsApp(
+      { from: "+447700900123", body: "", media: 1, mediaUrl: MEDIA, mediaType: "audio/ogg" },
+      { model, transcriber: voice.model, research: false },
+    );
+
+    // Twilio's media is fetched with the account's credentials, and the audio is what was transcribed.
+    expect(fetched).toEqual([{ url: MEDIA, auth: `Basic ${Buffer.from("AC_test:twilio-token").toString("base64")}` }]);
+    expect(Array.from(voice.heard[0])).toEqual([1, 2, 3]);
+    const prompt = JSON.stringify(model.doGenerateCalls[0].prompt);
+    expect(prompt).toContain("Remind Sara about the Q3 capital call tomorrow.");
+    expect(prompt).toContain("Sent as a voice note and transcribed");
+    expect(prompt).not.toContain("can't open here");
+    expect(new URLSearchParams(sent.at(-1)!.body).get("Body")).toBe("Will do.");
+  });
+
+  it("says when a voice note couldn't be heard, and never sends Twilio's credentials anywhere else", async () => {
+    await setUp();
+    const sent = stubProviders();
+    const voice = hears("should not be heard");
+    const model = scriptedModel(["Could you type that?"]);
+    await handleWhatsApp(
+      { from: "+447700900123", body: "", media: 1, mediaUrl: "https://evil.example/Media/ME1", mediaType: "audio/ogg" },
+      { model, transcriber: voice.model, research: false },
+    );
+    expect(sent.some((r) => r.url.includes("evil.example"))).toBe(false);
+    expect(voice.heard).toHaveLength(0);
+    expect(JSON.stringify(model.doGenerateCalls[0].prompt)).toContain("voice note that couldn't be transcribed");
   });
 
   it("tells an unknown number how to link itself, without running the Chief of Staff", async () => {

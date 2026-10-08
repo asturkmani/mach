@@ -14,6 +14,7 @@ import { sendSignInCodeAction } from "@/app/(app)/integrations/actions";
 import { pickOptionAction } from "@/app/(app)/tasks/actions";
 import { CredentialsForm, StatusLine } from "@/components/credentials-form";
 import { PendingAttachments, useReplyAttachments } from "@/components/reply-attachments";
+import { appendDictation, VoiceButton } from "@/components/voice-input";
 import type { IntegrationStatus } from "@/lib/integrations";
 import type { ChiefOfStaffMessage } from "@/lib/agents/chief-of-staff";
 import type { LoginOutput } from "@/lib/agents/toolkit";
@@ -303,6 +304,13 @@ export function CosPanel({
                 </button>
               </>
             )}
+            <VoiceButton
+              onText={(text) => {
+                setInput((current) => appendDictation(current, text));
+                inputRef.current?.focus();
+              }}
+              className="btn btn-ghost px-2"
+            />
             {busy ? (
               <button
                 type="button"

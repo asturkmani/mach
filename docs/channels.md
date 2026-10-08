@@ -28,7 +28,11 @@ Only people who have joined their company in Mach (signed in at least once) get 
 
 **What the Chief of Staff is told:** the message came by WhatsApp or email, so it keeps replies short. Cards (credentials for an integration, a sign-in code, a profile suggestion) only work in the app, so it gives a link to finish there instead.
 
-**Attachments** sent on WhatsApp or by email aren't read yet. The Chief of Staff is told they arrived, and asks for them to be attached on a task in Mach.
+**Voice notes** on WhatsApp are transcribed (the same model as voice messages in the app, see below) and answered like a typed message. The Chief of Staff is told the words were transcribed, so it double-checks names and numbers before acting on them. If a voice note can't be transcribed, it asks for it again or typed.
+
+**Other attachments** sent on WhatsApp or by email aren't read yet. The Chief of Staff is told they arrived, and asks for them to be attached on a task in Mach.
+
+**Voice messages in the app:** the microphone next to the paperclip, in the chat panel and in a task's reply box, records a message. It's transcribed into the message box for you to check and send; the recording isn't kept. Transcription goes through the AI Gateway (`openai/gpt-4o-mini-transcribe` by default, or `TRANSCRIPTION_MODEL`), up to 5 minutes or 20MB a message. Esc while recording throws it away.
 
 ## Setting it up
 

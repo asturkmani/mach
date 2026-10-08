@@ -27,7 +27,13 @@ export async function POST(request: Request) {
     return new Response("Bad signature.", { status: 403 });
   }
   if (!params.From || (params.MessageSid && !(await firstTime("twilio", params.MessageSid)))) return empty();
-  const message = { from: params.From.replace(/^whatsapp:/, ""), body: params.Body ?? "", media: Number(params.NumMedia ?? 0) };
+  const message = {
+    from: params.From.replace(/^whatsapp:/, ""),
+    body: params.Body ?? "",
+    media: Number(params.NumMedia ?? 0),
+    mediaUrl: params.MediaUrl0,
+    mediaType: params.MediaContentType0,
+  };
   after(() => handleWhatsApp(message).catch((error) => console.error("WhatsApp reply failed", error)));
   return empty();
 }
