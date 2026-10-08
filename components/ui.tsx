@@ -61,7 +61,7 @@ export function Face({
       title={title ?? name}
       style={{ width: size, height: size, fontSize: Math.max(9, size * 0.4) }}
       className={`inline-flex shrink-0 items-center justify-center border font-mono leading-none ${
-        agent ? "rounded-[3px] border-accent/50 bg-accent-soft text-accent" : "rounded-full border-line bg-raised text-muted"
+        agent ? "rounded-[3px] border-accent/50 bg-accent-soft text-accent-ink" : "rounded-full border-line bg-raised text-muted"
       }`}
     >
       {initials(name)}
@@ -76,7 +76,7 @@ export function PriorityMark({ priority, className = "" }: { priority: Priority;
     return (
       <span
         title="Urgent"
-        className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-[2px] bg-accent font-mono text-[10px] font-bold text-panel ${className}`}
+        className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-[2px] bg-accent font-mono text-[10px] font-bold text-on-accent ${className}`}
       >
         !
       </span>

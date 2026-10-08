@@ -41,19 +41,18 @@ export function formatElapsed(seconds: number): string {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
 }
 
+/** A run's elapsed time as a readout (monospace, tabular), ticking each second. */
 export function Elapsed({ since, className }: { since: string | null; className?: string }) {
   const seconds = useElapsed(since);
-  return seconds === null ? null : <span className={`tabular-nums ${className ?? ""}`}>{formatElapsed(seconds)}</span>;
+  return seconds === null ? null : <span className={`readout ${className ?? ""}`}>{formatElapsed(seconds)}</span>;
 }
 
-export function TypingDots({ className = "" }: { className?: string }) {
-  return (
-    <span className={`typing-dots inline-flex items-center gap-[3px] ${className}`} aria-hidden>
-      <span />
-      <span />
-      <span />
-    </span>
-  );
+/**
+ * An agent at work: a short accent line crossing left to right. Along the
+ * bottom edge of its parent (which must be positioned), or inline before words.
+ */
+export function Sweep({ inline = false, className = "" }: { inline?: boolean; className?: string }) {
+  return <span className={`${inline ? "sweep-inline" : "sweep"} ${className}`} aria-hidden />;
 }
 
 /**
@@ -77,9 +76,9 @@ export function ThreadStatus({
       <Face name={agent} agent size={26} />
       <div className="flex min-w-0 flex-1 items-center gap-2 pt-1 text-sm">
         <span>{agent}</span>
-        <TypingDots className="text-accent" />
+        <Sweep inline />
         <span className="min-w-0 truncate text-muted">{starting ? "Picking this up" : (activity ?? "Working")}</span>
-        {!starting && <Elapsed since={since} className="ml-auto shrink-0 text-xs text-faint" />}
+        {!starting && <Elapsed since={since} className="ml-auto shrink-0 text-faint" />}
       </div>
     </li>
   );

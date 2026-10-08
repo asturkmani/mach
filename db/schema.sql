@@ -305,6 +305,9 @@ create table if not exists task_message_files (
 alter table tasks add column if not exists run_began_at timestamptz;
 alter table tasks add column if not exists run_activity text not null default '';
 
+-- How long the run took, on an agent's result: shown as "Done in 4m 12s".
+alter table task_messages add column if not exists duration_ms integer;
+
 -- An agent's reaction to a message in the thread: 👀 when it picks the message
 -- up, then ✅ done, 💬 asked, 🤝 handed off or ⚠️ hit a problem.
 create table if not exists task_message_reactions (

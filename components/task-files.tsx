@@ -196,11 +196,11 @@ function DeliverableCard({ file, taskNumber, taskId, startOpen }: { file: FileVi
   return (
     <div className="border border-line bg-raised">
       <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-        <button onClick={() => setOpen(!open)} className="flex min-w-0 items-center gap-2 text-left hover:text-accent">
+        <button onClick={() => setOpen(!open)} className="flex min-w-0 items-center gap-2 text-left hover:text-accent-ink">
           <Icon size={15} className="shrink-0 text-muted" />
           <span className="truncate font-mono text-sm">{file.name}</span>
           <span className="label shrink-0 text-faint">v{latest.version}</span>
-          {file.role === "input" && <span className="label shrink-0 text-accent">Input</span>}
+          {file.role === "input" && <span className="label shrink-0 text-accent-ink">Input</span>}
         </button>
         <span className="flex shrink-0 items-center gap-3">
           <span className="label hidden text-faint sm:inline">

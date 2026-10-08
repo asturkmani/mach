@@ -290,6 +290,7 @@ describe("taskBrief", () => {
       kind: "comment" as const,
       body: `message ${i}`,
       createdAt: new Date(),
+      durationMs: null,
       attachments: [],
       reactions: [],
     }));

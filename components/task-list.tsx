@@ -1,11 +1,12 @@
 "use client";
 
-import { LoaderCircle, Repeat } from "lucide-react";
+import { Repeat } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { approveOrDoneAction, pickOptionAction, restoreAction, setPriorityAction } from "@/app/(app)/tasks/actions";
+import { Sweep } from "@/components/agent-status";
 import { KeyHints } from "@/components/page-header";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
 import { When } from "@/components/ui";
@@ -33,6 +34,8 @@ export function TaskList({
   const router = useRouter();
   const { openLater, pushUndo, toast } = useShell();
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Rows on their way out: they move forward (right) for a moment, then hide.
+  const [leaving, setLeaving] = useState<Set<string>>(new Set());
   const [, start] = useTransition();
 
   const visible = useMemo(
@@ -49,15 +52,23 @@ export function TaskList({
     listRef.current?.querySelector(`[data-row="${index}"]`)?.scrollIntoView({ block: "nearest" });
   }, [index]);
 
-  const hide = (id: string) => setHidden((all) => new Set(all).add(id));
-  const unhide = (id: string) =>
-    setHidden((all) => {
-      const next = new Set(all);
-      next.delete(id);
-      return next;
-    });
+  const without = (all: Set<string>, id: string) => {
+    const next = new Set(all);
+    next.delete(id);
+    return next;
+  };
+  const hide = (id: string) => setLeaving((all) => new Set(all).add(id));
+  const gone = (id: string) => {
+    setLeaving((all) => without(all, id));
+    setHidden((all) => new Set(all).add(id));
+  };
+  const unhide = (id: string) => {
+    setLeaving((all) => without(all, id));
+    setHidden((all) => without(all, id));
+  };
 
   const approve = (task: TaskView) => {
+    if (leaving.has(task.id)) return;
     hide(task.id);
     start(async () => {
       const result = await approveOrDoneAction(task.id);
@@ -80,7 +91,7 @@ export function TaskList({
 
   const pick = (task: TaskView, n: number) => {
     const option = task.options[n];
-    if (!option) return;
+    if (!option || leaving.has(task.id)) return;
     hide(task.id);
     start(async () => {
       const result = await pickOptionAction(task.id, n);
@@ -136,7 +147,7 @@ export function TaskList({
   const offsets = visible.map((_, i) => visible.slice(0, i).reduce((n, s) => n + s.tasks.length, 0));
   return (
     <>
-      <div ref={listRef} className="scroll-quiet min-h-0 flex-1 overflow-y-auto pb-6 sm:px-3">
+      <div ref={listRef} className="scroll-quiet min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-6 sm:px-3">
         {visible.map((section, sectionIndex) => (
           <section key={section.title ?? "all"} className="pt-5">
             {section.title && <h2 className="px-4 pb-2 text-sm text-muted sm:px-5">{section.title}</h2>}
@@ -145,11 +156,16 @@ export function TaskList({
                 const i = offsets[sectionIndex] + n;
                 const isSelected = i === index;
                 return (
-                  <li key={task.id} data-row={i}>
+                  <li
+                    key={task.id}
+                    data-row={i}
+                    className={leaving.has(task.id) ? "exit-forward" : ""}
+                    onAnimationEnd={(e) => e.animationName === "exit-forward" && gone(task.id)}
+                  >
                     <Link
                       href={`/tasks/${task.number}`}
                       onMouseMove={() => cursor !== i && setCursor(i)}
-                      className={`block border-b border-line-soft px-4 py-4 sm:px-5 ${isSelected ? "bg-selected" : "hover:bg-hover"}`}
+                      className={`relative block border-b border-line-soft px-4 py-4 sm:px-5 ${isSelected ? "bg-selected" : "hover:bg-hover"}`}
                     >
                       <div className="flex items-baseline justify-between gap-3 sm:gap-6">
                         <p className={`flex min-w-0 items-center gap-2 text-[17px] ${task.priority === "urgent" ? "urgent-title" : ""}`}>
@@ -158,12 +174,11 @@ export function TaskList({
                         </p>
                         <span className="label flex shrink-0 items-center gap-3">
                           {task.running && (
-                            <span className="flex min-w-0 items-center gap-1.5 text-accent" title={task.activity ?? undefined}>
-                              <LoaderCircle size={12} className="spin-slow shrink-0" />
-                              <span className="max-w-24 truncate normal-case tracking-normal sm:max-w-56">{task.activity ?? "Working"}</span>
+                            <span className="min-w-0 text-accent-ink" title={task.activity ?? undefined}>
+                              <span className="block max-w-24 truncate normal-case tracking-normal sm:max-w-56">{task.activity ?? "Working"}</span>
                             </span>
                           )}
-                          {task.mentionedBy && <span className="text-accent">@ {task.mentionedBy}</span>}
+                          {task.mentionedBy && <span className="text-accent-ink">@ {task.mentionedBy}</span>}
                           {showStatus && !task.running && <span>{task.laterUntil ? "Later" : STATUS_WORDS[task.status]}</span>}
                           <span className="hidden max-w-48 truncate sm:inline">{byline(task)}</span>
                           <When date={task.updatedAt} />
@@ -183,11 +198,12 @@ export function TaskList({
                             >
                               <kbd className="kbd">{n + 1}</kbd>
                               <span className={option.recommended ? "text-ink" : "text-muted"}>{option.label}</span>
-                              {option.recommended && <span className="label text-accent">Recommended</span>}
+                              {option.recommended && <span className="label text-accent-ink">Recommended</span>}
                             </button>
                           ))}
                         </div>
                       )}
+                      {task.running && <Sweep />}
                     </Link>
                   </li>
                 );
