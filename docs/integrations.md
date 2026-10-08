@@ -7,7 +7,7 @@ Agents work with the company's other systems in two ways:
 
 Both are company-wide. Each can be limited to chosen agents, so the company can connect Masttro's API as a data source every analyst reads from, and give Masttro's web login only to the one data-entry agent.
 
-Everything is on the **Integrations** page: status, who can use it, access, credentials, the guide agents keep, and recent `call_api` activity.
+Everything is in **Settings → Integrations**: status, who can use it, access, credentials, the guide agents keep, and recent `call_api` activity.
 
 ## Connecting one
 
@@ -27,7 +27,7 @@ Then it saves the integration:
   - a test path.
 - **For a login:** the sign-in page, the fields (username, password, and optionally an authenticator setup key), a page that only shows when you're signed in, and form selectors if the defaults don't find the form.
 
-It then shows a credentials card in the chat. What people type in that card, or later on the Integrations page, goes straight to the server and is sealed. It never passes through a model, the chat or a task thread.
+It then shows a credentials card in the chat. What people type in that card, or later in Settings → Integrations, goes straight to the server and is sealed. It never passes through a model, the chat or a task thread.
 
 ## Keeping credentials out of models
 
@@ -49,7 +49,7 @@ The `browser_login` tool signs the job's browser in:
   - it moves to **Waiting** and shows up in their **Needs you**;
   - the helper and browser stay running in the sandbox;
   - a reply that is a code (e.g. "123 456") is sealed and handed to the helper on the agent's next run. The thread shows only "Sent the … sign-in code."
-- The signed-in session is saved, so later runs and other jobs skip the login until the site signs it out. "Forget" on the Integrations page drops it.
+- The signed-in session is saved, so later runs and other jobs skip the login until the site signs it out. "Forget" in Settings → Integrations drops it.
 - The sandbox template (`data-v3`) has Chromium. It also has `trust-network-proxy`, which lets the browser trust the network proxy that signs data source requests.
 
 Agents are told to show exactly what they'll enter, as a table, and get approval before changing anything in a system of record. They take screenshots before and after and attach them.
@@ -67,4 +67,4 @@ Each integration has a guide: what agents learned about using it, such as endpoi
 | `lib/agents/integration-steps.ts` | `call_api` and the guide tools |
 | `lib/agents/browser-steps.ts` | `browser_login`, the sign-in helper, codes and saved sessions |
 | `lib/agents/chief-of-staff.ts` | `connect_data_source`, `connect_login` |
-| `components/integrations.tsx`, `components/credentials-form.tsx` | The Integrations page and the credentials card |
+| `components/integrations.tsx`, `components/credentials-form.tsx` | Settings → Integrations and the credentials card |

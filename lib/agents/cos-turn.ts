@@ -3,6 +3,7 @@ import "server-only";
 import { createAgentUIStream, createIdGenerator, type UIMessage } from "ai";
 
 import { createChiefOfStaff, workspaceOf, type Channel } from "@/lib/agents/chief-of-staff";
+import { forModel, restoreOriginals } from "@/lib/agents/chat-attachments";
 import { prepareHistory } from "@/lib/agents/history";
 import { closeSandbox } from "@/lib/agents/sandbox-steps";
 import { listAgents } from "@/lib/agents/store";
@@ -91,11 +92,12 @@ export async function chiefOfStaffTurn(
   try {
     const stream = await createAgentUIStream({
       agent,
-      uiMessages: messages,
+      // Files attached in the chat panel are stored as links to the app, which the model can't open: it's told their names.
+      uiMessages: await forModel(context.organization.id, messages),
       originalMessages: messages as never,
       generateMessageId,
       onEnd: async ({ messages: all }) => {
-        finished = all as UIMessage[];
+        finished = restoreOriginals(all as UIMessage[], messages);
       },
     });
     for await (const chunk of stream) {

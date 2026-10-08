@@ -19,6 +19,7 @@ import { getOrganization } from "@/lib/orgs";
 import { loadProfile } from "@/lib/profile/store";
 import { deleteSchedule, getSchedule, saveSchedule, scheduleProblem, type ScheduleMode } from "@/lib/schedules";
 import { recordMentions } from "@/lib/task-mentions";
+import { imageForModel, MODEL_IMAGE_TYPES } from "@/lib/agents/images";
 import {
   addMessage,
   agentsOn,
@@ -132,8 +133,6 @@ export async function beginRun(
 }
 
 const MAX_IMAGES = 4;
-const MODEL_IMAGE_EDGE = 1568;
-
 /**
  * The images people attached in the thread since this agent last wrote there
  * (newest first, at most four), so it sees what they showed it. Each is scaled
@@ -145,21 +144,15 @@ async function newImages(organizationId: string, messages: TaskMessage[], agentI
     .slice(since + 1)
     .filter((m) => !m.agentId)
     .flatMap((m) => m.attachments)
-    .filter((a) => /^image\/(png|jpeg|gif|webp)$/.test(a.contentType))
+    .filter((a) => MODEL_IMAGE_TYPES.test(a.contentType))
     .slice(-MAX_IMAGES);
   if (attached.length === 0) return [];
-  const { default: sharp } = await import("sharp");
   const images: BriefImage[] = [];
   for (const a of attached) {
     const file = await readVersion(organizationId, a.versionId);
     if (!file) continue;
     try {
-      const scaled = await sharp(file.bytes)
-        .rotate()
-        .resize({ width: MODEL_IMAGE_EDGE, height: MODEL_IMAGE_EDGE, fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 85 })
-        .toBuffer();
-      images.push({ name: a.name, mediaType: "image/jpeg", data: scaled.toString("base64") });
+      images.push({ name: a.name, ...(await imageForModel(file.bytes)) });
     } catch (error) {
       console.error(`Couldn't read the image ${a.name}`, error);
     }

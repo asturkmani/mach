@@ -1,20 +1,22 @@
 "use client";
 
-import { Bell, BellOff, House, LogOut, Menu, MessageSquare, Monitor, Moon, PanelsTopLeft, Plus, Search, Sun, X } from "lucide-react";
+import { Bell, BellOff, House, LogOut, Menu, MessageSquare, Plus, Search, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { signOutAction } from "@/app/(app)/actions";
 import { Elapsed, TypingDots } from "@/components/agent-status";
+import { MachMark } from "@/components/brand";
 import { Face } from "@/components/ui";
 
 import { useNotificationPermission } from "./inbox-notifier";
-import { COMPANY_PAGES, isActive } from "./rail";
+import { COMPANY_LINKS, MAIN_PAGES, ThemeIcon, isActive, themeLabel } from "./rail";
 import { useShell } from "./shell";
 
 // A phone's navigation: a bar of the main actions at the bottom of the
-// screen, and a menu sheet with the company's pages and settings.
+// screen, and a menu sheet with the other pages, the company's profile and
+// settings, and your account.
 
 export function MobileNav() {
   const pathname = usePathname();
@@ -117,7 +119,7 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[80dvh] overflow-y-auto border-t border-line bg-panel pb-2 shadow-[var(--shadow)]">
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <p className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-[24px] w-[24px] shrink-0 items-center justify-center bg-ink font-mono text-sm font-semibold text-panel">M</span>
+            <MachMark size={24} />
             <span className="truncate text-[15px] font-medium">{data.organization.name}</span>
           </p>
           <button onClick={onClose} aria-label="Close" className="p-1 text-muted">
@@ -143,22 +145,28 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        <ul>
-          {[{ href: "/pages", label: "Pages", icon: PanelsTopLeft }, ...COMPANY_PAGES].map((page) => {
-            const Icon = page.icon;
-            const active = isActive(pathname, page.href);
-            return (
-              <li key={page.href}>
-                <Link href={page.href} className={`${row} ${active ? "bg-selected text-ink" : "text-muted"}`}>
-                  <Icon size={19} strokeWidth={1.6} />
-                  {page.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        {[MAIN_PAGES, COMPANY_LINKS].map((pages, i) => (
+          <ul key={i} className={i ? "mt-2 border-t border-line-soft pt-2" : undefined}>
+            {pages.map((page) => {
+              const Icon = page.icon;
+              const active = isActive(pathname, page.href);
+              return (
+                <li key={page.href}>
+                  <Link href={page.href} className={`${row} ${active ? "bg-selected text-ink" : "text-muted"}`}>
+                    <Icon size={19} strokeWidth={1.6} />
+                    {page.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        ))}
 
         <div className="mt-2 border-t border-line-soft pt-2">
+          <Link href="/settings/account" className={`${row} ${isActive(pathname, "/settings/account") ? "bg-selected text-ink" : "text-muted"}`}>
+            <UserRound size={19} strokeWidth={1.6} />
+            Account settings
+          </Link>
           {notifications.state !== "unsupported" && (
             <button
               onClick={async () => {
@@ -176,8 +184,8 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
             onClick={() => setTheme(theme === "system" ? "light" : theme === "light" ? "dark" : "system")}
             className={`${row} text-muted`}
           >
-            {theme === "light" ? <Sun size={19} strokeWidth={1.6} /> : theme === "dark" ? <Moon size={19} strokeWidth={1.6} /> : <Monitor size={19} strokeWidth={1.6} />}
-            Theme: {theme === "system" ? "match system" : theme}
+            <ThemeIcon theme={theme} size={19} />
+            {themeLabel(theme)}
           </button>
           <form action={signOutAction}>
             <button type="submit" className={`${row} text-muted`}>
