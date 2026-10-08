@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getDb } from "@/lib/db";
+import { pushConfigured, pushToPeople } from "@/lib/push";
 import type { AgentKind, AgentStatus } from "@/lib/agents/store";
 
 // Tasks are the jobs people and agents do together. Any mix of people and
@@ -303,6 +304,18 @@ export async function addMention(taskId: string, personId: string, byName: strin
      on conflict (task_id, person_id) do update set by_name = excluded.by_name, created_at = now(), seen_at = null`,
     [taskId, personId, byName],
   );
+  if (!pushConfigured()) return;
+  const [task] = await getDb().query<{ organization_id: string; number: number; title: string }>(
+    "select organization_id, number, title from tasks where id = $1",
+    [taskId],
+  );
+  if (!task) return;
+  await pushToPeople(
+    task.organization_id,
+    [personId],
+    { title: `${byName} mentioned you on #${task.number}`, body: task.title, url: `/tasks/${task.number}`, tag: `mention-${taskId}` },
+    { badge: () => countInbox(task.organization_id, personId) },
+  );
 }
 
 export async function markMentionsSeen(taskId: string, personId: string): Promise<void> {
@@ -497,11 +510,30 @@ export async function updateTask(organizationId: string, id: string, patch: Task
     );
   }
   if (set.length === 0) return getTask(organizationId, id);
-  await getDb().query(
-    `update tasks t set ${set.join(", ")}, updated_at = now() where t.organization_id = $1 and t.id = $2`,
+  // What the status was, to tell whether it just started needing someone.
+  const [before] = await getDb().query<{ status: TaskStatus }>(
+    `update tasks t set ${set.join(", ")}, updated_at = now()
+     from (select status from tasks where organization_id = $1 and id = $2) as prior
+     where t.organization_id = $1 and t.id = $2 returning prior.status`,
     params,
   );
-  return getTask(organizationId, id);
+  const task = await getTask(organizationId, id);
+  if (task && before && patch.status && patch.status !== before.status && NOTIFY_STATUS[patch.status]) await notifyNeeded(organizationId, task);
+  return task;
+}
+
+const NOTIFY_STATUS: Partial<Record<TaskStatus, string>> = { waiting: "needs your answer", review: "is ready for review" };
+
+/** A task just started waiting on its people: a push notification to each of them (who turned them on). */
+async function notifyNeeded(organizationId: string, task: Task): Promise<void> {
+  if (!pushConfigured() || (task.laterUntil && task.laterUntil > new Date())) return;
+  const people = task.members.filter((m) => m.type === "person").map((m) => m.id);
+  await pushToPeople(
+    organizationId,
+    people,
+    { title: `#${task.number} ${NOTIFY_STATUS[task.status]}`, body: task.summary || task.title, url: `/tasks/${task.number}`, tag: `task-${task.id}` },
+    { badge: (personId) => countInbox(organizationId, personId) },
+  );
 }
 
 export async function addMember(taskId: string, member: { personId?: string; agentId?: string }): Promise<void> {

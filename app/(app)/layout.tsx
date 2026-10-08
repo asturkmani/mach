@@ -12,6 +12,7 @@ import { listIntegrations } from "@/lib/integrations";
 import { listPages } from "@/lib/pages";
 import { blobConnected } from "@/lib/storage";
 import { anyRunning, listInbox, listInProgress, listSuggestionStatuses, listWorking } from "@/lib/tasks";
+import { pushPublicKey } from "@/lib/push";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { organization, user, person, isAdmin } = await requireAppContext();
@@ -52,6 +53,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         inProgressCount: inProgress.length,
         working: working.map((w) => ({ ...w, since: w.since ? new Date(w.since).toISOString() : null })),
         pages: pages.map((p) => ({ slug: p.slug, title: p.title, pinned: p.pinned })),
+        pushKey: pushPublicKey(),
       }}
       cos={{
         chatId: chat.id,

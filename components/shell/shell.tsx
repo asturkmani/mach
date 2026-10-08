@@ -35,6 +35,8 @@ export type ShellData = {
   working: { number: number; title: string; agent: string; activity: string; since: string | null }[];
   /** The company's pages, for the tabs of the ones someone has open. */
   pages: { slug: string; title: string; pinned: boolean }[];
+  /** The key a device subscribes to push notifications with, or null when push isn't set up. */
+  pushKey: string | null;
 };
 
 
@@ -369,7 +371,7 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
       {newTask && <NewTaskDialog onClose={() => setNewTask(false)} />}
       {laterFor && <LaterDialog taskId={laterFor} onClose={() => setLaterFor(null)} />}
       {help && <HelpDialog onClose={() => setHelp(false)} />}
-      <div className="pointer-events-none fixed inset-x-0 bottom-5 z-50 flex flex-col items-center gap-2">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-50 flex flex-col items-center gap-2 px-4 md:bottom-5">
         {toasts.map((t) => (
           <div
             key={t.id}

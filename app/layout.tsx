@@ -15,10 +15,24 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Mach",
   description: "Run your company with people and AI agents.",
+  applicationName: "Mach",
+  // Added to an iPhone's home screen, Mach opens full screen under a see-through status bar.
+  appleWebApp: { capable: true, title: "Mach", statusBarStyle: "black-translucent" },
+  formatDetection: { telephone: false },
 };
 
-// Fills the screen on phones with a notch; the app pads for the safe areas itself.
-export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
+// Fills the screen on phones with a notch; the app pads for the safe areas
+// itself. The browser's bars take the page's background, light or dark.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f2f0ec" },
+    { media: "(prefers-color-scheme: dark)", color: "#171615" },
+  ],
+};
 
 // Applies a saved light/dark choice before the first paint, so pages don't flash.
 const themeScript = `try{var t=localStorage.getItem("mach-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;

@@ -2,7 +2,8 @@
 
 import { signOutAction } from "@/app/(app)/actions";
 import { SettingRow } from "@/components/setting-row";
-import { useNotificationPermission } from "@/components/shell/inbox-notifier";
+import { useInstall } from "@/components/shell/device";
+import { useNotifications } from "@/components/shell/notifications";
 import { useShell, type Theme } from "@/components/shell/shell";
 
 const THEMES: [Theme, string][] = [
@@ -14,16 +15,8 @@ const THEMES: [Theme, string][] = [
 /** Your preferences in this browser, and signing out: the end of Settings → Account. */
 export function AccountPreferences() {
   const { theme, setTheme, toast } = useShell();
-  const notifications = useNotificationPermission();
-
-  const turnOnNotifications = async () => {
-    const result = await notifications.request();
-    toast(
-      result === "granted"
-        ? "You'll get a notification when something needs you."
-        : "Notifications are blocked. Allow them for this site in your browser's settings.",
-    );
-  };
+  const notifications = useNotifications();
+  const install = useInstall();
 
   return (
     <>
@@ -45,20 +38,35 @@ export function AccountPreferences() {
           </div>
         }
       />
-      {notifications.state !== "unsupported" && (
+      {notifications.available && (
         <SettingRow
           title="Notifications"
           description={
-            notifications.state === "granted"
-              ? "On in this browser. Turn them off in your browser's site settings."
-              : "Get a notification in this browser when something needs you."
+            notifications.on
+              ? "On for this device: you get a notification when something needs you."
+              : "Get a notification on this device when a task needs your answer or review, or someone mentions you."
           }
           action={
-            notifications.state === "granted" ? undefined : (
-              <button onClick={turnOnNotifications} className="btn">
-                Turn on
+            <button onClick={async () => toast(await notifications.toggle())} className="btn">
+              {notifications.on ? "Turn off" : "Turn on"}
+            </button>
+          }
+        />
+      )}
+      {(install.state === "prompt" || install.state === "ios") && (
+        <SettingRow
+          title="Mach app"
+          description={
+            install.state === "ios"
+              ? "Add Mach to your Home Screen: tap Share in Safari, then Add to Home Screen. It opens full screen, with notifications."
+              : "Install Mach on this device: it opens in its own window, with its icon in your dock or home screen."
+          }
+          action={
+            install.state === "prompt" ? (
+              <button onClick={async () => (await install.install()) && toast("Mach is installed.")} className="btn">
+                Install
               </button>
-            )
+            ) : undefined
           }
         />
       )}

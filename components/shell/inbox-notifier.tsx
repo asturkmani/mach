@@ -5,6 +5,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { arrivals, type InboxItem } from "@/lib/inbox-arrivals";
 
+import { pushOn } from "./device";
 import { useShell } from "./shell";
 
 // Tells people when something lands in their inbox: a toast in Mach, a
@@ -38,6 +39,22 @@ export function useNotificationPermission() {
   return { state, request };
 }
 
+/** A system notification, through the service worker where there is one (Android only allows it that way). */
+async function notify(what: string, item: InboxItem, open: (path: string) => void) {
+  const title = `Mach · ${what}`;
+  const options = { body: item.summary || item.title, tag: `task-${item.id}` };
+  const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined);
+  if (registration) {
+    return registration.showNotification(title, { ...options, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png", data: { url: `/tasks/${item.number}` } });
+  }
+  const note = new Notification(title, options);
+  note.onclick = () => {
+    window.focus();
+    open(`/tasks/${item.number}`);
+    note.close();
+  };
+}
+
 export function InboxNotifier() {
   const { data, toast } = useShell();
   const router = useRouter();
@@ -52,14 +69,8 @@ export function InboxNotifier() {
         const what = `#${item.number} ${STATUS_NOTE[item.status] ?? "needs you"}`;
         const onTask = pathname === `/tasks/${item.number}`;
         if (!onTask) toast(`${what}: ${item.title}`, { href: `/tasks/${item.number}` });
-        if (!document.hasFocus() && permission.read() === "granted") {
-          const note = new Notification(`Mach · ${what}`, { body: item.summary || item.title, tag: item.id });
-          note.onclick = () => {
-            window.focus();
-            router.push(`/tasks/${item.number}`);
-            note.close();
-          };
-        }
+        // A device with push on is notified by the server, open or not.
+        if (!document.hasFocus() && permission.read() === "granted" && !pushOn()) void notify(what, item, router.push);
       }
     }
     seen.current = new Map(items.map((item) => [item.id, item]));

@@ -138,6 +138,33 @@ body {
   background: var(--accent-soft);
 }
 
+/* Touch screens: behave like an app, not a web page. No grey flash on taps, no
+   rubber-band scrolling or pull-to-refresh of the whole app (lists scroll
+   inside it), and no zooming into a field when it's tapped (phones zoom into
+   text smaller than 16px). */
+@media (pointer: coarse) {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em) !important;
+  }
+  nav,
+  button,
+  [role="menuitem"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
 @layer components {
   /* Small uppercase monospace label: section names, metadata, keys. */
   .label {

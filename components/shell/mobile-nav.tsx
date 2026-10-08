@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, BellOff, House, LogOut, Menu, MessageSquare, Plus, Search, UserRound, X } from "lucide-react";
+import { Bell, BellOff, Download, House, LogOut, Menu, MessageSquare, Plus, Search, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -10,7 +10,8 @@ import { Elapsed, Sweep } from "@/components/agent-status";
 import { MachMark } from "@/components/brand";
 import { Face } from "@/components/ui";
 
-import { useNotificationPermission } from "./inbox-notifier";
+import { useInstall } from "./device";
+import { useNotifications } from "./notifications";
 import { COMPANY_LINKS, MAIN_PAGES, ThemeIcon, isActive, themeLabel } from "./rail";
 import { useShell } from "./shell";
 
@@ -111,7 +112,8 @@ export function MobileNav() {
 function MenuSheet({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const { data, theme, setTheme, toast } = useShell();
-  const notifications = useNotificationPermission();
+  const notifications = useNotifications();
+  const install = useInstall();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -173,17 +175,22 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
             <UserRound size={19} strokeWidth={1.6} />
             Account settings
           </Link>
-          {notifications.state !== "unsupported" && (
+          {notifications.available && (
+            <button onClick={async () => toast(await notifications.toggle())} className={`${row} text-muted`}>
+              {notifications.on ? <Bell size={19} strokeWidth={1.6} /> : <BellOff size={19} strokeWidth={1.6} />}
+              {notifications.label}
+            </button>
+          )}
+          {(install.state === "prompt" || install.state === "ios") && (
             <button
               onClick={async () => {
-                if (notifications.state === "granted") return toast("Notifications are on. Turn them off in your browser's site settings.");
-                const result = await notifications.request();
-                toast(result === "granted" ? "You'll get a notification when something needs you." : "Notifications are blocked in your browser's settings.");
+                if (install.state === "ios") return toast("Tap Share in Safari, then Add to Home Screen. Mach opens full screen from there.");
+                if (await install.install()) toast("Mach is on your home screen.");
               }}
               className={`${row} text-muted`}
             >
-              {notifications.state === "granted" ? <Bell size={19} strokeWidth={1.6} /> : <BellOff size={19} strokeWidth={1.6} />}
-              {notifications.state === "granted" ? "Notifications on" : "Turn on notifications"}
+              <Download size={19} strokeWidth={1.6} />
+              Install the app
             </button>
           )}
           <button

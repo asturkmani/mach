@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { rememberTimezoneAction } from "@/app/(app)/actions";
 
 import { CosPanel } from "./cos-panel";
+import { DeviceSetup, OfflineBanner } from "./device";
 import { Flyby } from "./flyby";
 import { InboxNotifier } from "./inbox-notifier";
 import { MobileNav } from "./mobile-nav";
 import { Rail } from "./rail";
 import { ShellProvider, useIsPhone, useShell, type ShellData } from "./shell";
+import { UrlActions } from "./url-actions";
 
 type CosProps = React.ComponentProps<typeof CosPanel>;
 
@@ -24,7 +26,7 @@ function Layout({ children, cos }: { children: React.ReactNode; cos: CosProps })
   return (
     <div className="flex h-dvh">
       <Rail />
-      <main className="flex min-w-0 flex-1 flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:py-3 md:pr-3">
+      <main className="flex min-w-0 flex-1 flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[calc(3.5rem+env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] md:py-3 md:pr-3 md:pl-0">
         <div className="frame flex min-h-0 flex-1 flex-col">{children}</div>
       </main>
       {/* Once opened, the panel stays mounted and is only hidden when closed, so a reply keeps streaming. */}
@@ -55,6 +57,11 @@ export function AppFrame({ data, cos, children }: { data: ShellData; cos: CosPro
   return (
     <ShellProvider data={data}>
       <InboxNotifier />
+      <DeviceSetup />
+      <OfflineBanner />
+      <Suspense fallback={null}>
+        <UrlActions />
+      </Suspense>
       <Flyby />
       <Layout cos={cos}>{children}</Layout>
     </ShellProvider>

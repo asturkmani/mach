@@ -380,3 +380,21 @@ create table if not exists page_ideas (
 -- A Chief of Staff reply keeps going when its browser disconnects (a closed
 -- panel, a reload); the Stop button asks for it to stop through this.
 alter table chats add column if not exists stop_requested_at timestamptz;
+
+-- A phone or browser that gets Mach's push notifications for a person: when a
+-- task starts waiting on them or is ready for their review, or someone
+-- @-mentions them. One row per device and person (a device can be signed in
+-- to two companies). Gone when the push service says the device unsubscribed.
+create table if not exists push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  person_id uuid not null references people (id) on delete cascade,
+  endpoint text not null,
+  p256dh text not null,
+  auth text not null,
+  user_agent text not null default '',
+  created_at timestamptz not null default now(),
+  unique (endpoint, person_id)
+);
+
+create index if not exists push_subscriptions_person on push_subscriptions (person_id);

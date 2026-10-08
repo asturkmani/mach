@@ -29,7 +29,7 @@ import { Elapsed, Sweep } from "@/components/agent-status";
 import { MachMark } from "@/components/brand";
 import { Face } from "@/components/ui";
 
-import { useNotificationPermission } from "./inbox-notifier";
+import { useNotifications } from "./notifications";
 import { startCosMessage, useShell, type ShellData } from "./shell";
 
 // The left menu: a column of icons that widens into labels while the pointer
@@ -73,7 +73,7 @@ export function ThemeIcon({ theme, size }: { theme: string; size: number }) {
 export function Rail() {
   const pathname = usePathname();
   const { data, openPalette, theme, setTheme, toast, setCosOpen } = useShell();
-  const notifications = useNotificationPermission();
+  const notifications = useNotifications();
 
   // One menu open at a time; going somewhere, clicking elsewhere or Esc closes it.
   const [menu, setMenu] = useState<"company" | "account" | "pages" | null>(null);
@@ -170,15 +170,7 @@ export function Rail() {
     </div>
   );
 
-  const toggleNotifications = async () => {
-    if (notifications.state === "granted") return toast("Notifications are on. Turn them off in your browser's site settings.");
-    const result = await notifications.request();
-    toast(
-      result === "granted"
-        ? "You'll get a notification when something needs you."
-        : "Notifications are blocked. Allow them for this site in your browser's settings.",
-    );
-  };
+  const toggleNotifications = async () => toast(await notifications.toggle());
 
   return (
     <nav ref={navRef} aria-label="Main" data-menu={menu ? "open" : undefined} className="group/rail relative z-30 hidden w-[60px] shrink-0 md:block">
@@ -232,10 +224,10 @@ export function Rail() {
                 icon={<ThemeIcon theme={theme} size={16} />}
                 onClick={() => setTheme(theme === "system" ? "light" : theme === "light" ? "dark" : "system")}
               />
-              {notifications.state !== "unsupported" && (
+              {notifications.available && (
                 <MenuItem
-                  label={notifications.state === "granted" ? "Notifications on" : "Turn on notifications"}
-                  icon={notifications.state === "granted" ? <Bell size={16} strokeWidth={1.6} /> : <BellOff size={16} strokeWidth={1.6} />}
+                  label={notifications.label}
+                  icon={notifications.on ? <Bell size={16} strokeWidth={1.6} /> : <BellOff size={16} strokeWidth={1.6} />}
                   onClick={toggleNotifications}
                 />
               )}

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Mach · Offline</title>
+    <style>
+      :root {
+        --bg: #f2f0ec;
+        --ink: #1c1b19;
+        --muted: #69645d;
+        --line: #d9d4cc;
+        --accent: #ec4800;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #171615;
+          --ink: #ece8e2;
+          --muted: #a39e97;
+          --line: #393633;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        display: grid;
+        place-items: center;
+        padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom);
+        box-sizing: border-box;
+      }
+      main {
+        max-width: 22rem;
+      }
+      svg {
+        width: 44px;
+        height: 44px;
+        display: block;
+        margin-bottom: 20px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 500;
+        margin: 0 0 6px;
+      }
+      p {
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      button {
+        font: inherit;
+        font-size: 15px;
+        color: var(--bg);
+        background: var(--ink);
+        border: 0;
+        padding: 10px 16px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg viewBox="0 0 1024 1024" aria-hidden="true">
+        <rect width="1024" height="1024" fill="#1c1b19" />
+        <g transform="translate(498 512) skewX(-12) translate(-512 -512)">
+          <path fill="#fbfaf8" d="M262 712V312h120l130 170 130-170h120v400H652V482L512 662 372 482v230z" />
+        </g>
+        <rect x="742" y="640" width="72" height="72" fill="#ec4800" />
+      </svg>
+      <h1>You're offline</h1>
+      <p>Mach needs a connection to load this. Your agents keep working in the meantime, and this page reloads when you're back.</p>
+      <button onclick="location.reload()">Try again</button>
+    </main>
+    <script>
+      addEventListener("online", () => location.reload());
+    </script>
+  </body>
+</html>
