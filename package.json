@@ -11,7 +11,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "vercel-build": "node scripts/migrate.mjs && next build",
-    "sandbox:template": "node --env-file-if-exists=.env.local scripts/sandbox-template.mjs"
+    "sandbox:template": "node --env-file-if-exists=.env.local scripts/sandbox-template.mjs",
+    "email:webhook": "node --env-file-if-exists=.env.local scripts/agentmail-webhook.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.133",

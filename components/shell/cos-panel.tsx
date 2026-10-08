@@ -139,10 +139,11 @@ export function CosPanel({
 
         {messages.map((message) =>
           message.role === "user" ? (
-            <div key={message.id} className="flex justify-end">
+            <div key={message.id} className="flex flex-col items-end gap-1">
               <div className="max-w-[88%] border border-line bg-raised px-3.5 py-2 text-[15px]">
                 {message.parts.map((part, i) => (part.type === "text" ? <p key={i} className="whitespace-pre-wrap">{part.text}</p> : null))}
               </div>
+              {channelOf(message) && <span className="label text-[10px] text-faint">via {channelOf(message) === "whatsapp" ? "WhatsApp" : "email"}</span>}
             </div>
           ) : (
             <div key={message.id} className="space-y-2.5">
@@ -229,6 +230,9 @@ function Checklist({ items }: { items: ChecklistItem[] }) {
     </div>
   );
 }
+
+/** Where a message came from, when it wasn't this panel. */
+const channelOf = (message: { metadata?: unknown }) => (message.metadata as { channel?: "whatsapp" | "email" } | undefined)?.channel;
 
 const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 

@@ -1,23 +1,14 @@
-import { createAgentUIStreamResponse, createIdGenerator, type UIMessage } from "ai";
+import { createAgentUIStreamResponse, type UIMessage } from "ai";
 
-import { createChiefOfStaff, workspaceOf } from "@/lib/agents/chief-of-staff";
-import { closeSandbox } from "@/lib/agents/sandbox-steps";
-import type { SandboxSession } from "@/lib/agents/toolkit";
+import { generateMessageId, loadChiefOfStaff } from "@/lib/agents/cos-turn";
 import { prepareHistory } from "@/lib/agents/history";
-import { listAgents } from "@/lib/agents/store";
 import { loadChat, saveChat } from "@/lib/chats";
-import { listLibrary } from "@/lib/files";
-import { listIntegrations } from "@/lib/integrations";
-import { loadProfile } from "@/lib/profile/store";
 import { getSessionContext } from "@/lib/session";
-import { listTasks } from "@/lib/tasks";
 
 // Long enough for a reply that searches the web or uses the Chief of Staff's
 // sandbox (signing in to a site, reading pages). Agent runs it starts are
 // separate workflows (see lib/agents/dispatch.ts).
 export const maxDuration = 300;
-
-const generateMessageId = createIdGenerator({ prefix: "msg", size: 16 });
 
 /** Accepts only a plain user text message from the browser; history comes from the database. */
 function parseUserMessage(value: unknown): UIMessage | null {
@@ -43,25 +34,9 @@ export async function POST(request: Request) {
   if (!chat) return new Response("Conversation not found.", { status: 404 });
 
   let agent;
-  const sandbox: SandboxSession = {};
+  let close: () => Promise<void>;
   try {
-    const [profile, agents, tasks, files, integrations] = await Promise.all([
-      loadProfile(context.organization.id),
-      listAgents(context.organization.id),
-      listTasks(context.organization.id, { closedLimit: 0 }),
-      listLibrary(context.organization.id, { limit: 30 }),
-      listIntegrations(context.organization.id),
-    ]);
-    agent = createChiefOfStaff({
-      organization: context.organization,
-      user: context.user,
-      person: context.person,
-      profile,
-      agents,
-      openTasks: tasks,
-      files,
-      integrations,
-    }, { sandbox });
+    ({ agent, close } = await loadChiefOfStaff({ organization: context.organization, user: context.user, person: context.person }));
   } catch (error) {
     // Configuration problems (e.g. no model set) are shown to the user as-is.
     return new Response(error instanceof Error ? error.message : "Could not start the Chief of Staff.", {
@@ -84,12 +59,7 @@ export async function POST(request: Request) {
     onEnd: async ({ messages: finished }) => {
       await saveChat(chat.id, await prepareHistory(finished, agent.tools));
       // Stop the workspace sandbox if this turn used it (it keeps running while a sign-in waits for a code).
-      if (sandbox.used) {
-        const organization = context.organization!;
-        await closeSandbox(workspaceOf({ organization, person: context.person })).catch((error) =>
-          console.error("Couldn't close the Chief of Staff's sandbox", error),
-        );
-      }
+      await close();
     },
     // Internal tool for now, so show the real reason (e.g. a missing AI Gateway key).
     onError: (error) => (error instanceof Error ? error.message : "Something went wrong."),

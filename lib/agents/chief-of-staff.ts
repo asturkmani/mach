@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 
 import type { AgentContext } from "@/lib/agents/prompts";
+import { appUrl } from "@/lib/app-url";
 import { skillList } from "@/lib/agents/skills";
 import {
   browserTools,
@@ -45,6 +46,9 @@ import type { SessionUser } from "@/lib/session";
 import { PRIORITIES, type Task } from "@/lib/tasks";
 import { createTaskWithTeam, resolveTeam, suggestProfileUpdate, WorkError } from "@/lib/work";
 
+/** Where a message to the Chief of Staff came from, besides the app's chat panel. */
+export type Channel = "whatsapp" | "email";
+
 type Context = {
   organization: Organization;
   user: SessionUser;
@@ -57,7 +61,16 @@ type Context = {
   files?: LibraryFile[];
   /** The company's data sources and logins. */
   integrations?: Integration[];
+  /** Set when this turn's message came by WhatsApp or email rather than the app. */
+  channel?: Channel;
 };
+
+function channelInstructions(channel: Channel): string {
+  const where = channel === "whatsapp" ? "WhatsApp" : "email";
+  return `This message came by ${where}, and your reply goes back the same way, as plain text. Keep it short: a few sentences or a short list, no tables or headings${
+    channel === "whatsapp" ? ", *single asterisks* for bold" : ""
+  }. Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give this link to finish in the app: ${appUrl("/")}. Links to a task are ${appUrl("/tasks/")} followed by its number. It's the same conversation as their chat panel in Mach, so they can carry on in either.`;
+}
 
 function onboardingInstructions({ organization }: Context): string {
   const website = organization.website
@@ -142,7 +155,7 @@ You are talking to ${context.person?.name ?? user.name} (${user.email}), who is 
 ${organization.onboardingCompletedAt ? afterOnboardingInstructions(context) : onboardingInstructions(context)}
 
 ${workInstructions(context)}
-
+${context.channel ? `\n${channelInstructions(context.channel)}\n` : ""}
 Recording facts:
 - The company profile below is a markdown document and your memory of the company. Record facts as soon as you learn them; don't ask permission to save.
 - Write in the company's own words, concise and factual. Never invent facts.

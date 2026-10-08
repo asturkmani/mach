@@ -1,5 +1,6 @@
 import "server-only";
 
+import { agentmailConfigured, deleteInbox } from "@/lib/channels/agentmail";
 import { getDb } from "@/lib/db";
 import { sandboxes, sandboxNameFor, workspaceSandboxName } from "@/lib/sandbox";
 import { removePrefix } from "@/lib/storage";
@@ -8,7 +9,7 @@ import { removePrefix } from "@/lib/storage";
 // the Chief of Staff's workspace sandbox, every file it stored in Blob (the
 // library, the drive, uploads), every row in the database (the organization
 // row cascades to people, chats, agents, tasks, files, integrations and their
-// credentials, schedules), and its WorkOS organization (memberships and
+// credentials, schedules), its Chief of Staff's email inbox, and its WorkOS organization (memberships and
 // invitations). People's WorkOS accounts stay: they may belong to other
 // companies.
 
@@ -52,6 +53,9 @@ export async function deleteCompany(
   const prefix = companyPrefix(organizationId);
   const names = await sandboxNames(organizationId);
   const removedSandboxes = await removeSandboxes(names.all);
+  // The Chief of Staff's email address.
+  const [org] = await getDb().query<{ email_inbox: string | null }>("select email_inbox from organizations where id = $1", [organizationId]);
+  if (org?.email_inbox && agentmailConfigured()) await deleteInbox(org.email_inbox);
   let files = await removePrefix(prefix);
 
   await getDb().query("delete from organizations where id = $1", [organizationId]);

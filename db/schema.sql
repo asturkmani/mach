@@ -314,3 +314,15 @@ create table if not exists task_message_reactions (
   updated_at timestamptz not null default now(),
   primary key (message_id, agent_id)
 );
+
+-- The company's email address for the Chief of Staff (an AgentMail inbox id, which is the address).
+alter table organizations add column if not exists email_inbox text;
+create unique index if not exists organizations_email_inbox on organizations (lower(email_inbox)) where email_inbox is not null;
+
+-- Messages from WhatsApp and email already handled, so a provider's retry isn't answered twice.
+create table if not exists inbound_messages (
+  provider text not null,
+  external_id text not null,
+  received_at timestamptz not null default now(),
+  primary key (provider, external_id)
+);

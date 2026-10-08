@@ -242,3 +242,13 @@ export async function syncPeopleSection(organizationId: string): Promise<string>
   );
   return updateProfile(organizationId, (markdown) => setSection(markdown, PEOPLE_SECTION, section));
 }
+
+/** A person's phone (their WhatsApp number), with its country code; empty clears it. */
+export async function setPhone(organizationId: string, personId: string, phone: string): Promise<void> {
+  const value = phone.trim();
+  await getDb().query("update people set phone = $3, updated_at = now() where organization_id = $1 and id = $2", [
+    organizationId,
+    personId,
+    value || null,
+  ]);
+}
