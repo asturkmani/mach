@@ -77,7 +77,12 @@ Suggest up to four pages this company would open every day or week, specific to 
  */
 export async function pageIdeas(
   organizationId: string,
-  options: { model?: LanguageModel; later?: (work: () => Promise<unknown>) => void } = {},
+  options: {
+    model?: LanguageModel;
+    later?: (work: () => Promise<unknown>) => void;
+    /** With later: don't wait for a company's first ideas either (none show until they're written). */
+    neverWait?: boolean;
+  } = {},
 ): Promise<PageIdea[]> {
   const text = await inputs(organizationId);
   const sha256 = createHash("sha256").update(INSTRUCTIONS).update(text).digest("hex");
@@ -86,9 +91,9 @@ export async function pageIdeas(
     [organizationId],
   );
   if (cached?.inputs_sha256 === sha256) return cached.ideas;
-  if (cached && options.later) {
+  if ((cached || options.neverWait) && options.later) {
     options.later(() => writeIdeas(organizationId, text, sha256, options.model));
-    return cached.ideas;
+    return cached?.ideas ?? [];
   }
   return (await writeIdeas(organizationId, text, sha256, options.model)) ?? cached?.ideas ?? [];
 }

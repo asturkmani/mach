@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useTransition } from "react";
 
 import { deletePageAction, refreshPageAction, restorePageAction } from "@/app/(app)/pages/actions";
-import { PageHeader } from "@/components/page-header";
+import { CosToggle } from "@/components/shell/cos-toggle";
 import { PageTabs } from "@/components/page-tabs";
 import { startCosMessage, useShell } from "@/components/shell/shell";
 import { When } from "@/components/ui";
+import type { PageIdea } from "@/lib/page-ideas";
 
 // A page: a header that says how fresh its data is and who keeps it fresh,
 // over the page itself in a sandboxed frame. The frame's document comes from
@@ -24,6 +25,7 @@ export function PageView({
   files,
   versions,
   refresh,
+  ideas,
 }: {
   page: { slug: string; title: string; description: string; version: number };
   /** An older version being looked at, or null for the latest. */
@@ -31,6 +33,8 @@ export function PageView({
   files: FileStatus[];
   versions: { version: number; note: string; byName: string; createdAt: string }[];
   refresh: Refresh | null;
+  /** Ideas for new pages, in the "+" menu at the end of the tabs. */
+  ideas: PageIdea[];
 }) {
   const router = useRouter();
   const { theme, toast, setCosOpen } = useShell();
@@ -66,13 +70,40 @@ export function PageView({
   const dated = files.filter((f) => f.updatedAt).map((f) => f.updatedAt!);
   const oldest = dated.length ? dated.reduce((a, b) => (a < b ? a : b)) : null;
   const missing = files.filter((f) => f.problem);
-  const button = "flex items-center gap-1.5 rounded px-2 py-1.5 text-sm hover:bg-hover hover:text-ink disabled:opacity-50";
+  const button = "flex items-center gap-1.5 rounded px-2 py-1.5 text-[13px] hover:bg-hover hover:text-ink disabled:opacity-50";
 
   return (
     <>
-      <PageTabs current={page.slug} />
-      <PageHeader title={page.title}>
-        <div className="mr-1 flex flex-wrap items-center gap-1">
+      <PageTabs current={page.slug} ideas={ideas} />
+
+      {/* One slim bar under the tabs: what the page reads and how fresh it is, then what you can do with it. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-1.5 text-xs text-muted sm:px-8">
+        {page.description && <span className="min-w-0 truncate">{page.description}</span>}
+        {files.length > 0 && (
+          <span title={files.map((f) => (f.live ? `${f.path} (live)` : `/vercel/drive/${f.path}`)).join("\n")}>
+            {files.every((f) => f.live) ? "Live data from Mach" : <>Data {oldest ? <When date={oldest} /> : "not there yet"}</>}
+          </span>
+        )}
+        {refresh ? (
+          refresh.failing ? (
+            <Link href={`/tasks/${refresh.number}`} className="text-warn hover:underline">
+              The last refresh failed: it&apos;s being fixed on #{refresh.number}
+            </Link>
+          ) : (
+            <Link href={`/tasks/${refresh.number}`} className="hover:text-ink">
+              Refreshed by #{refresh.number}
+              {refresh.schedule ? ` · ${refresh.schedule}` : ""}
+            </Link>
+          )
+        ) : (
+          files.some((f) => !f.live) && <span>Not refreshed on a schedule</span>
+        )}
+        {missing.length > 0 && (
+          <span className="text-warn">
+            {missing.map((f) => `${f.path}: ${f.problem}`).join(" · ")}
+          </span>
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-1 text-muted">
           {refresh && (
             <button
               className={button}
@@ -129,35 +160,8 @@ export function PageView({
           >
             <Trash2 size={15} strokeWidth={1.6} />
           </button>
+          <CosToggle />
         </div>
-      </PageHeader>
-
-      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line-soft px-4 py-2 text-xs text-muted sm:px-8">
-        {page.description && <span className="min-w-0 truncate">{page.description}</span>}
-        {files.length > 0 && (
-          <span title={files.map((f) => (f.live ? `${f.path} (live)` : `/vercel/drive/${f.path}`)).join("\n")}>
-            {files.every((f) => f.live) ? "Live data from Mach" : <>Data {oldest ? <When date={oldest} /> : "not there yet"}</>}
-          </span>
-        )}
-        {refresh ? (
-          refresh.failing ? (
-            <Link href={`/tasks/${refresh.number}`} className="text-warn hover:underline">
-              The last refresh failed: it&apos;s being fixed on #{refresh.number}
-            </Link>
-          ) : (
-            <Link href={`/tasks/${refresh.number}`} className="hover:text-ink">
-              Refreshed by #{refresh.number}
-              {refresh.schedule ? ` · ${refresh.schedule}` : ""}
-            </Link>
-          )
-        ) : (
-          files.some((f) => !f.live) && <span>Not refreshed on a schedule</span>
-        )}
-        {missing.length > 0 && (
-          <span className="text-warn">
-            {missing.map((f) => `${f.path}: ${f.problem}`).join(" · ")}
-          </span>
-        )}
       </div>
 
       {viewing && (

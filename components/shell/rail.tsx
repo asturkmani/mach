@@ -11,6 +11,7 @@ import {
   Monitor,
   Moon,
   PanelsTopLeft,
+  Plus,
   Search,
   Settings,
   Sun,
@@ -29,7 +30,7 @@ import { MachMark } from "@/components/brand";
 import { Face } from "@/components/ui";
 
 import { useNotificationPermission } from "./inbox-notifier";
-import { useShell, type ShellData } from "./shell";
+import { startCosMessage, useShell, type ShellData } from "./shell";
 
 // The left menu: a column of icons that widens into labels while the pointer
 // (or keyboard focus) is on it, or while one of its menus is open, laid over
@@ -71,11 +72,11 @@ export function ThemeIcon({ theme, size }: { theme: string; size: number }) {
 
 export function Rail() {
   const pathname = usePathname();
-  const { data, openPalette, theme, setTheme, toast } = useShell();
+  const { data, openPalette, theme, setTheme, toast, setCosOpen } = useShell();
   const notifications = useNotificationPermission();
 
   // One menu open at a time; going somewhere, clicking elsewhere or Esc closes it.
-  const [menu, setMenu] = useState<"company" | "account" | null>(null);
+  const [menu, setMenu] = useState<"company" | "account" | "pages" | null>(null);
   const [menuFor, setMenuFor] = useState(pathname);
   if (menuFor !== pathname) {
     setMenuFor(pathname);
@@ -126,6 +127,49 @@ export function Rail() {
     );
   };
 
+  // Pages: the row opens the tabbed view of the pages you have open; its chevron drops down every page and "New page".
+  const pagesRow = (item: Item) => (
+    <div key={item.href}>
+      <div className="relative">
+        {link(item)}
+        <button
+          onClick={() => setMenu(menu === "pages" ? null : "pages")}
+          aria-expanded={menu === "pages"}
+          aria-label="All pages"
+          title="All pages"
+          className={`${text} invisible absolute top-1 left-[190px] rounded p-2 text-faint group-hover/rail:visible group-has-[:focus-visible]/rail:visible group-data-[menu=open]/rail:visible hover:bg-hover hover:text-ink`}
+        >
+          <ChevronDown size={15} className={menu === "pages" ? "rotate-180" : ""} />
+        </button>
+      </div>
+      {menu === "pages" && (
+        <div className="mt-0.5 mb-1 ml-[26px] border-l border-line-soft pl-2">
+          {data.pages.map((page) => (
+            <Link
+              key={page.slug}
+              href={`/pages/${page.slug}`}
+              className={`block truncate px-2.5 py-1.5 text-sm hover:bg-hover hover:text-ink ${
+                pathname === `/pages/${page.slug}` ? "text-ink" : "text-muted"
+              }`}
+            >
+              {page.title}
+            </Link>
+          ))}
+          <button
+            onClick={() => {
+              setMenu(null);
+              startCosMessage("Build me a page: ", setCosOpen);
+            }}
+            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm text-muted hover:bg-hover hover:text-ink"
+          >
+            <Plus size={14} strokeWidth={1.8} />
+            New page
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   const toggleNotifications = async () => {
     if (notifications.state === "granted") return toast("Notifications are on. Turn them off in your browser's site settings.");
     const result = await notifications.request();
@@ -175,7 +219,7 @@ export function Rail() {
           <div className="space-y-0.5">
             {link({ href: "/", label: "Home", icon: House, count: data.inboxCount, accent: true })}
             {data.working.length > 0 && <Working working={data.working} text={text} />}
-            {MAIN_PAGES.map(link)}
+            {MAIN_PAGES.map((item) => (item.href === "/pages" ? pagesRow(item) : link(item)))}
           </div>
         </div>
 

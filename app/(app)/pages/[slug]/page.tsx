@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 
 import { PageView } from "@/components/page-view";
+import { pageIdeas } from "@/lib/page-ideas";
 import { getPage, listPageVersions, pageDataStatus } from "@/lib/pages";
 import { getSchedule } from "@/lib/schedules";
 import { requireAppContext } from "@/lib/session";
@@ -14,11 +16,13 @@ export default async function PagePage({ params, searchParams }: PageProps<"/pag
   const [{ slug }, query] = await Promise.all([params, searchParams]);
   const page = await getPage(organization.id, slug);
   if (!page || page.version === 0) notFound();
-  const [files, versions, task, schedule] = await Promise.all([
+  const [files, versions, task, schedule, ideas] = await Promise.all([
     pageDataStatus(organization.id, page),
     listPageVersions(organization.id, slug),
     page.taskId ? getTask(organization.id, page.taskId) : null,
     page.taskId ? getSchedule(page.taskId) : null,
+    // Cached; when out of date the old ones show and new ones are written after the response.
+    pageIdeas(organization.id, { later: (work) => after(work), neverWait: true }).catch(() => []),
   ]);
   const asked = Number(query.v);
   const viewing = versions.some((v) => v.version === asked) && asked !== page.version ? asked : null;
@@ -28,6 +32,7 @@ export default async function PagePage({ params, searchParams }: PageProps<"/pag
       page={{ slug: page.slug, title: page.title, description: page.description, version: page.version }}
       viewing={viewing}
       files={files.map((f) => ({ path: f.path, live: Boolean(f.live), updatedAt: f.updatedAt?.toISOString() ?? null, problem: f.problem ?? null }))}
+      ideas={ideas}
       versions={versions.map((v) => ({ version: v.version, note: v.note, byName: v.byName, createdAt: v.createdAt.toISOString() }))}
       refresh={
         task && !task.archivedAt

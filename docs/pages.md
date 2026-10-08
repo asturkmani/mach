@@ -1,6 +1,6 @@
 # Pages
 
-A page is a view of the company's data that people keep coming back to: net worth by entity, cash across banks, the pipeline. People ask the Chief of Staff for one; it builds it in the chat and keeps it up to date. The Pages screen shows every page as a small live picture of itself; pages someone opens sit in tabs across the top, remembered in their browser.
+A page is a view of the company's data that people keep coming back to: net worth by entity, cash across banks, the pipeline. People ask the Chief of Staff for one; it builds it in the chat and keeps it up to date. Pages in the left menu opens the tabbed view (the page you looked at last); its chevron drops down every page and New page. Open pages sit in tabs across the top, remembered in your browser, with a "+" for a new page: describe it to the Chief of Staff or pick an idea.
 
 ## What a page reads
 
@@ -19,7 +19,7 @@ The `building-pages` skill is the playbook the Chief of Staff follows.
 
 ## Ideas
 
-The Pages screen suggests up to four pages written for the company (`lib/page-ideas.ts`): a model reads the company profile, its integrations (and whether each is a connected data source or only a login), the files on its drive and the pages it already has. Ideas only use data a page can read: data sources and drive files. One that needs a system connected first says so, and picking it asks the Chief of Staff to connect it, then build the page. Ideas are kept in `page_ideas` until any of those inputs change, so the screen only waits for a model when something new happened (and streams them in after the list). Set `PAGE_IDEAS_MODEL` to use a cheaper model than the Chief of Staff's.
+The new-page menu (and the Pages screen when no tabs are open) suggests up to four pages written for the company (`lib/page-ideas.ts`): a model reads the company profile, its integrations (and whether each is a connected data source or only a login), the files on its drive and the pages it already has. Ideas only use data a page can read: data sources and drive files. One that needs a system connected first says so, and picking it asks the Chief of Staff to connect it, then build the page. Ideas are kept in `page_ideas` until any of those inputs change, so the screen only waits for a model when something new happened (and streams them in after the list). Set `PAGE_IDEAS_MODEL` to use a cheaper model than the Chief of Staff's.
 
 ## How a page runs
 

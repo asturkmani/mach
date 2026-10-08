@@ -1,25 +1,48 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useEffect } from "react";
+
+import { lastPage } from "@/components/page-tabs";
 import { startCosMessage, useShell } from "@/components/shell/shell";
+import { useMounted } from "@/components/ui";
 import type { PageIdea } from "@/lib/page-ideas";
 
 /**
- * A page as a small live picture of itself: its frame drawn at desktop size
- * and scaled down, not clickable (the card around it is the link).
+ * Pages in the left menu: back to the page looked at last, in its tabs. With
+ * no tabs open, the company's pages to pick from; with none yet, how to make one.
  */
-export function PageThumbnail({ slug, title }: { slug: string; title: string }) {
-  const { theme } = useShell();
+export function PagesHome({ pages, children }: { pages: { slug: string; title: string; description: string }[]; children: React.ReactNode }) {
+  const router = useRouter();
+  const { setCosOpen } = useShell();
+  // Open tabs are remembered in this browser, so where to go is only known once mounted.
+  const mounted = useMounted();
+  const target = mounted ? lastPage(pages.map((p) => p.slug)) : null;
+  useEffect(() => {
+    if (target) router.replace(`/pages/${target}`);
+  }, [target, router]);
+  if (pages.length === 0) return <PagesEmpty>{children}</PagesEmpty>;
+  if (!mounted || target) return null;
   return (
-    <div className="relative aspect-[16/10] overflow-hidden bg-panel">
-      <iframe
-        src={`/pages/${slug}/frame${theme === "system" ? "" : `?theme=${theme}`}`}
-        title={`${title} (preview)`}
-        sandbox="allow-scripts"
-        loading="lazy"
-        tabIndex={-1}
-        aria-hidden
-        className="pointer-events-none absolute top-0 left-0 h-[400%] w-[400%] origin-top-left scale-25 border-0"
-      />
+    <div className="mx-auto max-w-lg space-y-6 py-6">
+      <ul className="divide-y divide-line-soft border border-line bg-raised">
+        {pages.map((page) => (
+          <li key={page.slug}>
+            <Link href={`/pages/${page.slug}`} className="block px-4 py-3 hover:bg-hover">
+              <span className="block text-[15px]">{page.title}</span>
+              {page.description && <span className="block truncate text-sm text-muted">{page.description}</span>}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <button onClick={() => startCosMessage("Build me a page: ", setCosOpen)} className="text-sm text-muted underline-offset-4 hover:text-ink hover:underline">
+        + New page
+      </button>
+      <section className="space-y-3">
+        <h2 className="label">Ideas</h2>
+        {children}
+      </section>
     </div>
   );
 }
@@ -61,8 +84,8 @@ export function PagesEmpty({ children }: { children: React.ReactNode }) {
     <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
       <p className="text-[17px]">No pages yet.</p>
       <p className="text-sm text-muted">
-        A page is a report on your data that the Chief of Staff builds for you and keeps up to date. Ask the Chief of Staff for
-        one, or pick an idea:
+        A page is a report on your data that the Chief of Staff builds for you and keeps up to date. Open pages sit in tabs. Ask
+        the Chief of Staff for one, or pick an idea:
       </p>
       {children}
     </div>
