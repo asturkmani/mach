@@ -60,7 +60,7 @@ async function inputs(organizationId: string): Promise<string> {
   ].join("\n\n");
 }
 
-const INSTRUCTIONS = `You suggest pages for a company that uses Mach. A page is a dashboard of the company's own data that the Chief of Staff builds and keeps fresh on a schedule: headline numbers, tables and charts, shown as a tab on Home.
+const INSTRUCTIONS = `You suggest pages for a company that uses Mach. A page is a dashboard of the company's own data that the Chief of Staff builds and keeps fresh on a schedule: headline numbers, tables and charts, in its Pages.
 
 Suggest up to four pages this company would open every day or week, specific to what it does and the systems it uses. Rules:
 - A page can show data from the company's data sources (APIs), files on its company drive, and Mach's own data, read live: its tasks (status, priority, who's on them, dates), people and agents. Not chats or other documents. Prefer connected data sources and Mach's own data. A system named in the profile, or connected only as a website login, can be suggested too, with needsConnecting set to its name, since its API has to be connected first.

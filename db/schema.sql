@@ -376,3 +376,7 @@ create table if not exists page_ideas (
   ideas jsonb not null,
   created_at timestamptz not null default now()
 );
+
+-- A Chief of Staff reply keeps going when its browser disconnects (a closed
+-- panel, a reload); the Stop button asks for it to stop through this.
+alter table chats add column if not exists stop_requested_at timestamptz;

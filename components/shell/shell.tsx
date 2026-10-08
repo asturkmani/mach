@@ -33,7 +33,7 @@ export type ShellData = {
   inProgressCount: number;
   /** Agents working right now, for the status in the left menu. */
   working: { number: number; title: string; agent: string; activity: string; since: string | null }[];
-  /** The company's pages; pinned ones are tabs on Home. */
+  /** The company's pages, for the tabs of the ones someone has open. */
   pages: { slug: string; title: string; pinned: boolean }[];
 };
 

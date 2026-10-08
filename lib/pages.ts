@@ -12,7 +12,7 @@ import { getTask } from "@/lib/tasks";
 import { archiveTask, createTaskWithTeam, rerunScript, scheduleTask, WorkError, type Actor } from "@/lib/work";
 
 // Pages: views of the company's data that people ask the Chief of Staff for
-// ("net worth by entity from Masttro, every morning"), shown as tabs on Home.
+// ("net worth by entity from Masttro, every morning"), in Pages.
 // A page is one HTML document, every version kept, that reads files on the
 // company drive. It never fetches anything itself: it runs in a sandboxed
 // frame with no network, and Mach hands it the data. A recurring job keeps
@@ -202,10 +202,6 @@ export async function restorePageVersion(organizationId: string, slug: string, v
     by,
   });
   return saved;
-}
-
-export async function setPinned(organizationId: string, slug: string, pinned: boolean): Promise<void> {
-  await getDb().query("update pages set pinned = $3 where organization_id = $1 and slug = $2", [organizationId, slug, pinned]);
 }
 
 /** Deletes a page with its versions, and archives the job that refreshed it. Its data stays on the drive. */

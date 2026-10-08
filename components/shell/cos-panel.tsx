@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { stopChatAction } from "@/app/(app)/actions";
 import { sendSignInCodeAction } from "@/app/(app)/integrations/actions";
 import { pickOptionAction } from "@/app/(app)/tasks/actions";
 import { CredentialsForm, StatusLine } from "@/components/credentials-form";
@@ -70,11 +71,11 @@ export function CosPanel({
   /** Whether files can be attached (a Blob store is connected). */
   canAttach: boolean;
 }) {
-  const { data, setCosOpen, toast } = useShell();
+  const { data, setCosOpen, toast, cosOpen } = useShell();
   const router = useRouter();
   // Page refreshes bring newer history from the server; the chat keeps its own copy from first load.
   const [initialMessages] = useState(loadedMessages);
-  const { messages, sendMessage, status, error, stop } = useChat<ChiefOfStaffMessage>({
+  const { messages, setMessages, sendMessage, status, error, stop } = useChat<ChiefOfStaffMessage>({
     id: chatId,
     messages: initialMessages,
     transport,
@@ -82,6 +83,18 @@ export function CosPanel({
   const [input, setInput] = useState("");
   const busy = status === "submitted" || status === "streaming";
   const onboarded = data.organization.onboarded;
+
+  // Replies run to the end on the server even when this page went away mid-reply (a reload, another tab).
+  // Then the last message here is the question: check back until the reply is saved, and show it.
+  const waiting = !busy && messages.at(-1)?.role === "user" && !error;
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setTimeout(() => router.refresh(), 3000);
+    return () => clearTimeout(timer);
+  }, [waiting, loadedMessages, router]);
+  useEffect(() => {
+    if (!busy && loadedMessages.length > messages.length && loadedMessages.at(-1)?.role === "assistant") setMessages(loadedMessages);
+  }, [busy, loadedMessages, messages.length, setMessages]);
 
   // When a tool changes tasks, the profile or the team, refresh the page behind the chat.
   const finishedTools = messages
@@ -102,10 +115,11 @@ export function CosPanel({
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    // Only when someone opened the panel; on page loads, keys stay with the page.
-    if (cosFocus.requested) inputRef.current?.focus({ preventScroll: true });
+    // Only when someone opened the panel; on page loads, keys stay with the page. The panel stays mounted
+    // while closed (so a reply keeps streaming), so this runs each time it opens.
+    if (cosOpen && cosFocus.requested) inputRef.current?.focus({ preventScroll: true });
     cosFocus.requested = false;
-  }, []);
+  }, [cosOpen]);
 
   useEffect(() => {
     // A page asked to start a message ("About the Net worth page: "): put it in the box, ready to finish.
@@ -220,7 +234,7 @@ export function CosPanel({
           ),
         )}
 
-        {status === "submitted" && <p className="label animate-pulse">Thinking…</p>}
+        {(status === "submitted" || waiting) && <p className="label animate-pulse">{waiting ? "Still working…" : "Thinking…"}</p>}
         {error && <p className="border border-danger/40 px-3 py-2 text-sm text-danger">Something went wrong: {error.message}</p>}
       </div>
 
@@ -284,7 +298,16 @@ export function CosPanel({
               </>
             )}
             {busy ? (
-              <button type="button" onClick={stop} aria-label="Stop" className="btn px-2">
+              <button
+                type="button"
+                onClick={() => {
+                  // The reply runs on the server whether or not this page is listening: ask it to stop there too.
+                  void stopChatAction(chatId).catch(() => {});
+                  stop();
+                }}
+                aria-label="Stop"
+                className="btn px-2"
+              >
                 <Square size={14} />
               </button>
             ) : (
@@ -404,7 +427,6 @@ function ToolPart({
       <Link href={`/pages/${page.slug}`} className="block border border-line bg-raised px-3.5 py-3 hover:border-muted">
         <p className="label mb-1">
           Page {created ? "created" : `saved · v${page.version}`}
-          {page.pinned ? " · tab on Home" : ""}
         </p>
         <p className="text-[15px]">{page.title}</p>
         <p className="mt-1 text-xs text-muted">Open it</p>

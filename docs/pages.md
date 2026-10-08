@@ -1,6 +1,6 @@
 # Pages
 
-A page is a view of the company's data that people keep coming back to: net worth by entity, cash across banks, the pipeline. People ask the Chief of Staff for one; it builds it in the chat and keeps it up to date. Pinned pages are tabs on Home, next to the work.
+A page is a view of the company's data that people keep coming back to: net worth by entity, cash across banks, the pipeline. People ask the Chief of Staff for one; it builds it in the chat and keeps it up to date. The Pages screen shows every page as a small live picture of itself; pages someone opens sit in tabs across the top, remembered in their browser.
 
 ## What a page reads
 

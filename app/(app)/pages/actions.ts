@@ -2,7 +2,7 @@
 
 import { refresh } from "next/cache";
 
-import { deletePage, getPage, PageError, restorePageVersion, setPinned } from "@/lib/pages";
+import { deletePage, getPage, PageError, restorePageVersion } from "@/lib/pages";
 import { requireAppContext } from "@/lib/session";
 import { rerunScript, WorkError } from "@/lib/work";
 
@@ -31,10 +31,6 @@ export async function refreshPageAction(slug: string): Promise<PageActionResult>
     if (!page?.taskId) throw new PageError("This page has no refresh job. Ask the Chief of Staff to set one up.");
     await rerunScript(organization.id, page.taskId, { name: person.name, personId: person.id });
   });
-}
-
-export async function setPinnedAction(slug: string, pinned: boolean): Promise<PageActionResult> {
-  return attempt(({ organization }) => setPinned(organization.id, slug, pinned));
 }
 
 export async function restorePageAction(slug: string, version: number): Promise<PageActionResult> {

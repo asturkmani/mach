@@ -1,9 +1,10 @@
-import { createAgentUIStreamResponse, type UIMessage } from "ai";
+import { consumeStream, createAgentUIStreamResponse, type UIMessage } from "ai";
+import { after } from "next/server";
 
 import { forModel, MAX_CHAT_ATTACHMENTS, restoreOriginals, saveChatAttachments, type ChatUpload } from "@/lib/agents/chat-attachments";
 import { generateMessageId, loadChiefOfStaff } from "@/lib/agents/cos-turn";
 import { prepareHistory } from "@/lib/agents/history";
-import { loadChat, saveChat } from "@/lib/chats";
+import { clearStop, loadChat, saveChat, stopRequested } from "@/lib/chats";
 import { getSessionContext } from "@/lib/session";
 
 // Long enough for a reply that searches the web or uses the Chief of Staff's
@@ -77,12 +78,26 @@ export async function POST(request: Request) {
   // Save the question first so it isn't lost if the run fails.
   await saveChat(chat.id, messages);
 
+  // The reply runs to the end even if the browser goes away (the panel closed, a reload): it isn't tied to
+  // the request, the stream is read to its end after the response, and only Stop (stopChatAction) ends it early.
+  await clearStop(chat.id);
+  const stop = new AbortController();
+  const watch = setInterval(() => {
+    stopRequested(chat.id)
+      .then((requested) => requested && stop.abort())
+      .catch(() => {});
+  }, 2000);
+  const unwatch = setTimeout(() => clearInterval(watch), maxDuration * 1000);
+
   return createAgentUIStreamResponse({
     agent,
     uiMessages: await forModel(context.organization.id, messages),
-    abortSignal: request.signal,
+    abortSignal: stop.signal,
     generateMessageId,
+    consumeSseStream: ({ stream }) => after(consumeStream({ stream })),
     onEnd: async ({ messages: finished }) => {
+      clearInterval(watch);
+      clearTimeout(unwatch);
       // What the model was shown (attached images as data) is never stored; the conversation keeps its file links.
       await saveChat(chat.id, await prepareHistory(restoreOriginals(finished, messages), agent.tools));
       // Stop the workspace sandbox if this turn used it (it keeps running while a sign-in waits for a code).

@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/page-header";
-import { IdeasLoading, PageIdeaList, PagesEmpty, PinToggle } from "@/components/pages-list";
+import { IdeasLoading, PageIdeaList, PagesEmpty, PageThumbnail } from "@/components/pages-list";
 import { When } from "@/components/ui";
 import { pageIdeas } from "@/lib/page-ideas";
 import { listPages, pageDataStatus } from "@/lib/pages";
@@ -14,7 +14,7 @@ async function Ideas({ organizationId }: { organizationId: string }) {
   return <PageIdeaList ideas={await pageIdeas(organizationId, { later: (work) => after(work) })} />;
 }
 
-// Every page the company has, then ideas for more. Pinned pages are also tabs on Home.
+// Every page the company has, as small live pictures of themselves, then ideas for more.
 export default async function PagesPage() {
   const { organization } = await requireAppContext();
   const pages = (await listPages(organization.id)).filter((p) => p.version > 0);
@@ -33,33 +33,33 @@ export default async function PagesPage() {
           <PagesEmpty>{ideas}</PagesEmpty>
         ) : (
           <>
-            <ul className="divide-y divide-line-soft border border-line bg-raised">
+            <ul className="grid gap-5 sm:grid-cols-2 2xl:grid-cols-3">
               {pages.map((page, i) => {
-                const dated = status[i].filter((f) => f.updatedAt).map((f) => f.updatedAt!.toISOString());
+                const files = status[i];
+                const dated = files.filter((f) => f.updatedAt).map((f) => f.updatedAt!.toISOString());
                 const oldest = dated.length ? dated.reduce((a, b) => (a < b ? a : b)) : null;
+                const freshness =
+                  files.length === 0 ? null : files.every((f) => f.live) ? "Live" : oldest ? <>Data <When date={oldest} /></> : "No data yet";
                 return (
-                  <li key={page.id} className="flex items-center gap-4 px-4 py-3">
-                    <Link href={`/pages/${page.slug}`} className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] hover:underline">{page.title}</span>
-                      {page.description && <span className="block truncate text-sm text-muted">{page.description}</span>}
+                  <li key={page.id}>
+                    <Link href={`/pages/${page.slug}`} className="group block border border-line bg-raised hover:border-muted">
+                      <div className="border-b border-line">
+                        <PageThumbnail slug={page.slug} title={page.title} />
+                      </div>
+                      <div className="space-y-1 px-4 py-3">
+                        <p className="truncate text-[15px] group-hover:underline">{page.title}</p>
+                        <p className="label truncate text-faint">
+                          {freshness}
+                          {freshness && page.taskNumber ? " · " : ""}
+                          {page.taskNumber ? `refreshed by #${page.taskNumber}` : ""}
+                        </p>
+                      </div>
                     </Link>
-                    <span className="label hidden shrink-0 text-faint sm:inline">
-                      {status[i].length === 0
-                        ? "no data"
-                        : status[i].every((f) => f.live)
-                          ? "live data"
-                          : oldest
-                            ? <>data <When date={oldest} /></>
-                            : "no data yet"}
-                      {page.taskNumber ? ` · #${page.taskNumber}` : ""}
-                    </span>
-                    <span className="label shrink-0 text-faint">v{page.version}</span>
-                    <PinToggle slug={page.slug} pinned={page.pinned} />
                   </li>
                 );
               })}
             </ul>
-            <section className="mt-10 max-w-2xl space-y-3">
+            <section className="mt-12 max-w-2xl space-y-3">
               <h2 className="label">Ideas for more pages</h2>
               {ideas}
             </section>

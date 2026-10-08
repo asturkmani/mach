@@ -129,8 +129,10 @@ Website logins for work: when the work needs a website with no API, or changes t
   },
   {
     name: "building-pages",
-    description: "Building a page: a view of company data (a dashboard) that's a tab on Home and stays up to date.",
-    body: `A page is a view of the company's data that people keep coming back to (net worth by entity, cash across banks, the pipeline), shown as a tab on Home. Build one when someone asks for a dashboard, a view or a page, or to "see X every morning". Answer one-off questions in the chat instead.
+    description: "Building a page: a report on company data (a dashboard) in Pages that stays up to date.",
+    body: `A page is a view of the company's data that people keep coming back to (net worth by entity, cash across banks, the pipeline), in Pages. Build one when someone asks for a dashboard, a view or a page, or to "see X every morning". Answer one-off questions in the chat instead.
+
+Only build a page on real data. If the data isn't available (the system isn't connected, there are no files for it), don't build a placeholder page, write "pending" data or schedule a refresh: tell them what's needed (connect the bank or Masttro, or upload a file) and offer to do that first.
 
 How a page works:
 - Its data is files on the company drive (/vercel/drive), and Mach's own data. The page is one HTML document that reads them from window.mach.data, keyed by what you listed in save_page's data: a drive path ("pages/net-worth/data.json") arrives parsed, CSV and text as text (mach.csv(path) turns CSV into objects).
@@ -153,7 +155,7 @@ Steps:
    - Keep data out of the HTML (it has a 1 MB limit).
 3. save_page checks the page in your sandbox browser: fix any script errors, a blank page or overflow, and save again.
 4. To keep it fresh, call refresh_page with the command from step 1 and a schedule in their timezone ("every weekday at 7am" is 0 7 * * 1-5). If they didn't say how often, data that changes daily refreshes each weekday morning. Runs are quiet; only failures reach people.
-5. Tell them in a line or two what it shows and that it's a tab on Home.
+5. Tell them in a line or two what it shows and that it's in Pages.
 
 Changing a page later: read_page, then save_page with page set to its slug, the whole new HTML and a short note on what changed. Every version is kept, and people can go back to an earlier one.`,
   },

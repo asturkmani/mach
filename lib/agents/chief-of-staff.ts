@@ -63,7 +63,7 @@ type Context = {
   files?: LibraryFile[];
   /** The company's data sources and logins. */
   integrations?: Integration[];
-  /** The company's pages: views of its data, tabs on Home. */
+  /** The company's pages: reports on its data. */
   pages?: Page[];
   /** Set when this turn's message came by WhatsApp or email rather than the app. */
   channel?: Channel;
@@ -110,7 +110,7 @@ function workInstructions(context: Context): string {
   const { agents = [], openTasks = [], files = [], integrations = [], pages = [] } = context;
   const pageLines = pages
     .filter((p) => p.version > 0)
-    .map((p) => `- ${p.slug}: ${p.title}${p.pinned ? " (tab on Home)" : ""}, reads ${p.data.join(", ") || "no files"}${p.taskNumber ? `, refreshed by #${p.taskNumber}` : ", not refreshed on a schedule"}`);
+    .map((p) => `- ${p.slug}: ${p.title}, reads ${p.data.join(", ") || "no files"}${p.taskNumber ? `, refreshed by #${p.taskNumber}` : ", not refreshed on a schedule"}`);
   const integrationLines = integrations.map(
     (i) =>
       `- ${i.slug}: ${i.name} (${i.kind === "api" ? "data source" : "login"}, ${i.access === "read" ? "read-only" : "read and write"}, ${i.status.replace("_", " ")}${
@@ -148,7 +148,7 @@ Integrations: the company's other systems, connected so agents can use them with
 Your sandbox: like every agent, you have a Linux sandbox for the company with a browser in it. Use browse to read pages fetch_page can't (JavaScript apps, pages behind one of the company's logins), browser_login to sign in to a login, and run_code to work through what you saved (an API spec, say). It's for looking things up while you set things up or answer a question; real work still goes to a task.
 ${integrationLines.join("\n") || "(none yet)"}
 
-Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), shown as tabs on Home and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers.
+Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers.
 ${pageLines.join("\n") || "(no pages yet)"}
 
 Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in create_task's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:

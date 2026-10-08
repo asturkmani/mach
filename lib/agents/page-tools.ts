@@ -8,11 +8,13 @@ import type { AgentContext } from "@/lib/agents/prompts";
 import type { SandboxUser } from "@/lib/agents/toolkit";
 import { appUrl } from "@/lib/app-url";
 import { buildPageDocument } from "@/lib/page-frame";
-import { getPage, pageHtml, PageError, readPageData, savePage, setPageRefresh, type PageAuthor } from "@/lib/pages";
+import { drivePath } from "@/lib/drive";
+import { isMachSource } from "@/lib/mach-sources";
+import { getPage, pageDataStatus, pageHtml, PageError, readPageData, savePage, setPageRefresh, type PageAuthor } from "@/lib/pages";
 import { getSchedule } from "@/lib/schedules";
 
 // The Chief of Staff's tools for pages: views of the company's data, shown as
-// tabs on Home. It writes a page's HTML against files on the drive, checks it
+// reports in Pages. It writes a page's HTML against files on the drive, checks it
 // in its sandbox browser, and sets up the quiet job that keeps the data fresh.
 
 const ago = (date: Date | null) => {
@@ -26,7 +28,7 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
   return {
     save_page: tool({
       description:
-        "Create a page (a view of company data, shown as a tab on Home), or save a new version of one. Load the building-pages skill first. The page is one HTML document that reads what you list in data (drive files, and Mach's own tasks, people and agents, live) from window.mach.data; it can't fetch anything. It's checked in your sandbox browser after saving, and you get what rendered and any script errors.",
+        "Create a page (a report on company data, in Pages), or save a new version of one. Only with real data: if it isn't available yet, don't save a page; say what's needed. Load the building-pages skill first. The page is one HTML document that reads what you list in data (drive files, and Mach's own tasks, people and agents, live) from window.mach.data; it can't fetch anything. It's checked in your sandbox browser after saving, and you get what rendered and any script errors.",
       inputSchema: z.object({
         page: z.string().optional().describe("The slug of the page to change. Leave out to create a page."),
         title: z.string().min(1).max(40).describe("A short name for the tab, e.g. Net worth."),
@@ -39,6 +41,14 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
       }),
       execute: async (input) => {
         try {
+          // A page is a report on real data: refuse one whose data doesn't exist yet rather than save a placeholder.
+          const data = input.data.map((path) => (isMachSource(path.trim()) ? path.trim() : drivePath(path)));
+          const status = await pageDataStatus(orgId, { data });
+          if (status.length === 0 || status.every((f) => !f.live && !f.updatedAt)) {
+            return {
+              error: `none of its data exists yet${data.length ? ` (${data.join(", ")} ${data.length === 1 ? "isn't" : "aren't"} on the drive)` : ""}. Get the data first (connect the system, run the script that writes the file), or tell them what's needed; don't build a placeholder page.`,
+            };
+          }
           const { page, created, changed } = await savePage(orgId, {
             slug: input.page,
             title: input.title,
@@ -73,6 +83,7 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
           };
         } catch (error) {
           if (error instanceof PageError) return { error: error.message };
+          if (error instanceof Error && /drive|path|name/i.test(error.message)) return { error: error.message };
           throw error;
         }
       },
@@ -82,7 +93,7 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
           "error" in output
             ? `Not saved: ${output.error}`
             : [
-                `${output.created ? "Created" : output.changed ? "Saved" : "No change to"} ${output.page.title} (${output.page.slug}), version ${output.page.version}${output.page.pinned ? ", pinned as a tab on Home" : ""}. They see a card that opens it.`,
+                `${output.created ? "Created" : output.changed ? "Saved" : "No change to"} ${output.page.title} (${output.page.slug}), version ${output.page.version}. They see a card that opens it.`,
                 `Data: ${output.data.map((d) => `${d.path} (${d.status})`).join(", ") || "none"}.`,
                 output.check ?? "",
               ]

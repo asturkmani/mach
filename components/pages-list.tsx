@@ -1,30 +1,26 @@
 "use client";
 
-import { Pin, PinOff } from "lucide-react";
-import { useTransition } from "react";
-
-import { setPinnedAction } from "@/app/(app)/pages/actions";
 import { startCosMessage, useShell } from "@/components/shell/shell";
 import type { PageIdea } from "@/lib/page-ideas";
 
-export function PinToggle({ slug, pinned }: { slug: string; pinned: boolean }) {
-  const { toast } = useShell();
-  const [pending, startTransition] = useTransition();
+/**
+ * A page as a small live picture of itself: its frame drawn at desktop size
+ * and scaled down, not clickable (the card around it is the link).
+ */
+export function PageThumbnail({ slug, title }: { slug: string; title: string }) {
+  const { theme } = useShell();
   return (
-    <button
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await setPinnedAction(slug, !pinned);
-          if (result.error) toast(result.error);
-        })
-      }
-      aria-label={pinned ? "Unpin from Home" : "Pin to Home"}
-      title={pinned ? "Pinned to Home: click to take it off" : "Pin to Home's tabs"}
-      className={`shrink-0 rounded p-1.5 hover:bg-hover ${pinned ? "text-ink" : "text-faint"}`}
-    >
-      {pinned ? <Pin size={15} strokeWidth={1.6} /> : <PinOff size={15} strokeWidth={1.6} />}
-    </button>
+    <div className="relative aspect-[16/10] overflow-hidden bg-panel">
+      <iframe
+        src={`/pages/${slug}/frame${theme === "system" ? "" : `?theme=${theme}`}`}
+        title={`${title} (preview)`}
+        sandbox="allow-scripts"
+        loading="lazy"
+        tabIndex={-1}
+        aria-hidden
+        className="pointer-events-none absolute top-0 left-0 h-[400%] w-[400%] origin-top-left scale-25 border-0"
+      />
+    </div>
   );
 }
 
@@ -65,8 +61,8 @@ export function PagesEmpty({ children }: { children: React.ReactNode }) {
     <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
       <p className="text-[17px]">No pages yet.</p>
       <p className="text-sm text-muted">
-        A page is a view of your data that the Chief of Staff builds for you and keeps up to date. Pin it and it becomes a tab on
-        Home. Ask the Chief of Staff for one, or pick an idea:
+        A page is a report on your data that the Chief of Staff builds for you and keeps up to date. Ask the Chief of Staff for
+        one, or pick an idea:
       </p>
       {children}
     </div>

@@ -1,11 +1,11 @@
 "use client";
 
-import { MessageSquare, Pin, PinOff, RotateCw, Trash2 } from "lucide-react";
+import { MessageSquare, RotateCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useTransition } from "react";
 
-import { deletePageAction, refreshPageAction, restorePageAction, setPinnedAction } from "@/app/(app)/pages/actions";
+import { deletePageAction, refreshPageAction, restorePageAction } from "@/app/(app)/pages/actions";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs } from "@/components/page-tabs";
 import { startCosMessage, useShell } from "@/components/shell/shell";
@@ -25,7 +25,7 @@ export function PageView({
   versions,
   refresh,
 }: {
-  page: { slug: string; title: string; description: string; version: number; pinned: boolean };
+  page: { slug: string; title: string; description: string; version: number };
   /** An older version being looked at, or null for the latest. */
   viewing: number | null;
   files: FileStatus[];
@@ -70,6 +70,7 @@ export function PageView({
 
   return (
     <>
+      <PageTabs current={page.slug} />
       <PageHeader title={page.title}>
         <div className="mr-1 flex flex-wrap items-center gap-1">
           {refresh && (
@@ -114,15 +115,6 @@ export function PageView({
           <button
             className={button}
             disabled={pending}
-            onClick={() => run(() => setPinnedAction(page.slug, !page.pinned), page.pinned ? "Taken off Home." : "Pinned to Home.")}
-            title={page.pinned ? "Take it off Home's tabs" : "Pin it to Home's tabs"}
-            aria-label={page.pinned ? "Unpin from Home" : "Pin to Home"}
-          >
-            {page.pinned ? <PinOff size={15} strokeWidth={1.6} /> : <Pin size={15} strokeWidth={1.6} />}
-          </button>
-          <button
-            className={button}
-            disabled={pending}
             onClick={() => {
               if (!confirm(`Delete the ${page.title} page and its versions? Its data stays on the drive${refresh ? ", and its refresh job is archived" : ""}.`)) return;
               startTransition(async () => {
@@ -139,7 +131,6 @@ export function PageView({
           </button>
         </div>
       </PageHeader>
-      <PageTabs active={page.slug} />
 
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-line-soft px-4 py-2 text-xs text-muted sm:px-8">
         {page.description && <span className="min-w-0 truncate">{page.description}</span>}

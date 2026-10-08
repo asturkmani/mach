@@ -117,7 +117,7 @@ describe("pages", () => {
       [["run_code", { filename: "refresh.py", language: "python", code: "exec(open('/vercel/drive/pages/net-worth/refresh.py').read())" }]],
       [["save_page", { title: "Net worth", description: "Net worth by entity, from Masttro.", html: PAGE_HTML, data: [DATA] }]],
       [["refresh_page", { page: "net-worth", command: "python3 /vercel/drive/pages/net-worth/refresh.py", cron: "0 7 * * 1-5", timezone: "Europe/London" }]],
-      "Your Net worth page is a tab on Home. It refreshes every weekday at 07:00.",
+      "Your Net worth page is in Pages. It refreshes every weekday at 07:00.",
     ]);
     const agent = createChiefOfStaff(
       { organization, user: { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" }, person, profile: "" },
@@ -162,6 +162,22 @@ describe("pages", () => {
     const thread = await listMessages(job.id);
     expect(thread.some((m) => m.body.includes("run.sh failed") && m.body.includes("masttro returned 401"))).toBe(true);
     expect((await listInbox(ORG, person.id)).map((t) => t.id)).toEqual([job.id]);
+  });
+
+  it("aren't saved without real data: the Chief of Staff is told what's missing instead", async () => {
+    const person = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
+    const organization = { ...(await getOrganization(ORG))!, onboardingCompletedAt: new Date() };
+    const model = scriptedModel([
+      [["save_page", { title: "Cash across banks", html: "<p>Awaiting data</p>", data: ["pages/bank-cash/data.json"] }]],
+      "There's no cash data yet: connect your bank or Masttro first.",
+    ]);
+    const agent = createChiefOfStaff(
+      { organization, user: { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" }, person, profile: "" },
+      { model, research: false },
+    );
+    const result = await agent.generate({ prompt: "Build me a page of our cash across all bank accounts." });
+    expect(result.steps[0].toolResults[0]!.output).toEqual({ error: expect.stringContaining("none of its data exists yet") });
+    expect(await listPages(ORG)).toEqual([]);
   });
 
   it("keep every version, skip unchanged saves and can go back to an old one", async () => {
