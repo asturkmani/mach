@@ -21,6 +21,7 @@ import {
   unarchiveAction,
   updateTaskTextAction,
 } from "@/app/(app)/tasks/actions";
+import { celebrateDone } from "@/components/shell/flyby";
 import { CodeSection, FilesSection, type FileView, type LibraryOption } from "@/components/task-files";
 import { MentionTextarea, type MentionCandidate } from "@/components/mention-textarea";
 import { Elapsed, formatElapsed, Reactions, Sweep, ThreadStatus, type ReactionView } from "@/components/agent-status";
@@ -130,6 +131,7 @@ export function TaskDetail({
       const result = await approveOrDoneAction(task.id);
       if (result.error) return toast(result.error);
       const previous = result.snapshot;
+      if (previous) celebrateDone();
       if (previous) pushUndo(`Marked #${task.number} done`, async () => void (await restoreAction(task.id, previous)));
       goNext();
     });
@@ -138,6 +140,7 @@ export function TaskDetail({
     start(async () => {
       const result = await setStatusAction(task.id, status);
       if (result.error) return toast(result.error);
+      if (status === "done") celebrateDone();
       const previous = result.snapshot;
       if (previous) pushUndo(`Moved #${task.number} to ${STATUS_WORDS[status]}`, async () => void (await restoreAction(task.id, previous)));
     });

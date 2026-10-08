@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { approveOrDoneAction, pickOptionAction, restoreAction, setPriorityAction } from "@/app/(app)/tasks/actions";
+import { celebrateDone } from "@/components/shell/flyby";
 import { Sweep } from "@/components/agent-status";
 import { KeyHints } from "@/components/page-header";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
@@ -78,6 +79,7 @@ export function TaskList({
       }
       const previous = result.snapshot;
       if (previous) {
+        celebrateDone();
         pushUndo(`Marked #${task.number} done`, async () => {
           unhide(task.id);
           await restoreAction(task.id, previous);

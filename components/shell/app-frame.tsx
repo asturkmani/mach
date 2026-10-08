@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { rememberTimezoneAction } from "@/app/(app)/actions";
 
 import { CosPanel } from "./cos-panel";
+import { Flyby } from "./flyby";
 import { InboxNotifier } from "./inbox-notifier";
 import { MobileNav } from "./mobile-nav";
 import { Rail } from "./rail";
@@ -54,6 +55,7 @@ export function AppFrame({ data, cos, children }: { data: ShellData; cos: CosPro
   return (
     <ShellProvider data={data}>
       <InboxNotifier />
+      <Flyby />
       <Layout cos={cos}>{children}</Layout>
     </ShellProvider>
   );

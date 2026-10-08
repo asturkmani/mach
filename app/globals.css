@@ -381,3 +381,27 @@ body {
     opacity: 0.6;
   }
 }
+
+/* The Bell X-1 crossing the screen when a task is done (components/shell/flyby.tsx). */
+@keyframes flyby {
+  0% {
+    transform: translateX(-260px) translateY(8px) rotate(-3deg);
+    opacity: 0;
+  }
+  10%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(calc(100vw + 40px)) translateY(-6px) rotate(-5deg);
+    opacity: 0;
+  }
+}
+.flyby {
+  animation: flyby 1.6s cubic-bezier(0.45, 0, 0.25, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flyby {
+    display: none;
+  }
+}

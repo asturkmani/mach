@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { restoreAction, setStatusAction } from "@/app/(app)/tasks/actions";
+import { celebrateDone } from "@/components/shell/flyby";
 import { useKeys, useShell } from "@/components/shell/shell";
 import { Elapsed, Sweep } from "@/components/agent-status";
 import { Face, PriorityMark } from "@/components/ui";
@@ -43,6 +44,7 @@ export function Board({
         setMoved((all) => ({ ...all, [task.id]: task.status }));
         return toast(result.error);
       }
+      if (status === "done") celebrateDone();
       const previous = result.snapshot;
       if (previous) {
         pushUndo(`Moved #${task.number} to ${STATUS_WORDS[status]}`, async () => {
