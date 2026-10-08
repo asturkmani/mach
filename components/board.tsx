@@ -1,13 +1,13 @@
 "use client";
 
-import { LoaderCircle, Repeat } from "lucide-react";
+import { Repeat } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { restoreAction, setStatusAction } from "@/app/(app)/tasks/actions";
 import { useKeys, useShell } from "@/components/shell/shell";
-import { TypingDots } from "@/components/agent-status";
+import { Elapsed, Sweep } from "@/components/agent-status";
 import { Face, PriorityMark } from "@/components/ui";
 import type { TaskView } from "@/lib/task-view";
 import { BOARD_COLUMNS, STATUS_WORDS, type TaskStatus } from "@/lib/task-words";
@@ -113,14 +113,13 @@ export function Board({
                 <Link
                   href={`/tasks/${task.number}`}
                   onMouseMove={() => (cursor.column !== c || cursor.row !== r) && setCursor({ column: c, row: r })}
-                  className={`block border bg-raised px-3 py-2.5 ${
+                  className={`relative block border bg-raised px-3 py-2.5 ${
                     c === column && r === row ? "border-muted" : "border-line hover:border-muted"
                   }`}
                 >
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <span className="label text-faint">#{task.number}</span>
                     <span className="flex items-center gap-2">
-                      {task.running && <LoaderCircle size={12} className="spin-slow text-accent" />}
                       {task.laterUntil && <span className="label text-faint">Later</span>}
                       {task.repeats && <Repeat size={12} className="text-faint" aria-label="Repeats" />}
                       <PriorityMark priority={task.priority} />
@@ -128,9 +127,9 @@ export function Board({
                   </div>
                   <p className={`text-[15px] leading-snug ${task.priority === "urgent" ? "urgent-title" : ""}`}>{task.title}</p>
                   {task.running ? (
-                    <p className="mt-1 flex items-center gap-1.5 text-sm text-muted">
-                      <TypingDots className="shrink-0 text-accent" />
+                    <p className="mt-1 flex items-center justify-between gap-2 text-sm text-muted">
                       <span className="truncate">{task.activity ?? "Working"}</span>
+                      <Elapsed since={task.runSince} className="shrink-0" />
                     </p>
                   ) : (
                     task.summary && <p className="mt-1 line-clamp-2 text-sm text-muted">{task.summary}</p>
@@ -143,6 +142,7 @@ export function Board({
                       <Face key={a.id} name={a.name} agent size={20} />
                     ))}
                   </div>
+                  {task.running && <Sweep />}
                 </Link>
               </li>
             ))}

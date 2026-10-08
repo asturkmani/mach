@@ -24,7 +24,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { signOutAction } from "@/app/(app)/actions";
-import { Elapsed, TypingDots } from "@/components/agent-status";
+import { Elapsed, Sweep } from "@/components/agent-status";
 import { MachMark } from "@/components/brand";
 import { Face } from "@/components/ui";
 
@@ -116,7 +116,7 @@ export function Rail() {
         <span className={`${text} flex-1`}>{item.label}</span>
         {item.count ? (
           <>
-            <span className={`${text} font-mono text-sm ${item.accent ? "text-accent" : "text-faint"}`}>{item.count}</span>
+            <span className={`${text} font-mono text-sm ${item.accent ? "text-accent-ink" : "text-faint"}`}>{item.count}</span>
             {item.accent && (
               <span className="absolute left-[30px] top-[9px] h-1.5 w-1.5 rounded-full bg-accent group-hover/rail:opacity-0 group-has-[:focus-visible]/rail:opacity-0 group-data-[menu=open]/rail:opacity-0" />
             )}
@@ -219,7 +219,7 @@ export function Rail() {
 
 function MenuList({ className, children }: { className: string; children: React.ReactNode }) {
   return (
-    <div role="menu" className={`absolute inset-x-1.5 z-10 border border-line bg-panel py-1 shadow-[var(--shadow)] ${className}`}>
+    <div role="menu" className={`enter-drop absolute inset-x-1.5 z-10 border border-line bg-panel py-1 shadow-[var(--shadow)] ${className}`}>
       {children}
     </div>
   );
@@ -256,18 +256,16 @@ function MenuItem({
 }
 
 /**
- * Agents working right now: three moving dots under Home while the menu is
- * narrow; widened, who is on which task and what they're doing.
+ * Agents working right now: a sweep under Home while the menu is narrow;
+ * widened, who is on which task and what they're doing.
  */
 function Working({ working, text }: { working: ShellData["working"]; text: string }) {
   const label = `${working.length} agent${working.length === 1 ? "" : "s"} working`;
   return (
     <div className="mt-1" role="status" aria-label={label}>
-      <div className="flex h-8 items-center gap-3 px-[17px] whitespace-nowrap text-accent" title={label}>
-        <span className="flex w-[18px] shrink-0 justify-center">
-          <TypingDots />
-        </span>
-        <span className={`${text} label flex-1 text-accent`}>{label}</span>
+      <div className="flex h-8 items-center gap-3 px-[17px] whitespace-nowrap" title={label}>
+        <Sweep inline />
+        <span className={`${text} label flex-1 text-accent-ink`}>{label}</span>
       </div>
       <ul className="hidden space-y-0.5 group-hover/rail:block group-has-[:focus-visible]/rail:block">
         {working.slice(0, 5).map((w) => (

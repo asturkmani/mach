@@ -374,7 +374,7 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
           <div
             key={t.id}
             role="status"
-            className="pointer-events-auto flex items-center gap-3 border border-line bg-raised px-4 py-2 text-sm shadow-[var(--shadow)]"
+            className="enter-rise pointer-events-auto flex items-center gap-3 border border-line bg-raised px-4 py-2 text-sm shadow-[var(--shadow)]"
           >
             <span>{t.text}</span>
             {t.href && (
@@ -383,7 +383,7 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
                   setToasts((all) => all.filter((x) => x.id !== t.id));
                   router.push(t.href!);
                 }}
-                className="text-accent hover:underline"
+                className="text-accent-ink hover:underline"
               >
                 Open
               </button>

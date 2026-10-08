@@ -35,7 +35,7 @@ function Dialog({
       <div
         role="dialog"
         aria-label={title}
-        className={`frame w-full ${wide ? "max-w-2xl" : "max-w-md"} bg-raised p-6 shadow-[var(--shadow)]`}
+        className={`frame enter-drop w-full ${wide ? "max-w-2xl" : "max-w-md"} bg-raised p-6 shadow-[var(--shadow)]`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">

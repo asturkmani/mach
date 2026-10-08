@@ -26,7 +26,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
           </Link>
           <Face name={agent.name} agent size={32} />
           <div className="min-w-0">
-            <h1 className="truncate text-[22px] tracking-tight">{agent.name}</h1>
+            <h1 className="truncate text-[22px] font-medium tracking-tight">{agent.name}</h1>
             <p className="label">
               {agent.kind === "worker" ? "Worker agent" : "Defined agent"} · {agent.status}
             </p>

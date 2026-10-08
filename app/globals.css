@@ -2,8 +2,9 @@
 @plugin "@tailwindcss/typography";
 
 /*
- * Mach's look: a warm, quiet workspace with a dotted backdrop, framed panels,
- * small monospace labels and one accent colour for what needs attention.
+ * Mach's look: fast, not frantic. A warm, quiet workspace with a dotted
+ * backdrop, framed panels and small monospace labels; one accent colour,
+ * International Orange, for what needs attention; and quick, forward motion.
  * Every colour is a token so light and dark stay in step.
  */
 
@@ -19,8 +20,13 @@
   --ink: #1c1b19;
   --muted: #69645d;
   --faint: #9c978f;
-  --accent: #d4521c;
-  --accent-soft: rgba(212, 82, 28, 0.1);
+  /* International Orange (the Bell X-1's), deepened to hold 3:1 on every surface. Fills and marks only. */
+  --accent: #ec4800;
+  --accent-soft: rgba(236, 72, 0, 0.1);
+  /* Orange text: 4.8:1 or more on every surface. */
+  --accent-ink: #b0390a;
+  /* Text and marks on an accent fill. */
+  --on-accent: #1c1b19;
   --ok: #3b8455;
   --warn: #a9711b;
   --danger: #bf3b28;
@@ -41,8 +47,10 @@
     --ink: #ece8e2;
     --muted: #a39e97;
     --faint: #6f6b65;
-    --accent: #ef6b33;
-    --accent-soft: rgba(239, 107, 51, 0.13);
+    --accent: #ff6a1f;
+    --accent-soft: rgba(255, 106, 31, 0.13);
+    --accent-ink: #ff6a1f;
+    --on-accent: #171615;
     --ok: #6fbf89;
     --warn: #e0a64a;
     --danger: #f07a64;
@@ -63,13 +71,27 @@
   --ink: #ece8e2;
   --muted: #a39e97;
   --faint: #6f6b65;
-  --accent: #ef6b33;
-  --accent-soft: rgba(239, 107, 51, 0.13);
+  --accent: #ff6a1f;
+  --accent-soft: rgba(255, 106, 31, 0.13);
+  --accent-ink: #ff6a1f;
+  --on-accent: #171615;
   --ok: #6fbf89;
   --warn: #e0a64a;
   --danger: #f07a64;
   --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
   color-scheme: dark;
+}
+
+/* Motion: things arrive in 120ms and leave in 80ms; forward is to the right. */
+:root {
+  --duration-enter: 120ms;
+  --duration-exit: 80ms;
+  --duration-sweep: 1100ms;
+  --easing-out: cubic-bezier(0.2, 0, 0, 1);
+  --easing-in: cubic-bezier(0.4, 0, 1, 1);
+  --easing-sweep: cubic-bezier(0.6, 0, 0.4, 1);
+  --travel-enter: 4px;
+  --travel-exit: 24px;
 }
 
 @theme inline {
@@ -85,11 +107,18 @@
   --color-faint: var(--faint);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+/* Headings are medium weight and taut: tracking-tight is used only on them. */
+@theme {
+  --tracking-tight: -0.035em;
 }
 
 html,
@@ -116,6 +145,15 @@ body {
     font-size: 11px;
     letter-spacing: 0.09em;
     text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* Time and counts, read like instruments: the digits never jump. */
+  .readout {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
     color: var(--muted);
   }
 
@@ -237,6 +275,51 @@ body {
     scrollbar-width: thin;
     scrollbar-color: var(--line) transparent;
   }
+
+  /*
+   * An agent at work: a third of a 2px accent line crossing left to right.
+   * .sweep runs along the bottom edge of its (positioned) parent; .sweep-inline
+   * is an 18px track that sits before words.
+   */
+  .sweep {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .sweep-inline {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    width: 18px;
+    height: 2px;
+    overflow: hidden;
+    background: color-mix(in oklab, var(--accent) 25%, transparent);
+  }
+  .sweep::after,
+  .sweep-inline::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 32%;
+    background: var(--accent);
+    animation: sweep var(--duration-sweep) var(--easing-sweep) infinite;
+  }
+
+  /* Arrivals: toasts and sheets rise into place; dialogs, the palette and menus drop. */
+  .enter-rise {
+    animation: rise var(--duration-enter) var(--easing-out) both;
+  }
+  .enter-drop {
+    animation: drop var(--duration-enter) var(--easing-out) both;
+  }
+  /* Finished work leaves forward, to the right. */
+  .exit-forward {
+    animation: exit-forward var(--duration-exit) var(--easing-in) forwards;
+  }
 }
 
 /* Markdown written by people and agents. */
@@ -244,7 +327,7 @@ body {
   --tw-prose-body: var(--ink);
   --tw-prose-headings: var(--ink);
   --tw-prose-bold: var(--ink);
-  --tw-prose-links: var(--accent);
+  --tw-prose-links: var(--accent-ink);
   --tw-prose-bullets: var(--faint);
   --tw-prose-counters: var(--muted);
   --tw-prose-quotes: var(--muted);
@@ -255,42 +338,46 @@ body {
   --tw-prose-td-borders: var(--line-soft);
 }
 
-@keyframes spin-slow {
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
   to {
-    transform: rotate(360deg);
+    transform: translateX(312.5%);
   }
 }
-.spin-slow {
-  animation: spin-slow 2.4s linear infinite;
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--travel-enter));
+  }
+}
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--travel-enter)));
+  }
+}
+@keyframes exit-forward {
+  to {
+    opacity: 0;
+    transform: translateX(var(--travel-exit));
+  }
 }
 
-/* Three dots that rise in turn: an agent at work, like someone typing. */
-@keyframes typing-dot {
-  0%, 60%, 100% {
-    opacity: 0.35;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
-}
-.typing-dots span {
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  border-radius: 9999px;
-  background: currentColor;
-  animation: typing-dot 1.2s ease-in-out infinite;
-}
-.typing-dots span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.typing-dots span:nth-child(3) {
-  animation-delay: 0.3s;
-}
 @media (prefers-reduced-motion: reduce) {
-  .typing-dots span {
+  .enter-rise,
+  .enter-drop {
     animation: none;
+  }
+  /* Still ends (in 1ms), so whatever waits for it to finish still runs. */
+  .exit-forward {
+    animation-duration: 1ms;
+  }
+  .sweep::after,
+  .sweep-inline::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
   }
 }
