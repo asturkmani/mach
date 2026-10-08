@@ -41,6 +41,15 @@ describe("page ideas", () => {
     // Nothing changed: no new call.
     expect(await pageIdeas(ORG, { model: scriptedModel([new Error("should be cached")]) })).toEqual([NET_WORTH]);
 
+    // When something changes, the screen can show the old ideas at once and write new ones afterwards.
+    await updateProfile(ORG, (md) => setSection(md, "Goals", "Consolidate reporting in Masttro."));
+    const later: (() => Promise<unknown>)[] = [];
+    const behind = scriptedModel([reply([{ ...NET_WORTH, title: "Reporting consolidation" }])]);
+    expect(await pageIdeas(ORG, { model: behind, later: (work) => later.push(work) })).toEqual([NET_WORTH]);
+    expect(behind.doGenerateCalls).toHaveLength(0);
+    await later[0]();
+    expect((await pageIdeas(ORG, { model: scriptedModel([new Error("should be cached")]) }))[0].title).toBe("Reporting consolidation");
+
     // Connecting the API changes what's possible, so the ideas are written again.
     await saveIntegration(ORG, {
       kind: "api",

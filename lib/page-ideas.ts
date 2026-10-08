@@ -69,31 +69,42 @@ Suggest up to four pages this company would open every day or week, specific to 
 - If almost nothing is known about the company, suggest fewer, simpler pages.`;
 
 /**
- * The company's page ideas: from the cache while its profile, integrations and
- * pages are unchanged, otherwise written afresh. Empty when no model is set up
- * or it fails; the screen then just says to ask the Chief of Staff.
+ * The company's page ideas, from the cache while its profile, integrations,
+ * drive and pages are unchanged. When they've changed, the old ideas are
+ * returned straight away and new ones written in the background (`later`),
+ * so only a company's first visit waits for a model. Empty when no model is
+ * set up or it fails; the screen then just says to ask the Chief of Staff.
  */
-export async function pageIdeas(organizationId: string, options: { model?: LanguageModel } = {}): Promise<PageIdea[]> {
+export async function pageIdeas(
+  organizationId: string,
+  options: { model?: LanguageModel; later?: (work: () => Promise<unknown>) => void } = {},
+): Promise<PageIdea[]> {
   const text = await inputs(organizationId);
   const sha256 = createHash("sha256").update(INSTRUCTIONS).update(text).digest("hex");
-  const db = getDb();
-  const [cached] = await db.query<{ inputs_sha256: string; ideas: PageIdea[] }>(
+  const [cached] = await getDb().query<{ inputs_sha256: string; ideas: PageIdea[] }>(
     "select inputs_sha256, ideas from page_ideas where organization_id = $1",
     [organizationId],
   );
   if (cached?.inputs_sha256 === sha256) return cached.ideas;
+  if (cached && options.later) {
+    options.later(() => writeIdeas(organizationId, text, sha256, options.model));
+    return cached.ideas;
+  }
+  return (await writeIdeas(organizationId, text, sha256, options.model)) ?? cached?.ideas ?? [];
+}
 
-  const model = options.model ?? process.env.PAGE_IDEAS_MODEL ?? process.env.CHIEF_OF_STAFF_MODEL;
-  if (!model) return [];
+async function writeIdeas(organizationId: string, text: string, sha256: string, given?: LanguageModel): Promise<PageIdea[] | null> {
+  const model = given ?? process.env.PAGE_IDEAS_MODEL ?? process.env.CHIEF_OF_STAFF_MODEL;
+  if (!model) return null;
   let ideas: PageIdea[];
   try {
     const result = await generateText({ model, system: INSTRUCTIONS, prompt: text, output: Output.object({ schema }) });
     ideas = result.output.ideas.map((i) => ({ ...i, needsConnecting: i.needsConnecting?.trim() || null }));
   } catch (error) {
     console.error("Couldn't write page ideas", error);
-    return cached?.ideas ?? [];
+    return null;
   }
-  await db.query(
+  await getDb().query(
     `insert into page_ideas (organization_id, inputs_sha256, ideas) values ($1, $2, $3)
      on conflict (organization_id) do update set inputs_sha256 = excluded.inputs_sha256, ideas = excluded.ideas, created_at = now()`,
     [organizationId, sha256, JSON.stringify(ideas)],

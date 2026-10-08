@@ -54,7 +54,19 @@ async function isValidOutput(tools: ToolSet, toolName: string, output: unknown):
   return result ? result.success : true;
 }
 
+/** What the model reads for a tool call that never got its result. */
+export const CUT_OFF = "This didn't finish: the reply was cut off before the tool returned. Run it again if it's still needed.";
+
 async function repairPart(tools: ToolSet, part: UIMessage["parts"][number]) {
+  // A reply cut off mid-tool (the request ended, the server restarted) leaves a
+  // call with no result, and providers refuse a conversation like that: record
+  // it as failed so the conversation carries on.
+  if ((part.type.startsWith("tool-") || part.type === "dynamic-tool") && "state" in part) {
+    if (part.state === "input-streaming" || part.state === "input-available" || part.state === "approval-requested") {
+      const { input, ...rest } = part as typeof part & { input?: unknown };
+      return { ...rest, state: "output-error", input: input ?? {}, errorText: CUT_OFF } as unknown as typeof part;
+    }
+  }
   const toolName = part.type.startsWith("tool-") ? part.type.slice("tool-".length) : null;
   const repair = toolName ? REPAIRS[toolName] : undefined;
   if (!toolName || !repair || !("state" in part) || part.state !== "output-available") return part;

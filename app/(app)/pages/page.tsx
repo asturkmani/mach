@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/page-header";
@@ -8,9 +9,9 @@ import { pageIdeas } from "@/lib/page-ideas";
 import { listPages, pageDataStatus } from "@/lib/pages";
 import { requireAppContext } from "@/lib/session";
 
-/** Ideas for this company's pages; written by a model when its profile, integrations or pages change. */
+/** Ideas for this company's pages; out-of-date ones show while new ones are written after the response. */
 async function Ideas({ organizationId }: { organizationId: string }) {
-  return <PageIdeaList ideas={await pageIdeas(organizationId)} />;
+  return <PageIdeaList ideas={await pageIdeas(organizationId, { later: (work) => after(work) })} />;
 }
 
 // Every page the company has, then ideas for more. Pinned pages are also tabs on Home.

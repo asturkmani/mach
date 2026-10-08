@@ -115,3 +115,28 @@ describe("prepareHistory", () => {
     warn.mockRestore();
   });
 });
+
+describe("a reply cut off mid-tool", () => {
+  it("records the unfinished call as failed, so the next turn isn't refused for a missing tool result", async () => {
+    const { convertToModelMessages } = await import("ai");
+    const cut: UIMessage = {
+      id: "a2",
+      role: "assistant",
+      parts: [
+        { type: "step-start" },
+        { type: "text", text: "I'll build the page." },
+        {
+          type: "tool-write_file",
+          toolCallId: "call_OWepdX9YmPI0UwEZowVbMACz",
+          state: "input-available",
+          input: { path: "/vercel/drive/pages/bank-cash/refresh.py", content: "print(1)" },
+        },
+      ],
+    } as UIMessage;
+    const [repaired] = await prepareHistory([cut], tools);
+    expect(repaired.parts[2]).toMatchObject({ state: "output-error", errorText: expect.stringContaining("cut off") });
+    const model = await convertToModelMessages([{ id: "u1", role: "user", parts: [{ type: "text", text: "Build it" }] }, repaired, { id: "u2", role: "user", parts: [{ type: "text", text: "keep going" }] }], { tools });
+    const results = model.flatMap((m) => (m.role === "tool" ? m.content : []));
+    expect(results).toEqual([expect.objectContaining({ type: "tool-result", toolCallId: "call_OWepdX9YmPI0UwEZowVbMACz" })]);
+  });
+});
