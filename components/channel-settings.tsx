@@ -80,8 +80,8 @@ export function WhatsAppChannel({ whatsapp, isAdmin }: { whatsapp: string | null
       description={
         whatsapp ? (
           <>
-            Mach&apos;s number is <span className="font-mono text-ink">{whatsapp}</span>. Each person links their own number in
-            Account settings.
+            The Chief of Staff answers on <span className="font-mono text-ink">{formatPhone(whatsapp)}</span>. Each person saves
+            the number they message it from in Settings → Account.
           </>
         ) : (
           `Not set up for Mach yet.${isAdmin ? " It needs a Twilio WhatsApp sender (see docs/channels.md)." : ""}`
@@ -89,6 +89,13 @@ export function WhatsAppChannel({ whatsapp, isAdmin }: { whatsapp: string | null
       }
     />
   );
+}
+
+/** A WhatsApp number as people write it: +44 7403 932000 for UK numbers, otherwise as given. */
+export function formatPhone(number: string): string {
+  const raw = number.replace(/^whatsapp:/, "").replace(/[^\d+]/g, "");
+  const uk = raw.match(/^\+44(\d{4})(\d{6})$/);
+  return uk ? `+44 ${uk[1]} ${uk[2]}` : raw;
 }
 
 /** Your own WhatsApp number, the one the Chief of Staff answers. */
@@ -102,25 +109,34 @@ export function WhatsAppNumber({ whatsapp, phone }: { whatsapp: string | null; p
       toast(result.error ?? (number.trim() ? "Saved your WhatsApp number" : "Removed your WhatsApp number"));
     });
 
+  const linked = phone?.trim() ? phone : null;
+  const chat = whatsapp ? (
+    <a
+      href={`https://wa.me/${whatsapp.replace(/\D/g, "")}`}
+      target="_blank"
+      rel="noreferrer"
+      className="font-mono text-ink underline underline-offset-2"
+    >
+      {formatPhone(whatsapp)}
+    </a>
+  ) : null;
+
   return (
     <SettingRow
-      title="WhatsApp number"
+      title="WhatsApp"
       description={
-        whatsapp ? (
+        !whatsapp ? (
+          "WhatsApp isn't set up for this company yet."
+        ) : linked ? (
           <>
-            Message{" "}
-            <a
-              href={`https://wa.me/${whatsapp.replace(/\D/g, "")}`}
-              target="_blank"
-              rel="noreferrer"
-              className="font-mono text-ink underline underline-offset-2"
-            >
-              {whatsapp}
-            </a>{" "}
-            from this number, with its country code. Only saved numbers get answers.
+            Linked to <span className="font-mono text-ink">{formatPhone(linked)}</span>. Message {chat} from it to talk to the
+            Chief of Staff.
           </>
         ) : (
-          "WhatsApp isn't set up for this company yet."
+          <>
+            Save the number you use WhatsApp on, with its country code, so the Chief of Staff knows it&apos;s you. Then message{" "}
+            {chat} from it. Messages from numbers that aren&apos;t saved here aren&apos;t answered.
+          </>
         )
       }
       action={
@@ -138,7 +154,7 @@ export function WhatsAppNumber({ whatsapp, phone }: { whatsapp: string | null; p
               inputMode="tel"
               autoComplete="tel"
               placeholder="+44 7700 900123"
-              aria-label="Your WhatsApp number"
+              aria-label="Your WhatsApp number, with its country code"
               className="field w-44 font-mono text-sm"
             />
             <button type="submit" disabled={saving || number.trim() === (phone ?? "")} className="btn">
