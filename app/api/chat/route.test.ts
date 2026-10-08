@@ -10,6 +10,13 @@ const ORG = "org_cedar";
 const user = { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" };
 const model = { current: undefined as MockLanguageModelV4 | undefined };
 
+// Outside Next there's no request to run work after: run it now, and keep it to wait for.
+const afterwards: Promise<unknown>[] = [];
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (task: Promise<unknown> | (() => unknown)) => void afterwards.push(Promise.resolve(typeof task === "function" ? task() : task)),
+}));
+
 vi.mock("@/lib/session", () => ({
   getSessionContext: async () => ({ organization: await getOrganization(ORG), user, person: null, isAdmin: true }),
 }));
@@ -114,6 +121,17 @@ describe("POST /api/chat", () => {
     const stored = (await loadChat(chat.id, ORG, user.id))!.messages;
     const search = stored[1].parts.find((p) => p.type === "tool-web_search") as { output: { searchId: string } };
     expect(search.output.searchId).toBe("s1");
+  });
+
+  it("finishes and stores the reply when nobody reads it, as when the panel is closed", async () => {
+    const chat = await getOrCreateChat(ORG, user.id);
+    model.current = replyingWith("Done while you were away.");
+    const response = await post({ id: chat.id, message: userMessage("u1", "Hi") });
+    await response.body?.cancel();
+    await Promise.all(afterwards.splice(0));
+
+    const stored = (await loadChat(chat.id, ORG, user.id))!.messages;
+    expect(stored.at(-1)?.parts.find((p) => p.type === "text")).toMatchObject({ text: "Done while you were away." });
   });
 
   it("ignores anything but a plain user text message", async () => {
