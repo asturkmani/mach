@@ -1,54 +1,14 @@
 "use client";
 
-import { X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { createTaskAction, laterAction, restoreAction } from "@/app/(app)/tasks/actions";
+import { Sheet } from "@/components/kit";
 import { Face } from "@/components/ui";
 import { PRIORITIES, PRIORITY_WORDS, type Priority } from "@/lib/task-words";
 
 import { useShell } from "./shell";
-
-function Dialog({
-  title,
-  onClose,
-  children,
-  wide = false,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-40 flex items-start justify-center bg-black/30 px-4 pt-[10vh]"
-      onMouseDown={onClose}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          onClose();
-        }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-label={title}
-        className={`frame enter-drop w-full ${wide ? "max-w-2xl" : "max-w-md"} bg-raised p-6 shadow-[var(--shadow)]`}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="label">{title}</h2>
-          <button onClick={onClose} className="text-faint hover:text-ink" aria-label="Close">
-            <X size={16} />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function Toggle({
   on,
@@ -104,7 +64,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
     });
 
   return (
-    <Dialog title="New task" onClose={onClose} wide>
+    <Sheet title="New task" onClose={onClose} wide>
       <form
         className="space-y-4"
         onSubmit={(e) => {
@@ -188,7 +148,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       </form>
-    </Dialog>
+    </Sheet>
   );
 }
 
@@ -224,7 +184,7 @@ export function LaterDialog({ taskId, onClose }: { taskId: string; onClose: () =
     });
 
   return (
-    <Dialog title="Later" onClose={onClose}>
+    <Sheet title="Later" onClose={onClose}>
       <div
         className="space-y-1"
         onKeyDown={(e) => {
@@ -264,7 +224,7 @@ export function LaterDialog({ taskId, onClose }: { taskId: string; onClose: () =
           </button>
         </form>
       </div>
-    </Dialog>
+    </Sheet>
   );
 }
 
@@ -287,7 +247,7 @@ export const SHORTCUTS: { group: string; keys: string[]; label: string }[] = [
 
 export function HelpDialog({ onClose }: { onClose: () => void }) {
   return (
-    <Dialog title="Keyboard shortcuts" onClose={onClose}>
+    <Sheet title="Keyboard shortcuts" onClose={onClose}>
       <button autoFocus className="sr-only" onClick={onClose}>
         Close
       </button>
@@ -309,6 +269,6 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
           ))}
         </tbody>
       </table>
-    </Dialog>
+    </Sheet>
   );
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Download, FileCode, FileSpreadsheet, Paperclip } from "lucide-react";
 
 import { DriveSection } from "@/components/drive-section";
+import { PageBody } from "@/components/kit";
 import { PageHeader } from "@/components/page-header";
 import { When } from "@/components/ui";
 import { listDrive, uploadPrefix } from "@/lib/drive";
@@ -53,8 +54,7 @@ export default async function FilesPage() {
   return (
     <>
       <PageHeader title="Files" count={files.length} />
-      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-4 sm:px-8 py-6">
-        <div className="max-w-4xl space-y-8">
+      <PageBody className="space-y-8">
           <p className="max-w-2xl text-[15px] text-muted">
             Everything agents have produced, with every version. Attach a file to any job and the agent starts from it; what it
             changes is saved as the next version. The drive holds shared data that every job&apos;s sandbox can read and add to.
@@ -84,8 +84,7 @@ export default async function FilesPage() {
               {list(code)}
             </section>
           )}
-        </div>
-      </div>
+      </PageBody>
     </>
   );
 }

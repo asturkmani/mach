@@ -4,6 +4,7 @@ import { List, SquareKanban } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Board } from "@/components/board";
+import { Segmented } from "@/components/kit";
 import { PageHeader } from "@/components/page-header";
 import { useKeys, useShell } from "@/components/shell/shell";
 import { TaskList, type Section } from "@/components/task-list";
@@ -72,22 +73,6 @@ export function Home({
   };
   useKeys({ v: () => setView(view === "board" ? "list" : "board") });
 
-  const toggle = (options: { value: string; label: React.ReactNode; title: string }[], current: string, onPick: (v: string) => void) => (
-    <div className="flex border border-line">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => onPick(o.value)}
-          title={o.title}
-          aria-pressed={current === o.value}
-          className={`flex items-center gap-1.5 px-2.5 py-1 text-xs ${current === o.value ? "bg-selected text-ink" : "text-muted hover:text-ink"}`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-
   const empty = (
     <div className="max-w-sm space-y-2 text-center">
       <p className="text-[17px]">{needsYou.length || shown.length ? "Nothing else here." : "Nothing yet."}</p>
@@ -102,22 +87,24 @@ export function Home({
     <>
       <PageHeader title="Home" count={needsYou.length || undefined}>
         <div className="mr-2 flex items-center gap-2">
-          {toggle(
-            [
+          <Segmented
+            label="Whose work"
+            options={[
               { value: "everyone", label: "Everyone", title: "All the company's work" },
               { value: "mine", label: "Mine", title: "Work you're on" },
-            ],
-            scope,
-            (v) => setScope(v as HomeScope),
-          )}
-          {toggle(
-            [
+            ]}
+            value={scope}
+            onChange={(v) => setScope(v as HomeScope)}
+          />
+          <Segmented
+            label="View"
+            options={[
               { value: "board", label: <><SquareKanban size={13} /> Board</>, title: "Board (V)" },
               { value: "list", label: <><List size={13} /> List</>, title: "List (V)" },
-            ],
-            view,
-            (v) => setView(v as HomeView),
-          )}
+            ]}
+            value={view}
+            onChange={(v) => setView(v as HomeView)}
+          />
         </div>
       </PageHeader>
       {notice}

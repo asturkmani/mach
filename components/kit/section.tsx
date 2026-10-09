@@ -3,25 +3,29 @@
 import { Plus } from "lucide-react";
 import { createContext, useContext, useState } from "react";
 
+// A part of a page: its heading and count, a button that opens its add form in
+// place, and its content. The form closes itself once it's done (useCloseForm).
+
 const CloseForm = createContext<() => void>(() => {});
 
 /** For a section's add form: closes it (after adding, say). */
 export const useCloseForm = () => useContext(CloseForm);
 
-/** A part of the Team page (people, agents): its heading, a button that opens its add form, and its list. */
-export function TeamSection({
+export function Section({
   title,
   count,
+  description,
   addLabel,
   startOpen = false,
   form,
   children,
 }: {
   title: string;
-  count: number;
-  addLabel: string;
+  count?: number;
+  description?: React.ReactNode;
+  addLabel?: string;
   startOpen?: boolean;
-  /** Shown in place of the button while open. */
+  /** Shown above the content while open, in place of the add button. */
   form?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -30,7 +34,7 @@ export function TeamSection({
     <section>
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="label">
-          {title} <span className="text-faint">{count}</span>
+          {title} {count !== undefined && <span className="text-faint">{count}</span>}
         </h2>
         {form &&
           (open ? (
@@ -43,6 +47,7 @@ export function TeamSection({
             </button>
           ))}
       </div>
+      {description && <div className="-mt-1 mb-3 text-sm text-muted">{description}</div>}
       {open && form && (
         <div className="mb-4">
           <CloseForm.Provider value={() => setOpen(false)}>{form}</CloseForm.Provider>

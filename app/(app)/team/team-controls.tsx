@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState, useTransition } from "react";
 
 import { useShell } from "@/components/shell/shell";
-import { useCloseForm } from "@/components/team-section";
+import { useCloseForm } from "@/components/kit";
 import type { PersonStatus } from "@/lib/people";
 
 import { addPersonAction, inviteAction, removePersonAction, setManagerAction, setRoleAction, updatePersonAction, type ActionResult } from "./actions";

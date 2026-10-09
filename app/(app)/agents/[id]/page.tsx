@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { AgentForm, AgentStatusControl } from "@/components/agent-form";
+import { PageBody } from "@/components/kit";
 import { Face, When } from "@/components/ui";
 import { CosToggle } from "@/components/shell/cos-toggle";
 import { getAgent } from "@/lib/agents/store";
@@ -37,8 +38,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
           <CosToggle />
         </div>
       </header>
-      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto px-4 sm:px-8 py-6">
-        <div className="grid max-w-5xl gap-10 lg:grid-cols-[1fr_300px]">
+      <PageBody width="5xl" className="grid gap-10 lg:grid-cols-[1fr_300px]">
           <section>
             <h2 className="label mb-4">Profile</h2>
             <AgentForm
@@ -68,8 +68,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
               </ul>
             )}
           </section>
-        </div>
-      </div>
+      </PageBody>
     </>
   );
 }

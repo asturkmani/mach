@@ -36,7 +36,7 @@ export function MobileNav() {
     <>
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-50 flex h-[calc(3.5rem+env(safe-area-inset-bottom))] border-t border-line bg-panel pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="hide-with-keyboard fixed inset-x-0 bottom-0 z-50 flex h-(--nav-height) border-t border-line bg-panel pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         <Link
           href="/"
@@ -124,7 +124,7 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-label="Menu">
       <button aria-label="Close the menu" onClick={onClose} className="absolute inset-0 bg-black/30" />
-      <div className="enter-rise absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[80dvh] overflow-y-auto border-t border-line bg-panel pb-2 shadow-[var(--shadow)]">
+      <div className="enter-rise absolute inset-x-0 bottom-(--nav-height) max-h-[80dvh] overflow-y-auto border-t border-line bg-panel pb-2 shadow-[var(--shadow)]">
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <p className="flex min-w-0 items-center gap-2.5">
             <MachMark size={24} />

@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useState } from "react";
 
+import { PageBody } from "@/components/kit";
 import { useShell } from "@/components/shell/shell";
 import type { ChecklistItem } from "@/lib/profile/markdown";
 
@@ -20,8 +21,7 @@ export function CompanyProfile({
   const [view, setView] = useState<"preview" | "markdown">("preview");
 
   return (
-    <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-4 sm:px-8 py-6">
+    <PageBody width="3xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-lg text-sm text-muted">
             What every agent reads before it works. The Chief of Staff keeps it current and suggests changes as it learns;
@@ -68,7 +68,6 @@ export function CompanyProfile({
         ) : (
           <pre className="whitespace-pre-wrap border border-line bg-raised p-4 font-mono text-xs leading-relaxed">{profile}</pre>
         )}
-      </div>
-    </div>
+    </PageBody>
   );
 }

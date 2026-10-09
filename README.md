@@ -41,7 +41,7 @@ Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres 
 
 Agent runs are durable [Vercel Workflow](https://workflow-sdk.dev) runs (`workflows/agent-run.ts`). Every model call and every database change is its own step, retried on failure, so a run can take as long as the work needs instead of one function's time limit. Runs hold a lease on the task so only one runs at a time, pick up replies that arrive mid-run (or stop for one sent with Send now: `tasks.interrupt_requested_at`, checked before every model and tool call), and stop after six agent turns in a row without a person, so agents can't hand work back and forth forever. Locally, runs use Workflow's local world (data in `.workflow-data/`); inspect them with `npx workflow web` or `npx workflow inspect runs`.
 
-How sandboxes, files, recurring jobs and the drive work, and why: [docs/sandbox.md](docs/sandbox.md). Data sources, website logins and how credentials are kept out of models: [docs/integrations.md](docs/integrations.md).
+How sandboxes, files, recurring jobs and the drive work, and why: [docs/sandbox.md](docs/sandbox.md). How screens are built so they work on a phone and a computer alike (the shared components in `components/kit`): [docs/ui.md](docs/ui.md). Data sources, website logins and how credentials are kept out of models: [docs/integrations.md](docs/integrations.md).
 
 The company profile is one markdown document per company, stored in Postgres. Its people section is generated from the `people` table.
 

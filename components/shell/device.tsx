@@ -41,46 +41,50 @@ export function isStandalone(): boolean {
 }
 
 /**
- * An iPhone home-screen app keeps the smaller height it had while the keyboard
- * was open (a WebKit bug): the bottom bar floats up over a dead band until the
- * app is restarted. When the keyboard closes and the window is still shorter
- * than it has been at this width, hiding and showing the full-height frame for
- * a moment makes WebKit measure the screen again. Scroll positions are kept.
+ * An iPhone lays its keyboard over the page without resizing it, scrolls the
+ * page to show the field, and leaves it shifted after. While the keyboard is
+ * up, the app is sized to what's visible (--keyboard-height, the
+ * "keyboard-open" class on <html>), and the page never stays scrolled. iOS
+ * reports the keyboard once, mid-animation, so it's measured again as it
+ * settles.
  */
-export function useKeyboardViewportFix(frame: React.RefObject<HTMLElement | null>): void {
+export function useKeyboardViewport(): void {
   useEffect(() => {
-    if (!isStandalone() || !isAppleMobile()) return;
-    const tallest = new Map<number, number>();
-    const measure = () => tallest.set(window.innerWidth, Math.max(tallest.get(window.innerWidth) ?? 0, window.innerHeight));
-    measure();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const restore = () => {
-      const view = frame.current;
-      if (!view || (tallest.get(window.innerWidth) ?? 0) - window.innerHeight <= 4) return;
-      const scrolled = [...view.querySelectorAll<HTMLElement>("*")].filter((el) => el.scrollTop > 0).map((el) => [el, el.scrollTop] as const);
-      view.style.display = "none";
-      void view.offsetHeight; // a synchronous reflow is what makes WebKit recompute the viewport
-      view.style.display = "";
-      for (const [el, top] of scrolled) el.scrollTop = top;
+    const view = window.visualViewport;
+    if (!view || !isAppleMobile()) return;
+    const root = document.documentElement;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const sync = () => {
+      if (view.scale > 1.01) return; // pinch-zoomed: leave it be
+      const open = window.innerHeight - view.height > 120;
+      root.classList.toggle("keyboard-open", open);
+      if (open) root.style.setProperty("--keyboard-height", `${view.height}px`);
+      else root.style.removeProperty("--keyboard-height");
+      if (window.scrollY) window.scrollTo(0, 0);
     };
-    const onBlur = (event: FocusEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target?.matches?.("input, textarea, select, [contenteditable=true]")) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        // Still typing somewhere else (focus moved to another field): the keyboard is open.
-        if ((document.activeElement as HTMLElement | null)?.matches?.("input, textarea, select, [contenteditable=true]")) return;
-        restore();
-      }, 150);
+    const settle = () => {
+      sync();
+      for (const delay of [100, 300, 600, 1000]) timers.push(setTimeout(sync, delay));
     };
-    window.addEventListener("resize", measure);
-    document.addEventListener("focusout", onBlur);
+    const unscroll = () => {
+      if (window.scrollY) window.scrollTo(0, 0);
+    };
+    sync();
+    view.addEventListener("resize", settle);
+    view.addEventListener("scroll", sync);
+    document.addEventListener("focusin", settle);
+    document.addEventListener("focusout", settle);
+    window.addEventListener("scroll", unscroll, { passive: true });
     return () => {
-      clearTimeout(timer);
-      window.removeEventListener("resize", measure);
-      document.removeEventListener("focusout", onBlur);
+      timers.forEach(clearTimeout);
+      view.removeEventListener("resize", settle);
+      view.removeEventListener("scroll", sync);
+      document.removeEventListener("focusin", settle);
+      document.removeEventListener("focusout", settle);
+      window.removeEventListener("scroll", unscroll);
+      root.classList.remove("keyboard-open");
     };
-  }, [frame]);
+  }, []);
 }
 
 /** iPhones and iPads install from Safari's share menu; there's no prompt to show. */

@@ -126,6 +126,40 @@ body {
   height: 100%;
 }
 
+/* The app's full height, and the bottom bar's on a phone. iPhone home-screen
+   apps (iOS 26) report dvh and the viewport short by the status bar, which
+   left an empty band under the bottom bar; lvh is the whole screen. Body is
+   then the containing block for fixed things (the bottom bar, sheets), so they
+   reach the real bottom edge too, and html paints the background. */
+:root {
+  --app-height: 100dvh;
+  --nav-height: calc(3.5rem + env(safe-area-inset-bottom));
+}
+@media (display-mode: standalone) {
+  @supports (-webkit-touch-callout: none) {
+    :root {
+      --app-height: 100lvh;
+    }
+    html {
+      height: var(--app-height);
+      background-color: var(--bg);
+    }
+    body {
+      contain: layout;
+      overflow: clip;
+    }
+  }
+}
+/* An iPhone lays its keyboard over the page: while it's up, the app fits in
+   what's left, and the bottom bar steps aside (see useKeyboardViewport). */
+:root.keyboard-open {
+  --app-height: var(--keyboard-height, 100dvh);
+  --nav-height: 0px;
+}
+:root.keyboard-open .hide-with-keyboard {
+  display: none;
+}
+
 body {
   font-family: var(--font-sans), system-ui, sans-serif;
   background-color: var(--bg);
@@ -268,6 +302,16 @@ body {
   .btn:hover {
     background: var(--hover);
   }
+  /* Big enough for a thumb on a touch screen, and no keyboard hints on buttons there. */
+  @media (pointer: coarse) {
+    .btn {
+      min-height: 2.5rem;
+      padding-inline: 0.875rem;
+    }
+    button .kbd {
+      display: none;
+    }
+  }
   .btn:disabled {
     opacity: 0.5;
     pointer-events: none;
@@ -343,6 +387,15 @@ body {
   .enter-drop {
     animation: drop var(--duration-enter) var(--easing-out) both;
   }
+  /* A dialog rises from the bottom on a phone and drops in on a computer. */
+  .enter-sheet {
+    animation: rise var(--duration-enter) var(--easing-out) both;
+  }
+  @media (width >= 48rem) {
+    .enter-sheet {
+      animation-name: drop;
+    }
+  }
   /* Finished work leaves forward, to the right. */
   .exit-forward {
     animation: exit-forward var(--duration-exit) var(--easing-in) forwards;
@@ -394,7 +447,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .enter-rise,
-  .enter-drop {
+  .enter-drop,
+  .enter-sheet {
     animation: none;
   }
   /* Still ends (in 1ms), so whatever waits for it to finish still runs. */

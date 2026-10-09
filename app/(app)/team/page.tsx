@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { AgentForm } from "@/components/agent-form";
 import { PageHeader } from "@/components/page-header";
-import { TeamSection } from "@/components/team-section";
+import { DataCell, DataRow, DataTable, PageBody, Section, Segmented } from "@/components/kit";
 import { Face } from "@/components/ui";
 import { listAgents } from "@/lib/agents/store";
 import { AGENT_TEMPLATES } from "@/lib/agents/templates";
@@ -49,47 +49,29 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   return (
     <>
       <PageHeader title="Team" count={people.length + defined.length}>
-        <div className="mr-2 flex border border-line" role="tablist" aria-label="Show">
-          {SHOW.map((option) => (
-            <Link
-              key={option.value}
-              href={option.value === "all" ? "/team" : `/team?show=${option.value}`}
-              role="tab"
-              aria-selected={show === option.value}
-              className={`px-2.5 py-1 text-[13px] ${show === option.value ? "bg-selected text-ink" : "text-muted hover:text-ink"}`}
-            >
-              {option.label}
-            </Link>
-          ))}
+        <div className="mr-2">
+          <Segmented
+            label="Show"
+            value={show}
+            options={SHOW.map((o) => ({ ...o, href: o.value === "all" ? "/team" : `/team?show=${o.value}` }))}
+          />
         </div>
       </PageHeader>
-      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl space-y-12 px-4 py-6 sm:px-8 md:py-8">
+      <PageBody className="space-y-12">
           {show !== "agents" && (
-            <TeamSection
+            <Section
               title="People"
               count={people.length}
               addLabel="Add person"
               startOpen={params.new === "person"}
               form={<AddPersonForm managers={people.map((p) => p.name)} canInvite={isAdmin} />}
             >
-              <div className="overflow-x-auto border border-line bg-raised">
-                <table className="w-full min-w-[620px] text-sm">
-                  <thead className="border-b border-line text-left">
-                    <tr>
-                      <th className="label px-3 py-2.5 font-normal">Name</th>
-                      <th className="label px-3 py-2.5 font-normal">Role</th>
-                      <th className="label px-3 py-2.5 font-normal">Reports to</th>
-                      <th className="label px-3 py-2.5 font-normal">Status</th>
-                      <th className="px-3 py-2" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line-soft">
+              <DataTable columns={["Name", "Role", "Reports to", "Status", ""]}>
                     {people.map((person) => {
                       const status = STATUS_LABELS[person.status];
                       return (
-                        <tr key={person.id} className="align-top">
-                          <td className="px-3 py-2.5">
+                        <DataRow key={person.id}>
+                          <DataCell main>
                             <div className="flex items-center gap-2.5">
                               <Face name={person.name} size={24} />
                               <div className="min-w-0">
@@ -128,8 +110,8 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                                 </div>
                               </div>
                             </div>
-                          </td>
-                          <td className="max-w-72 px-3 py-2.5">
+                          </DataCell>
+                          <DataCell label="Role" className="md:max-w-72">
                             <EditableText personId={person.id} field="role" value={person.role} label="Role" placeholder="Add role" />
                             <EditableText
                               personId={person.id}
@@ -140,19 +122,19 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                               className="text-xs text-muted"
                               multiline
                             />
-                          </td>
-                          <td className="px-3 py-2">
+                          </DataCell>
+                          <DataCell label="Reports to">
                             <ManagerSelect
                               key={person.managerName ?? ""}
                               personId={person.id}
                               value={person.managerName ?? ""}
                               options={people.filter((p) => p.id !== person.id).map((p) => p.name)}
                             />
-                          </td>
-                          <td className="px-3 py-2">
+                          </DataCell>
+                          <DataCell label="Status">
                             <span className={`label whitespace-nowrap ${status.className}`}>{status.label}</span>
-                          </td>
-                          <td className="px-3 py-2 text-right">
+                          </DataCell>
+                          <DataCell end>
                             <PersonActions
                               personId={person.id}
                               status={person.status}
@@ -161,18 +143,16 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                               canManage={isAdmin && person.id !== me.id}
                               role={roleOf(person.workosUserId)}
                             />
-                          </td>
-                        </tr>
+                          </DataCell>
+                        </DataRow>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </TeamSection>
+              </DataTable>
+            </Section>
           )}
 
           {show !== "people" && (
-            <TeamSection
+            <Section
               title="Agents"
               count={defined.length + 1}
               addLabel="New agent"
@@ -207,20 +187,15 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                   </li>
                 ))}
               </ul>
-            </TeamSection>
+            </Section>
           )}
 
           {show !== "people" && jobs.length > 0 && (
-            <section>
-              <div className="mb-3">
-                <h2 className="label">
-                  Scheduled jobs <span className="text-faint">{jobs.length}</span>
-                </h2>
-                <p className="mt-1 text-sm text-muted">
-                  Work that runs by itself on a schedule. Most replay a saved script without AI; each has an agent that steps in only
-                  when a run breaks.
-                </p>
-              </div>
+            <Section
+              title="Scheduled jobs"
+              count={jobs.length}
+              description="Work that runs by itself on a schedule. Most replay a saved script without AI; each has an agent that steps in only when a run breaks."
+            >
               <ul className="divide-y divide-line-soft border border-line bg-raised">
                 {jobs.map(({ task, schedule, page }) => {
                   const fixer = task.members.find((m) => m.type === "agent");
@@ -259,10 +234,9 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                   );
                 })}
               </ul>
-            </section>
+            </Section>
           )}
-        </div>
-      </div>
+      </PageBody>
     </>
   );
 }

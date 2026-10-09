@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { Suspense } from "react";
 
+import { PageBody } from "@/components/kit";
 import { PageHeader } from "@/components/page-header";
 import { IdeasLoading, PageIdeaList, PagesHome } from "@/components/pages-list";
 import { pageIdeas } from "@/lib/page-ideas";
@@ -22,13 +23,13 @@ export default async function PagesPage() {
   return (
     <>
       <PageHeader title="Pages" />
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+      <PageBody>
         <PagesHome pages={pages}>
           <Suspense fallback={<IdeasLoading />}>
             <Ideas organizationId={organization.id} />
           </Suspense>
         </PagesHome>
-      </div>
+      </PageBody>
     </>
   );
 }

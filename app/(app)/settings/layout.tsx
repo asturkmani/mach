@@ -1,3 +1,4 @@
+import { PageBody } from "@/components/kit";
 import { PageHeader } from "@/components/page-header";
 import { SettingsNav } from "@/components/settings-nav";
 
@@ -8,12 +9,10 @@ export default function SettingsLayout({ children }: LayoutProps<"/settings">) {
   return (
     <>
       <PageHeader title="Settings" />
-      <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 sm:px-8 md:flex-row md:gap-12 md:py-8">
-          <SettingsNav />
-          <div className="min-w-0 max-w-3xl flex-1 space-y-12">{children}</div>
-        </div>
-      </div>
+      <PageBody width="5xl" className="flex flex-col gap-6 md:flex-row md:gap-12">
+        <SettingsNav />
+        <div className="min-w-0 max-w-3xl flex-1 space-y-12">{children}</div>
+      </PageBody>
     </>
   );
 }

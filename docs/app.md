@@ -15,6 +15,7 @@ Installed, Mach1 opens full screen with its own icon. The status bar takes Mach1
 - **A badge on the icon** with the number of things waiting on you, kept up to date by the open app and by every notification.
 - **Share to Mach1:** share text or a link from any app's share sheet, and it opens the Chief of Staff with it drafted (Android, from the installed app).
 - **Offline:** a page that can't load shows an offline screen that reloads itself when the connection is back. While you're in the app, a line at the top says you're offline, and what you do waits and goes through when you're back (Next's `experimental.useOffline`).
+- **Screen:** the app fills the whole screen on an iPhone, including under the home indicator (iOS 26 reports the screen short; see [ui.md](ui.md)), and fits above the keyboard while it's up.
 - **Touch:** fields don't zoom in when tapped, taps don't flash, and the app doesn't rubber-band or pull to refresh as a whole. Lists scroll inside it, and toasts sit above the tab bar.
 
 ## How it works
