@@ -2,7 +2,7 @@ import { authkit, handleAuthkitHeaders } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Every page and API route requires a signed-in user, except signing in itself
-// (Mach's /sign-in page and the routes it uses, and /callback), the cron tick,
+// (Mach1's /sign-in page and the routes it uses, and /callback), the cron tick,
 // which checks Vercel Cron's secret instead, and the WhatsApp and email
 // webhooks, which check Twilio's and AgentMail's signatures. Signed out, a page
 // goes to /sign-in (and back afterwards); an API call gets a 401. The
@@ -11,9 +11,25 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC = ["/sign-in", "/callback", "/api/cron/tick", "/api/whatsapp", "/api/email"];
 
+/**
+ * The one address people should use (CANONICAL_HOST, e.g. trymach1.app): a
+ * page opened anywhere else (the old .vercel.app address) moves there. Webhooks
+ * and sign-in callbacks stay where they were sent, so nothing in flight breaks.
+ */
+function canonicalRedirect(request: NextRequest): NextResponse | null {
+  const canonical = process.env.CANONICAL_HOST;
+  const host = request.headers.get("host") ?? "";
+  if (!canonical || host === canonical || host.startsWith("localhost") || request.method !== "GET") return null;
+  const { pathname, search } = request.nextUrl;
+  if (pathname.startsWith("/api/") || pathname === "/callback") return null;
+  return NextResponse.redirect(`https://${canonical}${pathname}${search}`, 308);
+}
+
 const isPublic = (pathname: string) => PUBLIC.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 
 export default async function proxy(request: NextRequest) {
+  const moved = canonicalRedirect(request);
+  if (moved) return moved;
   const { session, headers } = await authkit(request);
   const { pathname, search } = request.nextUrl;
 

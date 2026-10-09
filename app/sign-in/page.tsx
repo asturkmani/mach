@@ -5,11 +5,11 @@ import { enabledProviders, safeReturnTo, SIGN_IN_COOKIE, unsealPending } from "@
 
 import { SignInForm, type Start } from "./sign-in-form";
 
-// Mach's sign-in page: Google or Microsoft, or a work email (a code by email,
+// Mach1's sign-in page: Google or Microsoft, or a work email (a code by email,
 // or the company's single sign-on). Also where /callback sends someone back
 // mid-way, to confirm their email or pick a company.
 
-export const metadata = { title: "Sign in · Mach" };
+export const metadata = { title: "Sign in · Mach1" };
 
 const PROBLEMS: Record<string, string> = {
   cancelled: "Signing in was cancelled. Try again.",

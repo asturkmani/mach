@@ -11,7 +11,7 @@ const { attempt, safeReturnTo, sealPending, startWithEmail, unsealPending, withC
 /** An error shaped like the WorkOS SDK's, with its raw response. */
 const workosError = (rawData: Record<string, unknown>) => Object.assign(new Error("WorkOS error"), { name: "AuthenticationException", rawData });
 
-describe("signing in on Mach's own page", () => {
+describe("signing in on Mach1's own page", () => {
   beforeEach(() => {
     vi.stubEnv("WORKOS_COOKIE_PASSWORD", "a-cookie-password-at-least-32-characters-long");
     vi.stubEnv("WORKOS_CLIENT_ID", "client_test");
@@ -36,7 +36,7 @@ describe("signing in on Mach's own page", () => {
     vi.useRealTimers();
   });
 
-  it("only sends people back to a page inside Mach", () => {
+  it("only sends people back to a page inside Mach1", () => {
     expect(safeReturnTo("/tasks/12?tab=files")).toBe("/tasks/12?tab=files");
     for (const bad of ["https://evil.example", "//evil.example/x", "/\\evil.example", "javascript:alert(1)", "/sign-in", "/callback?code=x", "", null, undefined]) {
       expect(safeReturnTo(bad)).toBe("/");

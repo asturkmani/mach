@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-// WhatsApp through Twilio: one Mach-wide WhatsApp sender. Twilio posts each
+// WhatsApp through Twilio: one Mach1-wide WhatsApp sender. Twilio posts each
 // incoming message to /api/whatsapp, signed with the account's auth token,
 // and replies go out through its Messages API.
 

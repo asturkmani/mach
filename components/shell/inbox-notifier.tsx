@@ -8,8 +8,8 @@ import { arrivals, type InboxItem } from "@/lib/inbox-arrivals";
 import { pushOn } from "./device";
 import { useShell } from "./shell";
 
-// Tells people when something lands in their inbox: a toast in Mach, a
-// browser notification when Mach isn't the window they're in (once they've
+// Tells people when something lands in their inbox: a toast in Mach1, a
+// browser notification when Mach1 isn't the window they're in (once they've
 // allowed it), and the count in the tab's title.
 
 const STATUS_NOTE: Record<string, string> = { review: "is ready for review", waiting: "needs your answer" };
@@ -41,7 +41,7 @@ export function useNotificationPermission() {
 
 /** A system notification, through the service worker where there is one (Android only allows it that way). */
 async function notify(what: string, item: InboxItem, open: (path: string) => void) {
-  const title = `Mach · ${what}`;
+  const title = `Mach1 · ${what}`;
   const options = { body: item.summary || item.title, tag: `task-${item.id}` };
   const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined);
   if (registration) {
@@ -76,7 +76,7 @@ export function InboxNotifier() {
     seen.current = new Map(items.map((item) => [item.id, item]));
   }, [data.inbox, pathname, router, toast]);
 
-  // "(2) Mach" in the tab while two things wait on you.
+  // "(2) Mach1" in the tab while two things wait on you.
   useEffect(() => {
     const base = document.title.replace(/^\(\d+\) /, "");
     document.title = data.inboxCount > 0 ? `(${data.inboxCount}) ${base}` : base;

@@ -47,10 +47,10 @@ export function EmailChannel({
             <a href={`mailto:${emailInbox}`} className="font-mono text-ink underline underline-offset-2 break-all">
               {emailInbox}
             </a>{" "}
-            from {email || "your email address in Mach"}. It replies in the same thread.
+            from {email || "your email address in Mach1"}. It replies in the same thread.
           </>
         ) : !emailAvailable ? (
-          `Not set up for Mach yet.${isAdmin ? " It needs an AgentMail API key (see docs/channels.md)." : ""}`
+          `Not set up for Mach1 yet.${isAdmin ? " It needs an AgentMail API key (see docs/channels.md)." : ""}`
         ) : isAdmin ? (
           "Give the Chief of Staff an address your team can write to."
         ) : (
@@ -84,7 +84,7 @@ export function WhatsAppChannel({ whatsapp, isAdmin }: { whatsapp: string | null
             the number they message it from in Settings → Account.
           </>
         ) : (
-          `Not set up for Mach yet.${isAdmin ? " It needs a Twilio WhatsApp sender (see docs/channels.md)." : ""}`
+          `Not set up for Mach1 yet.${isAdmin ? " It needs a Twilio WhatsApp sender (see docs/channels.md)." : ""}`
         )
       }
     />

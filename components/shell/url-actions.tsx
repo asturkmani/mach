@@ -6,11 +6,11 @@ import { useEffect } from "react";
 import { startCosMessage, useShell } from "./shell";
 
 // What the installed app's icon shortcuts and the phone's share sheet ask for,
-// as a link: /?do=new-task, /?do=cos, or something shared to Mach
+// as a link: /?do=new-task, /?do=cos, or something shared to Mach1
 // (?share_title=…&share_text=…&share_url=…), which becomes a draft to the
 // Chief of Staff. Done once, then the link is tidied away.
 
-/** The draft for something shared to Mach: its words, then its link if the words don't already have it. */
+/** The draft for something shared to Mach1: its words, then its link if the words don't already have it. */
 export function sharedDraft(params: { title?: string | null; text?: string | null; url?: string | null }): string {
   const text = params.text?.trim() ?? "";
   const url = params.url?.trim() ?? "";

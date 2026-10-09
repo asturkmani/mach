@@ -6,10 +6,10 @@ import { appUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 
 // Push notifications to the phones and browsers people turned them on for:
-// they arrive while Mach is closed, open the task when tapped, and set the
+// they arrive while Mach1 is closed, open the task when tapped, and set the
 // count of what waits on them on the app's icon. Signed with the VAPID key
 // pair in VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (`npx web-push generate-vapid-keys`);
-// without it, Mach doesn't offer push and sends nothing.
+// without it, Mach1 doesn't offer push and sends nothing.
 
 export type PushMessage = { title: string; body: string; url: string; tag?: string };
 

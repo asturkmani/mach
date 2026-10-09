@@ -7,9 +7,9 @@ import type { AuthenticationResponse } from "@workos-inc/node";
 
 import { companyDomainFromEmail } from "@/lib/website";
 
-// Signing in on Mach's own page, through WorkOS's API: a code by email (Magic
+// Signing in on Mach1's own page, through WorkOS's API: a code by email (Magic
 // Auth) or a password, Google or Microsoft, and the company's single sign-on
-// for a work domain that has one. WorkOS keeps the accounts; Mach shows the
+// for a work domain that has one. WorkOS keeps the accounts; Mach1 shows the
 // screens. Anything unusual (multi-factor, a password reset) finishes on
 // WorkOS's hosted page, which can do everything.
 
@@ -76,7 +76,7 @@ function friendly(code: string, error: unknown): string {
     return "Choose a stronger password: at least 10 characters, not a common one.";
   }
   if (code === "user_creation_error" || code === "email_not_available") return "There's already an account for that email. Sign in instead.";
-  if (code === "authentication_method_not_allowed") return "That way of signing in isn't turned on for Mach.";
+  if (code === "authentication_method_not_allowed") return "That way of signing in isn't turned on for Mach1.";
   console.error("Sign-in failed", code, (error as WorkOSError)?.message);
   return "Something went wrong signing in. Try again.";
 }
@@ -138,7 +138,7 @@ export const withEmailVerification = (pendingAuthenticationToken: string, code: 
 export const withCompany = (pendingAuthenticationToken: string, organizationId: string) =>
   attempt(() => getWorkOS().userManagement.authenticateWithOrganizationSelection({ clientId: clientId(), pendingAuthenticationToken, organizationId }));
 
-/** The state Mach's own provider sign-ins carry, so /callback can tell them from WorkOS-page ones. */
+/** The state Mach1's own provider sign-ins carry, so /callback can tell them from WorkOS-page ones. */
 export const OAUTH_STATE_PREFIX = "mach.";
 
 /** Where to send someone to sign in with Google, Microsoft or their company's single sign-on, and what to remember meanwhile. */
@@ -227,7 +227,7 @@ export function unsealPending(cookie: string | undefined): Pending | null {
   }
 }
 
-/** Only a path inside Mach, so a sign-in link can't send someone elsewhere afterwards. */
+/** Only a path inside Mach1, so a sign-in link can't send someone elsewhere afterwards. */
 export function safeReturnTo(value: string | null | undefined): string {
   return value && /^\/(?!\/)[^\s\\]*$/.test(value) && !value.startsWith("/sign-in") && !value.startsWith("/callback") ? value : "/";
 }

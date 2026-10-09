@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 import { sandboxes, sandboxNameFor, workspaceSandboxName } from "@/lib/sandbox";
 import { removePrefix } from "@/lib/storage";
 
-// Deleting a company deletes everything it has in Mach: its job sandboxes and
+// Deleting a company deletes everything it has in Mach1: its job sandboxes and
 // the Chief of Staff's workspace sandbox, every file it stored in Blob (the
 // library, the drive, uploads), every row in the database (the organization
 // row cascades to people, chats, agents, tasks, files, integrations and their

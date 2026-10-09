@@ -13,11 +13,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Mach",
+  title: "Mach1",
   description: "Run your company with people and AI agents.",
-  applicationName: "Mach",
-  // Added to an iPhone's home screen, Mach opens full screen under a see-through status bar.
-  appleWebApp: { capable: true, title: "Mach", statusBarStyle: "black-translucent" },
+  applicationName: "Mach1",
+  // Added to an iPhone's home screen, Mach1 opens full screen under a see-through status bar.
+  appleWebApp: { capable: true, title: "Mach1", statusBarStyle: "black-translucent" },
   formatDetection: { telephone: false },
 };
 

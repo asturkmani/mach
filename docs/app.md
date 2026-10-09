@@ -1,19 +1,19 @@
-# Mach as an app on your phone
+# Mach1 as an app on your phone
 
-Mach is a progressive web app: install it from the browser and it behaves like a native app. There's nothing to download from an app store, and every deploy reaches it straight away.
+Mach1 is a progressive web app: install it from the browser and it behaves like a native app. There's nothing to download from an app store, and every deploy reaches it straight away.
 
 ## Installing
 
 - **iPhone and iPad (Safari):** tap Share, then **Add to Home Screen**. Menu → Get notifications explains this too.
 - **Android (Chrome), and Chrome or Edge on a computer:** Menu → **Install the app** (also in Settings → Account), or the install button in the address bar.
 
-Installed, Mach opens full screen with its own icon. The status bar takes Mach's colours in light and dark, and pages sit clear of the notch and the home bar. A long press on the icon offers **New task** and **Chief of Staff**.
+Installed, Mach1 opens full screen with its own icon. The status bar takes Mach1's colours in light and dark, and pages sit clear of the notch and the home bar. A long press on the icon offers **New task** and **Chief of Staff**.
 
 ## What the app does
 
-- **Push notifications**, even with Mach closed: when a task starts waiting on you or is ready for your review, and when someone @-mentions you. Tapping one opens the task. Turn them on per device in Menu, or in Settings → Account. On an iPhone they need the installed app (iOS 16.4 or later).
+- **Push notifications**, even with Mach1 closed: when a task starts waiting on you or is ready for your review, and when someone @-mentions you. Tapping one opens the task. Turn them on per device in Menu, or in Settings → Account. On an iPhone they need the installed app (iOS 16.4 or later).
 - **A badge on the icon** with the number of things waiting on you, kept up to date by the open app and by every notification.
-- **Share to Mach:** share text or a link from any app's share sheet, and it opens the Chief of Staff with it drafted (Android, from the installed app).
+- **Share to Mach1:** share text or a link from any app's share sheet, and it opens the Chief of Staff with it drafted (Android, from the installed app).
 - **Offline:** a page that can't load shows an offline screen that reloads itself when the connection is back. While you're in the app, a line at the top says you're offline, and what you do waits and goes through when you're back (Next's `experimental.useOffline`).
 - **Touch:** fields don't zoom in when tapped, taps don't flash, and the app doesn't rubber-band or pull to refresh as a whole. Lists scroll inside it, and toasts sit above the tab bar.
 
@@ -38,10 +38,10 @@ Installed, Mach opens full screen with its own icon. The status bar takes Mach's
 2. Set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` in the Vercel project (Production and Preview) and in `.env.local`. Optionally set `VAPID_SUBJECT` (a `mailto:` or `https:` contact). It defaults to the app's URL.
 3. Redeploy. Menu → Turn on notifications now subscribes the device.
 
-Keep the same key pair: changing it orphans every device that subscribed with the old one, until each turns notifications on again. Without the keys, Mach offers the browser's own notifications instead, which only appear while Mach is open in a tab.
+Keep the same key pair: changing it orphans every device that subscribed with the old one, until each turns notifications on again. Without the keys, Mach1 offers the browser's own notifications instead, which only appear while Mach1 is open in a tab.
 
 ## Not covered (yet)
 
-- App store listings. Mach could be wrapped for the App Store and Play Store (Capacitor, or a Trusted Web Activity on Android), but that needs Apple and Google developer accounts.
-- Sharing files or photos into Mach. The share target takes text and links. Files would need a POST share target that uploads them.
-- Using Mach offline beyond the offline screen: reading tasks without a connection would mean storing company data on the device, which Mach deliberately doesn't.
+- App store listings. Mach1 could be wrapped for the App Store and Play Store (Capacitor, or a Trusted Web Activity on Android), but that needs Apple and Google developer accounts.
+- Sharing files or photos into Mach1. The share target takes text and links. Files would need a POST share target that uploads them.
+- Using Mach1 offline beyond the offline screen: reading tasks without a connection would mean storing company data on the device, which Mach1 deliberately doesn't.

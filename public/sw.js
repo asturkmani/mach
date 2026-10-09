@@ -1,13 +1,13 @@
-// Mach's service worker. It keeps three things:
+// Mach1's service worker. It keeps three things:
 // - the offline screen, shown when a page can't load because there's no connection;
 // - the app's built files (/_next/static, named by their content so they never
 //   change), so an installed app opens fast;
-// - push notifications: "#12 needs your answer" while Mach is closed, opening
+// - push notifications: "#12 needs your answer" while Mach1 is closed, opening
 //   the task when tapped, and the count of what waits on you on the app's icon.
 // Pages and data always come from the network: nothing about the company is
 // stored on the device.
 
-const VERSION = "mach-v2";
+const VERSION = "mach-v3";
 const OFFLINE = "/offline.html";
 const PRECACHE = [OFFLINE, "/icons/icon-192.png", "/icons/badge-96.png"];
 
@@ -59,7 +59,7 @@ self.addEventListener("push", (event) => {
   try {
     message = event.data ? event.data.json() : {};
   } catch {
-    message = { title: "Mach", body: event.data ? event.data.text() : "" };
+    message = { title: "Mach1", body: event.data ? event.data.text() : "" };
   }
   event.waitUntil(
     (async () => {

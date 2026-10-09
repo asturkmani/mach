@@ -8,7 +8,7 @@ import { JOB_DIR, openCompanySandbox, sandboxNameOf } from "@/lib/sandbox";
 
 const CHECKER = `${JOB_DIR}/.mach/check-page.py`;
 
-const CHECK_PY = String.raw`# Opens a page's document and reports what rendered. Written by Mach.
+const CHECK_PY = String.raw`# Opens a page's document and reports what rendered. Written by Mach1.
 import json, sys
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 

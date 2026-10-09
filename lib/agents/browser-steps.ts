@@ -29,7 +29,7 @@ const WAITER = `${JOB_DIR}/.mach/login-wait.sh`;
 const BROWSER = `${JOB_DIR}/.mach/browse.py`;
 
 /** Runs in the sandbox: signs in with Playwright and reports through LOGIN_DIR/<slug>.status. */
-const LOGIN_PY = String.raw`# Signs the job's browser in to a website. Written by Mach; credentials
+const LOGIN_PY = String.raw`# Signs the job's browser in to a website. Written by Mach1; credentials
 # arrive in a file that is deleted as soon as it's read.
 import base64, hashlib, hmac, json, os, re, struct, sys, time
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -192,7 +192,7 @@ cat "$f" 2>/dev/null || echo starting
 `;
 
 /** Runs in the sandbox: opens a page (signed in with a saved session, if given) and writes what it found as JSON. */
-const BROWSE_PY = String.raw`# Opens a page in the agent's browser. Written by Mach.
+const BROWSE_PY = String.raw`# Opens a page in the agent's browser. Written by Mach1.
 import json, os, sys
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 

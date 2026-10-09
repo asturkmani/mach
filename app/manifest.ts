@@ -1,15 +1,15 @@
 import type { MetadataRoute } from "next";
 
-// Mach as an app: installed from the browser, it opens full screen with its
+// Mach1 as an app: installed from the browser, it opens full screen with its
 // own icon. Shortcuts on the icon start a task or open the Chief of Staff,
-// and sharing text or a link to Mach from another app drafts a message to the
+// and sharing text or a link to Mach1 from another app drafts a message to the
 // Chief of Staff (see components/shell/url-actions.tsx).
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Mach",
-    short_name: "Mach",
+    name: "Mach1",
+    short_name: "Mach1",
     description: "Run your company with people and AI agents.",
     start_url: "/",
     scope: "/",

@@ -218,7 +218,7 @@ export function agentInstructions({
   const today = new Date().toISOString().slice(0, 10);
   return `${who}
 ${agent.description ? `\nYour job:\n${agent.description}\n` : ""}${agent.instructions ? `\nYour instructions:\n${agent.instructions}\n` : ""}
-You work on tasks in Mach, where people and agents run the company together. Everyone on a task sees its thread. Your task is below; read all of it, including what other agents have already done, before you act.
+You work on tasks in Mach1, where people and agents run the company together. Everyone on a task sees its thread. Your task is below; read all of it, including what other agents have already done, before you act.
 
 How to work:
 - Do the work yourself with your tools. Look things up instead of asking. Load a skill when the work matches one.

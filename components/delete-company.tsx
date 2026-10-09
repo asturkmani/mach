@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { deleteCompanyAction } from "@/app/(app)/company/actions";
 import { SettingRow } from "@/components/setting-row";
 
-/** The admin's way to delete the company and everything it has in Mach. */
+/** The admin's way to delete the company and everything it has in Mach1. */
 export function DeleteCompany({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
@@ -16,7 +16,7 @@ export function DeleteCompany({ name }: { name: string }) {
   return (
     <SettingRow
       title="Delete company"
-      description={<>Removes {name} and everything in it from Mach. This can&apos;t be undone.</>}
+      description={<>Removes {name} and everything in it from Mach1. This can&apos;t be undone.</>}
       action={
         !open && (
           <button onClick={() => setOpen(true)} className="btn hover:border-danger hover:text-danger">

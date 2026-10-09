@@ -75,7 +75,7 @@ function channelInstructions(channel: Channel): string {
   const where = channel === "whatsapp" ? "WhatsApp" : "email";
   return `This message came by ${where}, and your reply goes back the same way, as plain text. Keep it short: a few sentences or a short list, no tables or headings${
     channel === "whatsapp" ? ", *single asterisks* for bold" : ""
-  }. Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give this link to finish in the app: ${appUrl("/")}. Links to a task are ${appUrl("/tasks/")} followed by its number. It's the same conversation as their chat panel in Mach, so they can carry on in either.`;
+  }. Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give this link to finish in the app: ${appUrl("/")}. Links to a task are ${appUrl("/tasks/")} followed by its number. It's the same conversation as their chat panel in Mach1, so they can carry on in either.`;
 }
 
 function onboardingInstructions({ organization }: Context): string {
@@ -160,7 +160,7 @@ ${fileLines.join("\n") || "(none yet)"}`;
 export function chiefOfStaffInstructions(context: Context): string {
   const { organization, user, profile } = context;
   const today = new Date().toISOString().slice(0, 10);
-  return `You are the Chief of Staff of ${organization.name}, a company that uses Mach, a command center where people and AI agents run the business together.
+  return `You are the Chief of Staff of ${organization.name}, a company that uses Mach1, a command center where people and AI agents run the business together.
 
 You are talking to ${context.person?.name ?? user.name} (${user.email}), who is already in the people list under that name. If you learn their role or manager, save it.
 
@@ -169,7 +169,7 @@ ${organization.onboardingCompletedAt ? afterOnboardingInstructions(context) : on
 ${workInstructions(context)}
 ${context.channel ? `\n${channelInstructions(context.channel)}\n` : ""}${
     context.viewing
-      ? `\nRight now they're looking at ${context.viewing} in Mach, with this chat open beside it. When they say "this", "here" or "it" without saying what, they mean that.\n`
+      ? `\nRight now they're looking at ${context.viewing} in Mach1, with this chat open beside it. When they say "this", "here" or "it" without saying what, they mean that.\n`
       : ""
   }
 Recording facts:
@@ -258,7 +258,7 @@ function profileTools(context: Context) {
     }),
     remove_person: tool({
       description:
-        "Remove a person from the organisation, which also takes them off every task. Not for renaming (use save_person with newName), and not for anyone who has signed in to Mach: an admin removes those on the Team page.",
+        "Remove a person from the organisation, which also takes them off every task. Not for renaming (use save_person with newName), and not for anyone who has signed in to Mach1: an admin removes those on the Team page.",
       inputSchema: z.object({ name: z.string().min(1) }),
       execute: async ({ name }) => {
         const result = await removePersonByName(orgId, name, { protect: context.person ? [context.person.id] : [] });
@@ -270,7 +270,7 @@ function profileTools(context: Context) {
           output.result === "removed"
             ? "Removed."
             : output.result === "has_account"
-              ? "Not removed: they have a Mach account (or it's the person you're talking to). To rename someone use save_person with newName; to remove an account, an admin uses the Team page."
+              ? "Not removed: they have a Mach1 account (or it's the person you're talking to). To rename someone use save_person with newName; to remove an account, an admin uses the Team page."
               : "No one by that name was in the people list.",
       }),
     }),

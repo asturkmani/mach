@@ -9,7 +9,7 @@ import { subscribePushAction, unsubscribePushAction } from "@/app/(app)/actions"
 
 import { useShell } from "./shell";
 
-// Mach as an app on this phone or computer: its service worker (public/sw.js),
+// Mach1 as an app on this phone or computer: its service worker (public/sw.js),
 // installing it, push notifications, the count on its icon, and a line when
 // the connection drops.
 
@@ -108,7 +108,7 @@ function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-/** Push notifications on this device, when Mach has push set up (data.pushKey). */
+/** Push notifications on this device, when Mach1 has push set up (data.pushKey). */
 export function usePush() {
   const { data } = useShell();
   const state = useSyncExternalStore(
@@ -126,10 +126,10 @@ export function usePush() {
   );
 
   const turnOn = async (): Promise<string | null> => {
-    if (!data.pushKey) return "Push notifications aren't set up for Mach yet.";
+    if (!data.pushKey) return "Push notifications aren't set up for Mach1 yet.";
     if ((await Notification.requestPermission()) !== "granted") {
       pushListeners.forEach((l) => l());
-      return "Notifications are blocked. Allow them in your settings for Mach, then try again.";
+      return "Notifications are blocked. Allow them in your settings for Mach1, then try again.";
     }
     const reg = (await registration()) ?? (await registerWorker());
     if (!reg) return "This browser can't receive notifications.";
@@ -159,7 +159,7 @@ export function usePush() {
   return { state: data.pushKey ? state : ("unsupported" as PushState), turnOn, turnOff };
 }
 
-/** Whether this device gets Mach's push notifications (so the open app needn't show its own). */
+/** Whether this device gets Mach1's push notifications (so the open app needn't show its own). */
 export const pushOn = () => subscribed === true;
 
 // ---- Setting up the device -----------------------------------------------

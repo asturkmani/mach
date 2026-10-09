@@ -33,7 +33,7 @@ const schema = z.object({
       z.object({
         title: z.string().describe("The page, in a short line: what it shows and how often it refreshes, if it does."),
         prompt: z.string().describe("The request to the Chief of Staff, in the person's voice, starting 'Build me a page'."),
-        source: z.string().describe("Where its data comes from: an integration's name, the drive file it reads, or Mach for its tasks, people and agents."),
+        source: z.string().describe("Where its data comes from: an integration's name, the drive file it reads, or Mach1 for its tasks, people and agents."),
         needsConnecting: z.string().nullable().describe("The system to connect first when it isn't a connected data source yet, else null."),
       }),
     )
@@ -60,12 +60,12 @@ async function inputs(organizationId: string): Promise<string> {
   ].join("\n\n");
 }
 
-const INSTRUCTIONS = `You suggest pages for a company that uses Mach. A page is a dashboard of the company's own data that the Chief of Staff builds and keeps fresh on a schedule: headline numbers, tables and charts, in its Pages.
+const INSTRUCTIONS = `You suggest pages for a company that uses Mach1. A page is a dashboard of the company's own data that the Chief of Staff builds and keeps fresh on a schedule: headline numbers, tables and charts, in its Pages.
 
 Suggest up to four pages this company would open every day or week, specific to what it does and the systems it uses. Rules:
-- A page can show data from the company's data sources (APIs), files on its company drive, and Mach's own data, read live: its tasks (status, priority, who's on them, dates), people and agents. Not chats or other documents. Prefer connected data sources and Mach's own data. A system named in the profile, or connected only as a website login, can be suggested too, with needsConnecting set to its name, since its API has to be connected first.
+- A page can show data from the company's data sources (APIs), files on its company drive, and Mach1's own data, read live: its tasks (status, priority, who's on them, dates), people and agents. Not chats or other documents. Prefer connected data sources and Mach1's own data. A system named in the profile, or connected only as a website login, can be suggested too, with needsConnecting set to its name, since its API has to be connected first.
 - Don't repeat a page they already have. Don't invent systems, numbers or names that aren't in what you're given.
-- Titles are one short line in plain words, like "Net worth by entity and asset class, every weekday at 7am". Mach's own data is always live, so a page that only reads it has no schedule.
+- Titles are one short line in plain words, like "Net worth by entity and asset class, every weekday at 7am". Mach1's own data is always live, so a page that only reads it has no schedule.
 - If almost nothing is known about the company, suggest fewer, simpler pages.`;
 
 /**

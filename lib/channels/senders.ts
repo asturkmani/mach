@@ -6,7 +6,7 @@ import { getOrganization, type Organization } from "@/lib/orgs";
 import { getPerson } from "@/lib/people";
 
 // Who a WhatsApp message or an email is from. Only people who have joined
-// their company in Mach (signed in, so they have a conversation with the Chief
+// their company in Mach1 (signed in, so they have a conversation with the Chief
 // of Staff) are answered.
 
 /** A phone number as digits with its country code: "+44 7700 900123", "whatsapp:+447700900123" and "0044…" all match. */

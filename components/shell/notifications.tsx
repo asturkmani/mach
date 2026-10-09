@@ -5,10 +5,10 @@ import { useNotificationPermission } from "./inbox-notifier";
 
 // Turning notifications on, wherever it's offered (the left menu, the phone's
 // menu, account settings). With push set up, a device subscribes and gets
-// notifications while Mach is closed; without it, the browser notifies only
-// while Mach is open in a tab.
+// notifications while Mach1 is closed; without it, the browser notifies only
+// while Mach1 is open in a tab.
 
-const IOS_STEPS = "On an iPhone, add Mach to your Home Screen first: tap Share, then Add to Home Screen. Open it from there and turn notifications on.";
+const IOS_STEPS = "On an iPhone, add Mach1 to your Home Screen first: tap Share, then Add to Home Screen. Open it from there and turn notifications on.";
 
 export function useNotifications() {
   const push = usePush();
@@ -28,9 +28,9 @@ export function useNotifications() {
           return "Notifications are off on this device.";
         }
         if (push.state === "needs-install") return IOS_STEPS;
-        if (push.state === "denied") return "Notifications are blocked for Mach. Allow them in your settings, then try again.";
+        if (push.state === "denied") return "Notifications are blocked for Mach1. Allow them in your settings, then try again.";
         const problem = await push.turnOn();
-        return problem ?? "You'll get a notification when something needs you, even with Mach closed.";
+        return problem ?? "You'll get a notification when something needs you, even with Mach1 closed.";
       },
     };
   }

@@ -1,4 +1,4 @@
-# Mach: Product Specification
+# Mach1: Product Specification
 
 | | |
 |---|---|
@@ -40,9 +40,9 @@
 
 ## 1. Summary
 
-Mach is a command center for running a small or medium-sized business. In one workspace, **people work with people, people work with AI agents, and agents work with each other** to get the company's work done.
+Mach1 is a command center for running a small or medium-sized business. In one workspace, **people work with people, people work with AI agents, and agents work with each other** to get the company's work done.
 
-Every company on Mach gets:
+Every company on Mach1 gets:
 
 - a **Company Profile** describing who the company is, who does what and who reports to whom,
 - a **Company Brain** where agents store what they learn,
@@ -51,7 +51,7 @@ Every company on Mach gets:
 - a **Kanban board** where tasks go to humans or agents, and a **dispatcher** that starts agents automatically when their work is ready,
 - **channels** (WhatsApp, email, in-app), ticked per agent, so people can talk to agents from wherever they already work.
 
-Agents should be as capable as open-source personal agents like OpenClaw and Hermes Agent: tools over MCP, skills, a sandboxed cloud computer (Vercel Sandbox), memory, schedules, messaging. The difference is that Mach agents work for a company rather than for one person.
+Agents should be as capable as open-source personal agents like OpenClaw and Hermes Agent: tools over MCP, skills, a sandboxed cloud computer (Vercel Sandbox), memory, schedules, messaging. The difference is that Mach1 agents work for a company rather than for one person.
 
 ## 2. Problem and opportunity
 
@@ -59,7 +59,7 @@ Agents should be as capable as open-source personal agents like OpenClaw and Her
 - **Today's capable agents are personal.** OpenClaw and Hermes Agent each serve one user on one machine with one memory. They don't know the org chart, can't share work with colleagues, and don't hand off to other agents.
 - **"AI features" in business tools are chatbots bolted onto existing products.** In those tools the agent is a feature, not a teammate who owns work.
 
-**Mach's bet:** an SME gets more done when agents are members of the company. Each agent has a job description, a manager, a task queue and a way to reach it. It can read shared company knowledge, and the whole team, human and agent, works from the same board.
+**Mach1's bet:** an SME gets more done when agents are members of the company. Each agent has a job description, a manager, a task queue and a way to reach it. It can read shared company knowledge, and the whole team, human and agent, works from the same board.
 
 ## 3. Goals, non-goals, assumptions
 
@@ -98,7 +98,7 @@ Agents should be as capable as open-source personal agents like OpenClaw and Her
 4. **Everything is observable.** We log every run, tool call, message, memory write and approval, and let people inspect them.
 5. **Safe by default, autonomous by choice.** New agents start conservative. Owners raise autonomy per agent and per action.
 6. **Buy or borrow before we build.** Platform (Vercel's agent stack), sandbox (Vercel Sandbox), memory (Postgres + pgvector), tools (MCP), skills (open format), channels (official APIs). Our value is the orchestration and the experience.
-7. **Platform as MCP.** Mach's own capabilities (tasks, messaging, brain, profile) reach agents through an MCP server. That keeps the agent runtime swappable and leaves room for third-party agents to join a workspace later.
+7. **Platform as MCP.** Mach1's own capabilities (tasks, messaging, brain, profile) reach agents through an MCP server. That keeps the agent runtime swappable and leaves room for third-party agents to join a workspace later.
 
 ## 5. Users and roles
 
@@ -402,9 +402,9 @@ RETURNING id;
 
 ### F5. Agent capabilities
 
-**The bar:** anything a well-configured OpenClaw or Hermes agent can do for one person, a Mach agent can do for a company.
+**The bar:** anything a well-configured OpenClaw or Hermes agent can do for one person, a Mach1 agent can do for a company.
 
-| Capability | Mach | Pri |
+| Capability | Mach1 | Pri |
 |---|---|---|
 | Tools via MCP | Workspace MCP registry with per-agent grants | P0 |
 | Skills | Workspace library in the open `SKILL.md` format; importable; agents can propose new ones | P0 / P1 |
@@ -419,9 +419,9 @@ RETURNING id;
 | Voice notes | Inbound transcription | P1 |
 | Self-improvement | Post-run reflection writes memories and proposes skills | P1 |
 
-#### F5.1 Built-in platform tools ("Mach MCP")
+#### F5.1 Built-in platform tools ("Mach1 MCP")
 
-Written once as TypeScript functions and filtered by the agent's permissions. Agents on the default runtime call them in-process; harness agents running inside a sandbox ([§9.2](#92-agent-runtime), option B) and future third-party agents reach the same functions through the Mach MCP server:
+Written once as TypeScript functions and filtered by the agent's permissions. Agents on the default runtime call them in-process; harness agents running inside a sandbox ([§9.2](#92-agent-runtime), option B) and future third-party agents reach the same functions through the Mach1 MCP server:
 
 - **Tasks:** list/search, get, create (including subtasks), update, comment, assign, plus the outcome tools (`complete`, `needs_input`, `delegated`, `blocked`)
 - **People and agents:** list members, get a member's profile, look up who owns what
@@ -448,7 +448,7 @@ Written once as TypeScript functions and filtered by the agent's permissions. Ag
 
 | ID | Pri | Requirement |
 |---|---|---|
-| SKL-1 | P0 | **Open format.** A skill is a folder with `SKILL.md` and optional scripts and resources, in the Agent Skills standard also used by Claude, OpenClaw and Hermes Agent. Community skills therefore work in Mach. |
+| SKL-1 | P0 | **Open format.** A skill is a folder with `SKILL.md` and optional scripts and resources, in the Agent Skills standard also used by Claude, OpenClaw and Hermes Agent. Community skills therefore work in Mach1. |
 | SKL-2 | P0 | **Workspace skill library.** Upload or write skills in an editor, version them, attach them to agents. |
 | SKL-3 | P0 | **Progressive disclosure.** Agents see only skill names and descriptions until a skill is relevant; then the full content loads. |
 | SKL-4 | P1 | **Import** from public registries (ClawHub, the Hermes Skills Hub, GitHub). Skills can contain scripts, which is a supply-chain risk, so imports are scanned and need admin approval. |
@@ -493,7 +493,7 @@ Every agent has an in-app inbox. Other channels are tick boxes on the agent's se
 | Channel | Pri | How it works | Notes |
 |---|---|---|---|
 | **In-app** | P0 | DMs and threads in the web app | Always on |
-| **WhatsApp** | P0 | Through our existing **Twilio** account. MVP: one Mach WhatsApp number for all workspaces; users verify their phone number, and the CoS routes each message to the right agent (CHN-10). Later: a dedicated number per workspace. | Our own webhook route plus the `twilio` npm SDK ([below](#whatsapp-via-twilio)) |
+| **WhatsApp** | P0 | Through our existing **Twilio** account. MVP: one Mach1 WhatsApp number for all workspaces; users verify their phone number, and the CoS routes each message to the right agent (CHN-10). Later: a dedicated number per workspace. | Our own webhook route plus the `twilio` npm SDK ([below](#whatsapp-via-twilio)) |
 | **Email** | P0 | MVP: one address per workspace for the CoS (`<workspace>@<our-mail-domain>`) plus outbound email from any agent. P1: an address per agent and custom domains (`bookkeeper@acme.co.uk`). | Open-source libraries in our app ([below](#email)) |
 | Slack / Teams / Discord | P1 | One app per workspace; agents appear as bot users | Chat SDK adapters exist and Vercel Connect manages their tokens |
 | Telegram | P2 | Not planned for now | Chat SDK has an adapter if we want it later |
@@ -535,7 +535,7 @@ A fully self-hosted open-source mail stack (Postal, Reloop) would need its own s
 
 **WhatsApp risks we accept for launch ([D5](#14-open-questions-and-decisions)):**
 
-1. **Meta policy.** Since 15 Jan 2026, WhatsApp Business Solution terms (which apply through Twilio too) prohibit providers whose *primary* function is distributing a general-purpose AI assistant. AI used inside a business's own operations is allowed. Mach is a business-operations product used by each company's own staff, but one shared Mach number serving many companies is the riskiest shape. Mitigation: keep the number's use clearly about running your business (tasks, approvals, briefs), and move to a WhatsApp sender per workspace, registered for that company, after launch.
+1. **Meta policy.** Since 15 Jan 2026, WhatsApp Business Solution terms (which apply through Twilio too) prohibit providers whose *primary* function is distributing a general-purpose AI assistant. AI used inside a business's own operations is allowed. Mach1 is a business-operations product used by each company's own staff, but one shared Mach1 number serving many companies is the riskiest shape. Mitigation: keep the number's use clearly about running your business (tasks, approvals, briefs), and move to a WhatsApp sender per workspace, registered for that company, after launch.
 2. **24-hour window and templates** (above): proactive messages cost per message and need approved templates.
 3. **No unofficial bridges.** WhatsApp Web bridges violate WhatsApp's terms and risk a ban. Twilio's official API only.
 
@@ -567,11 +567,11 @@ Agent↔agent work counts against both agents' budgets and against the delegatio
 | SEC-1 | P0 | **Human roles.** MVP: Owner (manages agents, integrations, billing) and Member (creates tasks, talks to agents). P1: Admin and Guest. |
 | SEC-2 | P0 | **Agent permissions:** tool grants (MCP-3), Brain scopes, which members it may message or assign to, whether it may create subtasks or agents. |
 | SEC-3 | P0 | **Action policies** of Allow / Ask first / Deny, set per tool or per category. Defaults are in the table below. |
-| SEC-4 | P1 | **Autonomy presets.** *Supervised* asks before any side effect outside Mach. *Standard* uses the defaults below. *Autonomous* asks only for categories explicitly set to Ask. **[Decision D7]** default for new agents. |
+| SEC-4 | P1 | **Autonomy presets.** *Supervised* asks before any side effect outside Mach1. *Standard* uses the defaults below. *Autonomous* asks only for categories explicitly set to Ask. **[Decision D7]** default for new agents. |
 | SEC-5 | P0 | **Approval requests** show the exact action (tool, arguments and a rendered preview, e.g. the actual email), the reason and the task. They go to the agent's manager (fallback: owners) in-app and on the manager's preferred channel. Options: approve / deny / edit and approve / "always allow this for this agent". Requests expire after 24 h by default; expiry counts as a denial and the task moves to Waiting. |
 | SEC-6 | P0 | **Budgets.** Spend caps (LLM + sandbox + paid tools) per run, per agent per day/month and per workspace per month. Alerts at 50/80/100%. At 100% runs stop and the owner is notified. |
 | SEC-7 | P0 | **Audit log.** An immutable record of every action by every member, including tool calls with arguments, approvals and config changes. Exportable. |
-| SEC-8 | P0 | **Credentials.** OAuth and API tokens live in Vercel Connect, which issues short-lived tokens at call time; our deployment authenticates to it with Vercel OIDC, so no long-lived secrets are stored in the app. Mach's own Twilio and SendGrid keys are Vercel environment variables (sensitive). Any secret a customer pastes in that Connect can't hold is envelope-encrypted in Postgres, scoped per workspace or agent. |
+| SEC-8 | P0 | **Credentials.** OAuth and API tokens live in Vercel Connect, which issues short-lived tokens at call time; our deployment authenticates to it with Vercel OIDC, so no long-lived secrets are stored in the app. Mach1's own Twilio and SendGrid keys are Vercel environment variables (sensitive). Any secret a customer pastes in that Connect can't hold is envelope-encrypted in Postgres, scoped per workspace or agent. |
 | SEC-9 | P0 | **Prompt-injection posture.** Content from web pages, emails, files and unverified senders is untrusted data. Instructions come only from verified members. If a run's context includes untrusted content, its sensitive actions require approval regardless of policy. P1: per-run taint tracking. |
 | SEC-10 | P0 | **Tenant isolation.** Every row is scoped by workspace. MVP enforces this in one data-access layer that every query goes through; Postgres row-level security follows in P1. Sandboxes are per agent. Memory never crosses workspaces. |
 | SEC-11 | P1 | **Kill switch.** An owner can pause every agent with one click. |
@@ -715,13 +715,13 @@ flowchart LR
         WEB[Web app]
         CH[WhatsApp / Email]
     end
-    subgraph App["Mach on Vercel, lhr1"]
+    subgraph App["Mach1 on Vercel, lhr1"]
         NEXT[Next.js app and API routes]
         CHAT[Channel routes<br/>WhatsApp + email]
         DSP[Dispatcher]
         CRON[Cron: sweep and schedules]
         WF[Run workflows<br/>AI SDK WorkflowAgent]
-        MCPS[Mach MCP server]
+        MCPS[Mach1 MCP server]
     end
     subgraph Vercel["Vercel platform services"]
         GW[AI Gateway]
@@ -762,7 +762,7 @@ flowchart LR
 | **Channel routes** | Our own webhook routes for WhatsApp (Twilio) and email (SendGrid Inbound Parse + mailparser), plus senders (Twilio SDK, Nodemailer). They verify signatures, resolve the member and workspace, store the message and start a run. |
 | **Dispatcher** | Called directly whenever a task changes, plus a one-minute cron sweep; claims dispatchable tasks ([F4.2](#f42-dispatcher)) and starts run workflows. |
 | **Run workflows** | One durable Workflow per run, driving an AI SDK `WorkflowAgent`. Each tool call is a step with automatic retries. Approvals and short human waits suspend on Workflow hooks. |
-| **Mach MCP server** | The platform tools (tasks, messaging, Brain, profile) exposed over MCP for agents that run inside a sandbox harness (option B below) and for future third-party agents. Agents on option A call the same functions in-process. |
+| **Mach1 MCP server** | The platform tools (tasks, messaging, Brain, profile) exposed over MCP for agents that run inside a sandbox harness (option B below) and for future third-party agents. Agents on option A call the same functions in-process. |
 | **AI Gateway** | One endpoint for all models: per-agent model choice, fallbacks, budgets and usage reporting. |
 | **Sandbox** | Each agent's persistent computer, where its bash, file, browser and local-MCP tools run. |
 | **Connect** | Holds OAuth and API credentials and issues short-lived tokens to tool steps; brokers credentials into sandboxes when code there must call an API. |
@@ -789,9 +789,9 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. AI SDK 7 `WorkflowAgent` on Vercel Workflow, tools executed in Vercel Sandbox** *(recommended)* | All-Vercel, GA components. Durable by construction; native human-in-the-loop via hooks; any model through AI Gateway; we own context assembly, permissions and tool design, which is where Mach's value is. | We build the harness pieces a packaged agent gives for free: file-edit tools, skill loading, subagents, compaction. |
-| B. `HarnessAgent` running Claude Code / Codex inside the sandbox | A mature coding harness for Coder agents; same AI SDK stream format, so the UI doesn't change | Experimental (canary) API; the harness runs inside the sandbox, so its model access must go through a scoped gateway key; reaches platform tools only via the Mach MCP server |
-| C. eve (Vercel's open-source agent framework) | Agents with instructions, skills, tools, channels, schedules and a sandbox, durable on Vercel Functions | Agents are directories deployed as code. Mach's agents are created by users at runtime and stored in the database, so eve doesn't fit as the core. Borrow its patterns; revisit if it supports runtime-defined agents. |
+| **A. AI SDK 7 `WorkflowAgent` on Vercel Workflow, tools executed in Vercel Sandbox** *(recommended)* | All-Vercel, GA components. Durable by construction; native human-in-the-loop via hooks; any model through AI Gateway; we own context assembly, permissions and tool design, which is where Mach1's value is. | We build the harness pieces a packaged agent gives for free: file-edit tools, skill loading, subagents, compaction. |
+| B. `HarnessAgent` running Claude Code / Codex inside the sandbox | A mature coding harness for Coder agents; same AI SDK stream format, so the UI doesn't change | Experimental (canary) API; the harness runs inside the sandbox, so its model access must go through a scoped gateway key; reaches platform tools only via the Mach1 MCP server |
+| C. eve (Vercel's open-source agent framework) | Agents with instructions, skills, tools, channels, schedules and a sandbox, durable on Vercel Functions | Agents are directories deployed as code. Mach1's agents are created by users at runtime and stored in the database, so eve doesn't fit as the core. Borrow its patterns; revisit if it supports runtime-defined agents. |
 
 **Decision:** Option A for every agent at launch. No runtime abstraction. Revisit option B for Coder agents after launch, once `HarnessAgent` leaves canary.
 
@@ -820,7 +820,7 @@ Because the loop runs in our workflow rather than inside the sandbox, model keys
 | Memory | Own module on pgvector | [F2](#f2-company-brain-memory) |
 | Files | Vercel Blob | Attachments, outputs, transcripts |
 | Live updates | Workflow streams for the open run; board polls every few seconds | Add push updates after launch if needed |
-| Mach MCP server | MCP route on Next.js (Vercel MCP adapter) | For option B harnesses and future third-party agents |
+| Mach1 MCP server | MCP route on Next.js (Vercel MCP adapter) | For option B harnesses and future third-party agents |
 | Auth | WorkOS AuthKit (`@workos-inc/authkit-nextjs`) | Free up to 1M monthly users; orgs, invitations and Google/Microsoft sign-in built in. Users live in WorkOS; our `people` table holds the org chart, including people without a login |
 | Feature flags | Vercel Flags | Gate beta pieces (HarnessAgent, Drives) |
 | Protection | Vercel Firewall, BotID on public forms | |
@@ -884,7 +884,7 @@ The plan is one launch milestone, then fast iterations driven by design partners
 - **Agent runtime:** `WorkflowAgent` on Workflow, AI Gateway (Claude), web search, persistent Vercel Sandbox on the default image, skills (upload + `load_skill`).
 - **Integrations:** Vercel Connect connectors that exist on launch day, granted per agent.
 - **Company Brain:** remember/recall tools, post-run extraction, a simple list/search/delete page.
-- **Channels:** in-app chat; one Mach WhatsApp number (Twilio) routed by the CoS, with four approved templates; email to and from each workspace's CoS address (Nodemailer + mailparser over SendGrid).
+- **Channels:** in-app chat; one Mach1 WhatsApp number (Twilio) routed by the CoS, with four approved templates; email to and from each workspace's CoS address (Nodemailer + mailparser over SendGrid).
 - **Control:** allow/ask/deny policies with defaults, approvals in-app and via WhatsApp quick-reply buttons, spend caps, run viewer with full transcripts.
 - *Exit criterion:* 5 design-partner SMEs run real work through agents every week.
 
@@ -942,7 +942,7 @@ The plan is one launch milestone, then fast iterations driven by design partners
 | D9 | Human↔human chat: task comments and mentions only at launch. |
 | D11 | Launch market: UK, hosted in `lhr1`. |
 | D12 | One assignee per task. |
-| D14 | Channels at launch: in-app, WhatsApp via our Twilio account (one shared Mach number routed by the CoS) and email via Nodemailer + mailparser over Twilio SendGrid. Telegram dropped for now. |
+| D14 | Channels at launch: in-app, WhatsApp via our Twilio account (one shared Mach1 number routed by the CoS) and email via Nodemailer + mailparser over Twilio SendGrid. Telegram dropped for now. |
 | D5 | WhatsApp goes ahead at launch on the shared Twilio number, accepting the Meta-policy risk ([F6](#f6-communication-channels)); per-workspace senders after launch. |
 | D15 | Speed over elegance: Vercel first, Marketplace second, build our own third; no portability layers ([Build strategy](#build-strategy)). |
 
@@ -950,7 +950,7 @@ The plan is one launch milestone, then fast iterations driven by design partners
 
 | ID | Question | Recommendation |
 |---|---|---|
-| D1 | Is "Mach" the product name or a working title? | Working title |
+| D1 | Is "Mach1" the product name or a working title? | Working title |
 | D7 | Default autonomy for new agents? | Ask before any external side effect at launch; loosen per agent |
 | D8 | When can external contacts (customers, suppliers) talk to agents? | After launch; design channel identity with it in mind |
 | D10 | Pricing: per seat, per agent, usage-based or hybrid? | Decide before design partners convert to paid; metering exists from day one |
@@ -960,7 +960,7 @@ The plan is one launch milestone, then fast iterations driven by design partners
 
 ## Appendix A: What we borrow from personal agents
 
-| | OpenClaw | Hermes Agent (Nous Research) | Mach |
+| | OpenClaw | Hermes Agent (Nous Research) | Mach1 |
 |---|---|---|---|
 | **Serves** | One person | One person | A company: many humans and many agents |
 | **Channels** | WhatsApp, Telegram, Signal, Discord… | Telegram, Discord, Slack, WhatsApp, Signal, CLI, with continuity across platforms | In-app, email and WhatsApp (official API via Twilio), with unified threads |

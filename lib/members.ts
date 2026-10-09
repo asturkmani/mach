@@ -24,7 +24,7 @@ export async function memberRoles(organizationId: string): Promise<Map<string, {
   return roles;
 }
 
-/** The people (in Mach) who are the company's admins. */
+/** The people (in Mach1) who are the company's admins. */
 export async function adminPersonIds(organizationId: string): Promise<string[]> {
   const [roles, people] = await Promise.all([memberRoles(organizationId), listPeople(organizationId)]);
   return people.filter((p) => p.workosUserId && roles.get(p.workosUserId)?.role === "admin").map((p) => p.id);

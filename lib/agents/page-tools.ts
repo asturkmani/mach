@@ -28,7 +28,7 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
   return {
     save_page: tool({
       description:
-        "Create a page (a report on company data, in Pages), or save a new version of one. Only with real data: if it isn't available yet, don't save a page; say what's needed. Load the building-pages skill first. The page is one HTML document that reads what you list in data (drive files, and Mach's own tasks, people and agents, live) from window.mach.data; it can't fetch anything. It's checked in your sandbox browser after saving, and you get what rendered and any script errors.",
+        "Create a page (a report on company data, in Pages), or save a new version of one. Only with real data: if it isn't available yet, don't save a page; say what's needed. Load the building-pages skill first. The page is one HTML document that reads what you list in data (drive files, and Mach1's own tasks, people and agents, live) from window.mach.data; it can't fetch anything. It's checked in your sandbox browser after saving, and you get what rendered and any script errors.",
       inputSchema: z.object({
         page: z.string().optional().describe("The slug of the page to change. Leave out to create a page."),
         title: z.string().min(1).max(40).describe("A short name for the tab, e.g. Net worth."),
@@ -36,7 +36,7 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
         html: z.string().min(1).describe("The whole HTML document."),
         data: z
           .array(z.string())
-          .describe("What it reads: drive files (paths under /vercel/drive, e.g. masttro/holdings.json) and Mach's own data by name (mach:tasks, mach:people, mach:agents)."),
+          .describe("What it reads: drive files (paths under /vercel/drive, e.g. masttro/holdings.json) and Mach1's own data by name (mach:tasks, mach:people, mach:agents)."),
         note: z.string().max(120).optional().describe("What this version changed, e.g. 'Added the entity filter'."),
       }),
       execute: async (input) => {

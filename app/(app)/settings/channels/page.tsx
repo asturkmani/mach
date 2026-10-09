@@ -4,7 +4,7 @@ import { agentmailConfigured } from "@/lib/channels/agentmail";
 import { whatsappNumber } from "@/lib/channels/twilio";
 import { requireAppContext } from "@/lib/session";
 
-// Settings → Channels: how the team reaches the Chief of Staff outside Mach.
+// Settings → Channels: how the team reaches the Chief of Staff outside Mach1.
 export default async function ChannelsSettingsPage() {
   const { organization, person, isAdmin } = await requireAppContext();
   return (

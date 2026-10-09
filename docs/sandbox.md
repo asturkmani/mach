@@ -41,7 +41,7 @@ Agents that need to compute something (a financial model, a simulation, a backte
 ## Files: the company library
 
 - Every file an agent attaches, and every script it runs, goes into the **company file library** with **versions**: name, kind (deliverable or code), and for each version its size, type, which task and agent produced it, and which version it was built from.
-- **Storage** is Vercel Blob (private) when a Blob store is connected to the project, and Postgres otherwise; the app reads both. Downloads go through Mach, which checks the person is in the company.
+- **Storage** is Vercel Blob (private) when a Blob store is connected to the project, and Postgres otherwise; the app reads both. Downloads go through Mach1, which checks the person is in the company.
 - A job's **inputs** are library files attached to it: by a person on the task page (from the library, or attached to a reply in the thread) or by the Chief of Staff when it creates the job. They are copied into the sandbox's `inputs` folder when the run starts, including files added after the sandbox was made (the sandbox keeps a `.files.json` of which version of each file it has). Saving a file with the same name as one of the job's files makes a **new version of that file**, not a new file, so a person can edit a deliverable and attach it back in the thread. Images attached since the agent last wrote are also shown to the model, scaled to 1568px.
 - If two jobs edit the same version at once, both versions are kept and the later one notes which version it was built from.
 - Sandboxes are scratch space, not the system of record: if a sandbox is lost, a fresh one is rebuilt from the library (inputs, deliverables, code) and the job's notes.
@@ -58,7 +58,7 @@ Shared data that every job can read and add to: a price history a daily job appe
 
 ## Recurring jobs
 
-- A job can carry **one schedule**: a five-field cron expression in a timezone (IANA name), set by the Chief of Staff when it creates the job (`create_task` with `repeat`), by an agent on the job (`set_schedule`, `stop_schedule`) or by a person in the job's Repeats panel. Runs are at least 15 minutes apart. The company's timezone is taken from the first browser that opens Mach and used as the default.
+- A job can carry **one schedule**: a five-field cron expression in a timezone (IANA name), set by the Chief of Staff when it creates the job (`create_task` with `repeat`), by an agent on the job (`set_schedule`, `stop_schedule`) or by a person in the job's Repeats panel. Runs are at least 15 minutes apart. The company's timezone is taken from the first browser that opens Mach1 and used as the default.
 - **Firing**: Vercel Cron calls `/api/cron/tick` every minute (`vercel.json`, authenticated with `CRON_SECRET`). The tick takes every due schedule, moves it to its next run from now (missed runs aren't replayed one by one) and starts a `scheduled-run` workflow. Archived and cancelled jobs, and paused schedules, don't fire; a job brought back from the archive resumes at its next run from then.
 - **Each run** posts "Scheduled run, Thu 8 Oct, 16:00" on the card, then:
   - **script mode** (the default) with a `run.sh`: replays `bash run.sh` in the job's sandbox without a model. Changed files in `outputs/` that are already deliverables on the job become their next versions; the last `SUMMARY:` line run.sh prints becomes the inbox line. If run.sh fails or is missing, its log goes on the thread and the agent is woken to fix it, rerun it and report.

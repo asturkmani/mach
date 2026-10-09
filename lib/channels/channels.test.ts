@@ -87,7 +87,7 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     await setUp();
     const sent = stubProviders();
     await handleWhatsApp({ from: "+447700900123", body: "What's open?", media: 0 }, { model: scriptedModel([new Error("gateway down")]), research: false });
-    expect(new URLSearchParams(sent[0].body).get("Body")).toBe("Sorry, something went wrong on my side. Try again, or open Mach: https://mach.example/");
+    expect(new URLSearchParams(sent[0].body).get("Body")).toBe("Sorry, something went wrong on my side. Try again, or open Mach1: https://mach.example/");
   });
 
   it("transcribes a WhatsApp voice note and answers what was said", async () => {
@@ -139,7 +139,7 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     const sent = stubProviders();
     const model = scriptedModel(["should not run"]);
     await handleWhatsApp({ from: "+15550000000", body: "hi", media: 0 }, { model, research: false });
-    expect(new URLSearchParams(sent[0].body).get("Body")).toContain("isn't linked to anyone in Mach");
+    expect(new URLSearchParams(sent[0].body).get("Body")).toContain("isn't linked to anyone in Mach1");
     expect(model.doGenerateCalls).toHaveLength(0);
   });
 
@@ -170,7 +170,7 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     expect(stored.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
   });
 
-  it("matches WhatsApp numbers however they were typed, and only for people who use Mach", async () => {
+  it("matches WhatsApp numbers however they were typed, and only for people who use Mach1", async () => {
     const ahmed = await setUp();
     expect((await findByPhone("whatsapp:+447700900123"))?.person.id).toBe(ahmed.id);
     expect((await findByPhone("00447700900123"))?.person.id).toBe(ahmed.id);

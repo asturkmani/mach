@@ -184,8 +184,8 @@ function MenuSheet({ onClose }: { onClose: () => void }) {
           {(install.state === "prompt" || install.state === "ios") && (
             <button
               onClick={async () => {
-                if (install.state === "ios") return toast("Tap Share in Safari, then Add to Home Screen. Mach opens full screen from there.");
-                if (await install.install()) toast("Mach is on your home screen.");
+                if (install.state === "ios") return toast("Tap Share in Safari, then Add to Home Screen. Mach1 opens full screen from there.");
+                if (await install.install()) toast("Mach1 is on your home screen.");
               }}
               className={`${row} text-muted`}
             >

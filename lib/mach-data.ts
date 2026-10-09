@@ -5,8 +5,8 @@ import { listPeople } from "@/lib/people";
 import type { MachSource } from "@/lib/mach-sources";
 import { listTasks } from "@/lib/tasks";
 
-// Mach's own data, which a page can read live, by name, alongside its drive
-// files: no script or refresh job, since it's already in Mach's database and
+// Mach1's own data, which a page can read live, by name, alongside its drive
+// files: no script or refresh job, since it's already in Mach1's database and
 // always current. "mach:" can't start a drive path, so the names never clash.
 // What each holds is described in lib/mach-sources.ts.
 

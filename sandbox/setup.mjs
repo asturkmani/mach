@@ -1,4 +1,4 @@
-// The shell script that turns a fresh sandbox into Mach's data workbench.
+// The shell script that turns a fresh sandbox into Mach1's data workbench.
 // Shared by the app (lib/sandbox.ts) and scripts/sandbox-template.mjs.
 
 export const JOB_DIR = "/vercel/job";

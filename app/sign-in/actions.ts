@@ -18,7 +18,7 @@ import {
   type Pending,
 } from "@/lib/sign-in";
 
-// Each step of signing in on Mach's page. A step answers with the next one to
+// Each step of signing in on Mach1's page. A step answers with the next one to
 // show, somewhere to go (signed in, or on to a provider), or what went wrong.
 
 export type Step =

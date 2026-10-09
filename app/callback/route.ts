@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { OAUTH_STATE_PREFIX, safeReturnTo, sealPending, SIGN_IN_COOKIE, unsealPending, withProviderCode } from "@/lib/sign-in";
 
 // WorkOS redirects here after sign-in (NEXT_PUBLIC_WORKOS_REDIRECT_URI). Google,
-// Microsoft and single sign-on started from Mach's own page carry its state
+// Microsoft and single sign-on started from Mach1's own page carry its state
 // ("mach.…") and are finished here; anything started on WorkOS's page (an
 // invitation link, say) goes to AuthKit's handler as before.
 

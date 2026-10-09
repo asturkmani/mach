@@ -15,7 +15,7 @@ import { archiveTask, createTaskWithTeam, rerunScript, scheduleTask, WorkError, 
 // ("net worth by entity from Masttro, every morning"), in Pages.
 // A page is one HTML document, every version kept, that reads files on the
 // company drive. It never fetches anything itself: it runs in a sandboxed
-// frame with no network, and Mach hands it the data. A recurring job keeps
+// frame with no network, and Mach1 hands it the data. A recurring job keeps
 // the data fresh, replaying a script without a model, quietly unless it fails.
 
 export type Page = {
@@ -23,7 +23,7 @@ export type Page = {
   slug: string;
   title: string;
   description: string;
-  /** What the page reads: drive paths ("masttro/holdings.json") and Mach's own data ("mach:tasks"). */
+  /** What the page reads: drive paths ("masttro/holdings.json") and Mach1's own data ("mach:tasks"). */
   data: string[];
   /** The job that refreshes its data, if it has one. */
   taskId: string | null;
@@ -219,7 +219,7 @@ export async function deletePage(organizationId: string, slug: string, by: Actor
 
 export type PageDataFile = {
   path: string;
-  /** Mach's own data (mach:tasks), read as the page opens: always current. */
+  /** Mach1's own data (mach:tasks), read as the page opens: always current. */
   live?: boolean;
   /** When its content last changed. Null when the file isn't on the drive (yet), or it's live. */
   updatedAt: Date | null;

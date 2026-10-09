@@ -15,7 +15,7 @@ import type { LanguageModel, TranscriptionModel } from "ai";
 
 type TurnOptions = { model?: LanguageModel; research?: boolean; transcriber?: TranscriptionModel };
 
-const trouble = () => `Sorry, something went wrong on my side. Try again, or open Mach: ${appUrl("/")}`;
+const trouble = () => `Sorry, something went wrong on my side. Try again, or open Mach1: ${appUrl("/")}`;
 
 export type WhatsAppMessage = {
   from: string;
@@ -43,7 +43,7 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
   if (!context) {
     await sendWhatsApp(
       message.from,
-      `Hi, this is Mach's Chief of Staff. This number isn't linked to anyone in Mach yet: sign in at ${appUrl("/settings/account")} and add it as your WhatsApp number, then message me again.`,
+      `Hi, this is Mach1's Chief of Staff. This number isn't linked to anyone in Mach1 yet: sign in at ${appUrl("/settings/account")} and add it as your WhatsApp number, then message me again.`,
     );
     return;
   }
@@ -54,7 +54,7 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
   else if (voice) notes.push("[They sent a voice note that couldn't be transcribed. Ask them to try again or type it.]");
   const others = message.media - (voice ? 1 : 0);
   if (others > 0) {
-    notes.push(`[They sent ${others} ${voice ? "more " : ""}attachment${others === 1 ? "" : "s"} by WhatsApp, which you can't open here. Ask them to attach it on a task in Mach if it matters.]`);
+    notes.push(`[They sent ${others} ${voice ? "more " : ""}attachment${others === 1 ? "" : "s"} by WhatsApp, which you can't open here. Ask them to attach it on a task in Mach1 if it matters.]`);
   }
   const text = [message.body.trim(), ...notes].filter(Boolean).join("\n\n");
   if (!text) return;
@@ -83,7 +83,7 @@ export type ReceivedEmail = {
 export async function handleEmail(email: ReceivedEmail, options: TurnOptions = {}): Promise<void> {
   const organization = await findOrganizationByInbox(email.inbox_id);
   if (!organization) return;
-  // Only people on the team who use Mach; anyone else gets no answer (and no backscatter).
+  // Only people on the team who use Mach1; anyone else gets no answer (and no backscatter).
   const context = await findByEmail(organization, email.from);
   if (!context) return;
   // extracted_text is the new part of the email, without the quoted thread below it.
@@ -92,7 +92,7 @@ export async function handleEmail(email: ReceivedEmail, options: TurnOptions = {
   const text = [
     email.subject ? `Subject: ${email.subject}` : "",
     body,
-    files.length ? `[Attached: ${files.join(", ")}. You can't open email attachments here; ask them to attach files on a task in Mach.]` : "",
+    files.length ? `[Attached: ${files.join(", ")}. You can't open email attachments here; ask them to attach files on a task in Mach1.]` : "",
   ]
     .filter(Boolean)
     .join("\n\n");

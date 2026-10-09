@@ -42,10 +42,10 @@ export function SignInForm({
     startTransition(async () => {
       setError("");
       setNotice("");
-      const result = await work().catch(() => ({ error: "Couldn't reach Mach. Check your connection and try again." }) as Step);
+      const result = await work().catch(() => ({ error: "Couldn't reach Mach1. Check your connection and try again." }) as Step);
       if ("error" in result) return setError(result.error);
       if ("go" in result) {
-        // Leaving for a provider is a full page load; back into Mach, a fresh one so the session is read.
+        // Leaving for a provider is a full page load; back into Mach1, a fresh one so the session is read.
         window.location.assign(result.go);
         return;
       }

@@ -25,7 +25,7 @@ export async function createCompany(_: CreateCompanyState, form: FormData): Prom
   const domain = await getCompanyDomain();
   if (domain) {
     const existing = await findOrganizationByDomain(domain);
-    if (existing) return { error: `${existing.name} already uses Mach for @${domain} emails. Ask to join it instead.` };
+    if (existing) return { error: `${existing.name} already uses Mach1 for @${domain} emails. Ask to join it instead.` };
   }
 
   const workos = getWorkOS();
@@ -76,7 +76,7 @@ async function domainCompany() {
 export async function requestToJoinAction(): Promise<void> {
   const { user } = await getSessionContext();
   const company = await domainCompany();
-  if (!company) throw new Error("No company on Mach uses your email domain.");
+  if (!company) throw new Error("No company on Mach1 uses your email domain.");
   await requestToJoin(company, { userId: user.id, email: user.email, name: user.name });
   revalidatePath("/welcome");
 }

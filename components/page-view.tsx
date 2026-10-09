@@ -81,7 +81,7 @@ export function PageView({
         {page.description && <span className="min-w-0 truncate">{page.description}</span>}
         {files.length > 0 && (
           <span title={files.map((f) => (f.live ? `${f.path} (live)` : `/vercel/drive/${f.path}`)).join("\n")}>
-            {files.every((f) => f.live) ? "Live data from Mach" : <>Data {oldest ? <When date={oldest} /> : "not there yet"}</>}
+            {files.every((f) => f.live) ? "Live data from Mach1" : <>Data {oldest ? <When date={oldest} /> : "not there yet"}</>}
           </span>
         )}
         {refresh ? (

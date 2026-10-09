@@ -11,7 +11,7 @@ import { deleteCompany } from "@/lib/delete-company";
 import { requireAppContext } from "@/lib/session";
 
 /**
- * Deletes the company and everything it has in Mach (admins only, after they
+ * Deletes the company and everything it has in Mach1 (admins only, after they
  * type its name), then signs them out: their session pointed at it.
  */
 export async function deleteCompanyAction(confirmName: string): Promise<{ error?: string }> {
@@ -50,7 +50,7 @@ export async function savePhoneAction(phone: string): Promise<{ error?: string }
 export async function createEmailInboxAction(): Promise<{ error?: string }> {
   const { organization, isAdmin } = await requireAppContext();
   if (!isAdmin) return { error: "Only an admin can set up the company's email address." };
-  if (!agentmailConfigured()) return { error: "Email isn't set up for Mach yet (AGENTMAIL_API_KEY)." };
+  if (!agentmailConfigured()) return { error: "Email isn't set up for Mach1 yet (AGENTMAIL_API_KEY)." };
   if (organization.emailInbox) return {};
   try {
     await setEmailInbox(organization.id, await createInbox(organization.name));

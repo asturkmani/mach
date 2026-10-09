@@ -3,9 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { PROVIDERS, providerSignIn, safeReturnTo, sealPending, SIGN_IN_COOKIE, type Provider } from "@/lib/sign-in";
 
-// Leaving Mach's sign-in page for somewhere that signs people in: Google or
+// Leaving Mach1's sign-in page for somewhere that signs people in: Google or
 // Microsoft (/sign-in/google), the company's single sign-on (/sign-in/sso), or
-// WorkOS's own page for what Mach's doesn't do (/sign-in/hosted). The first
+// WorkOS's own page for what Mach1's doesn't do (/sign-in/hosted). The first
 // three come back to /callback, which finishes them.
 
 export async function GET(request: NextRequest, { params }: RouteContext<"/sign-in/[via]">) {

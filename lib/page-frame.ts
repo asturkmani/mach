@@ -1,7 +1,7 @@
-// The document a page runs as: its HTML with Mach's look (colours, type and a
+// The document a page runs as: its HTML with Mach1's look (colours, type and a
 // few building blocks) and its data put in front of it. It's served from its
 // own route under a Content-Security-Policy that sandboxes it (an opaque
-// origin, so no cookies or storage of Mach's) and blocks every connection:
+// origin, so no cookies or storage of Mach1's) and blocks every connection:
 // whatever a page's script does, it can only draw what it was handed.
 
 export type FrameTheme = "light" | "dark" | "system";
@@ -25,7 +25,7 @@ export const FRAME_CSP = [
 const TOKENS_LIGHT = `--bg:#f2f0ec;--panel:#fbfaf8;--raised:#fff;--hover:#efece7;--selected:#e8e4de;--line:#d9d4cc;--line-soft:#e8e4de;--ink:#1c1b19;--muted:#5f5a53;--faint:#8a857d;--accent:#c24a17;--accent-soft:rgba(212,82,28,.1);--ok:#2f7347;--warn:#8f5e12;--danger:#b13623;--up:#2f7347;--down:#b13623;--series-1:#2a78d6;--series-2:#eb6834;--series-3:#1baf7a;--series-4:#eda100;--series-5:#e87ba4;--series-6:#008300;--series-7:#4a3aa7;--series-8:#e34948;color-scheme:light`;
 const TOKENS_DARK = `--bg:#171615;--panel:#1e1d1b;--raised:#252422;--hover:#282624;--selected:#302e2b;--line:#393633;--line-soft:#2c2a27;--ink:#ece8e2;--muted:#a39e97;--faint:#8a857e;--accent:#ef6b33;--accent-soft:rgba(239,107,51,.13);--ok:#6fbf89;--warn:#e0a64a;--danger:#f07a64;--up:#6fbf89;--down:#f07a64;--series-1:#3987e5;--series-2:#d95926;--series-3:#199e70;--series-4:#c98500;--series-5:#d55181;--series-6:#008300;--series-7:#9085e9;--series-8:#e66767;color-scheme:dark`;
 
-/** Mach's look for pages: tokens, type, and a few classes the building-pages skill documents. */
+/** Mach1's look for pages: tokens, type, and a few classes the building-pages skill documents. */
 export const PAGE_KIT_CSS = `
 :root{${TOKENS_LIGHT}}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){${TOKENS_DARK}}}
@@ -134,7 +134,7 @@ export function scriptJson(value: unknown): string {
 }
 
 /**
- * The page's HTML with Mach's head put in front of its own: the kit's styles
+ * The page's HTML with Mach1's head put in front of its own: the kit's styles
  * come first so the page can override them, and window.mach is set before
  * any of its scripts run.
  */
@@ -159,7 +159,7 @@ export function buildPageDocument(input: { html: string; title: string; theme: F
   const themeAttr = input.theme === "system" ? "" : ` data-theme="${input.theme}"`;
 
   let html = input.html.replace(/^﻿/, "");
-  // Mach sets the theme; a page's own data-theme would fight it.
+  // Mach1 sets the theme; a page's own data-theme would fight it.
   html = html.replace(/<html\b([^>]*)>/i, (_, attrs: string) => `<html${attrs.replace(/\sdata-theme=("[^"]*"|'[^']*'|\S+)/i, "")}${themeAttr}>`);
   if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (tag) => `${tag}\n${head}\n`);
   if (/<html\b[^>]*>/i.test(html)) return html.replace(/<html\b[^>]*>/i, (tag) => `${tag}\n<head>\n${head}\n</head>\n`);

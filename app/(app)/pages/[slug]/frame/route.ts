@@ -3,7 +3,7 @@ import { getPage, pageHtml, readPageData } from "@/lib/pages";
 import { getSessionContext } from "@/lib/session";
 
 /**
- * A page as the document its frame shows: its HTML, Mach's look and its data,
+ * A page as the document its frame shows: its HTML, Mach1's look and its data,
  * under a policy that sandboxes it and lets it connect nowhere. ?v= shows an
  * older version; ?theme= follows the app's light or dark setting.
  */

@@ -5,7 +5,7 @@ import type { NetworkPolicy, NetworkPolicyRule } from "@vercel/sandbox";
 import { getDb } from "@/lib/db";
 import { redact, seal, unseal } from "@/lib/secrets";
 
-// Integrations connect the company's other systems to Mach.
+// Integrations connect the company's other systems to Mach1.
 //
 // - A data source (kind "api") is an HTTP API every agent (or chosen agents)
 //   can call: through the call_api tool, or straight from code in a job's
@@ -690,7 +690,7 @@ export async function sandboxPolicy(organizationId: string, agentId: string | nu
               response: {
                 statusCode: 403,
                 contentType: "text/plain",
-                body: `Mach: ${source.name} is read-only, so only GET requests are allowed.`,
+                body: `Mach1: ${source.name} is read-only, so only GET requests are allowed.`,
               },
             },
           ]

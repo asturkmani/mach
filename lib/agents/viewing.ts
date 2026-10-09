@@ -4,7 +4,7 @@ import { getAgent } from "@/lib/agents/store";
 import { getPage } from "@/lib/pages";
 import { getTaskByNumber } from "@/lib/tasks";
 
-// What someone is looking at in Mach while they talk to the Chief of Staff,
+// What someone is looking at in Mach1 while they talk to the Chief of Staff,
 // so "change this" or "why is this stuck?" means something. The browser only
 // sends its path; what's there is looked up here, for this company only.
 

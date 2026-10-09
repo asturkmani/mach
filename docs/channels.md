@@ -4,7 +4,7 @@ People can talk to the Chief of Staff outside the app: on WhatsApp from their ow
 
 ## Who gets an answer
 
-Only people who have joined their company in Mach (signed in at least once) get an answer.
+Only people who have joined their company in Mach1 (signed in at least once) get an answer.
 
 - **WhatsApp:** the sender's number must match the WhatsApp number a person saved in Settings → Account. Spaces, `+` and a leading `00` don't matter, but the country code does.
   - A number that isn't linked gets one reply explaining how to link it. The Chief of Staff isn't run for it.
@@ -30,7 +30,7 @@ Only people who have joined their company in Mach (signed in at least once) get 
 
 **Voice notes** on WhatsApp are transcribed (the same model as voice messages in the app, see below) and answered like a typed message. The Chief of Staff is told the words were transcribed, so it double-checks names and numbers before acting on them. If a voice note can't be transcribed, it asks for it again or typed.
 
-**Other attachments** sent on WhatsApp or by email aren't read yet. The Chief of Staff is told they arrived, and asks for them to be attached on a task in Mach.
+**Other attachments** sent on WhatsApp or by email aren't read yet. The Chief of Staff is told they arrived, and asks for them to be attached on a task in Mach1.
 
 **Voice messages in the app:** the microphone next to the paperclip, in the chat panel and in a task's reply box, records a message. It's transcribed into the message box for you to check and send; the recording isn't kept. Transcription goes through the AI Gateway (xAI's `spacexai/grok-stt` by default, about $0.0017 a minute and under a second for a short message; set `TRANSCRIPTION_MODEL` for another), up to 5 minutes or 20MB a message. Esc while recording throws it away.
 
@@ -39,7 +39,7 @@ Only people who have joined their company in Mach (signed in at least once) get 
 ### WhatsApp (Twilio)
 
 1. **Get a WhatsApp sender in Twilio.** For testing, Twilio's WhatsApp sandbox works: each person first sends its "join …" code to the sandbox number. For real use, register a WhatsApp sender for your number.
-2. **Point Twilio at Mach.** Set the sender's "When a message comes in" webhook to `https://<your-domain>/api/whatsapp` (HTTP POST).
+2. **Point Twilio at Mach1.** Set the sender's "When a message comes in" webhook to `https://<your-domain>/api/whatsapp` (HTTP POST).
 3. **Add the variables to Vercel:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` (e.g. `whatsapp:+14155238886`) and `APP_URL`.
 4. **Each person links their number.** In Settings → Account, they add their WhatsApp number.
 
@@ -57,7 +57,7 @@ Deleting a company deletes its inbox too.
 
 - **Messages the Chief of Staff starts**, e.g. "something needs you" on WhatsApp. WhatsApp only allows a business to start a conversation with pre-approved templates, so this needs one.
 - **Reading attachments** sent on WhatsApp or by email.
-- **A custom email domain** (`chief@cedarlegacy.com`). AgentMail supports one; Mach uses `@agentmail.to` addresses for now.
+- **A custom email domain** (`chief@cedarlegacy.com`). AgentMail supports one; Mach1 uses `@agentmail.to` addresses for now.
 
 ## Code
 

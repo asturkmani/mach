@@ -217,7 +217,7 @@ describe("pages", () => {
     ]);
   });
 
-  it("read Mach's own tasks and people live, with no script or refresh job", async () => {
+  it("read Mach1's own tasks and people live, with no script or refresh job", async () => {
     const ahmed = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
     await savePerson(ORG, { name: "Sara", role: "Analyst", managerName: "Ahmed", email: "sara@cedar.example", phone: "+44 7700 900999" });
     await createTask(ORG, { title: "Close the Q3 books", priority: "high", people: [ahmed.id] });
@@ -244,7 +244,7 @@ describe("pages", () => {
     await expect(savePage(ORG, { title: "Bad", html: "<p>x</p>", data: ["mach:secrets"], by })).rejects.toThrow(PageError);
   });
 
-  it("run as a document with Mach's look and data in front of their own HTML", () => {
+  it("run as a document with Mach1's look and data in front of their own HTML", () => {
     const files = [{ path: DATA, updatedAt: "2026-10-08T07:00:00.000Z", value: { note: "</script><script>alert(1)</script>" } }];
     const full = buildPageDocument({ html: PAGE_HTML.replace("<html lang=\"en\">", '<html lang="en" data-theme="dark">'), title: "Net worth", theme: "light", files });
     expect(full.indexOf("<style data-mach-kit>")).toBeLessThan(full.indexOf("<title>Net worth</title>"));

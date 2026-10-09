@@ -1,4 +1,4 @@
--- Mach database schema. Safe to run repeatedly (pnpm db:migrate).
+-- Mach1 database schema. Safe to run repeatedly (pnpm db:migrate).
 -- Users, logins, org memberships and invitations live in WorkOS; these tables
 -- hold everything else, keyed by the WorkOS organization id.
 
@@ -381,7 +381,7 @@ create table if not exists page_ideas (
 -- panel, a reload); the Stop button asks for it to stop through this.
 alter table chats add column if not exists stop_requested_at timestamptz;
 
--- A phone or browser that gets Mach's push notifications for a person: when a
+-- A phone or browser that gets Mach1's push notifications for a person: when a
 -- task starts waiting on them or is ready for their review, or someone
 -- @-mentions them. One row per device and person (a device can be signed in
 -- to two companies). Gone when the push service says the device unsubscribed.

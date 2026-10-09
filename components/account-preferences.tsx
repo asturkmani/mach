@@ -55,15 +55,15 @@ export function AccountPreferences() {
       )}
       {(install.state === "prompt" || install.state === "ios") && (
         <SettingRow
-          title="Mach app"
+          title="Mach1 app"
           description={
             install.state === "ios"
-              ? "Add Mach to your Home Screen: tap Share in Safari, then Add to Home Screen. It opens full screen, with notifications."
-              : "Install Mach on this device: it opens in its own window, with its icon in your dock or home screen."
+              ? "Add Mach1 to your Home Screen: tap Share in Safari, then Add to Home Screen. It opens full screen, with notifications."
+              : "Install Mach1 on this device: it opens in its own window, with its icon in your dock or home screen."
           }
           action={
             install.state === "prompt" ? (
-              <button onClick={async () => (await install.install()) && toast("Mach is installed.")} className="btn">
+              <button onClick={async () => (await install.install()) && toast("Mach1 is installed.")} className="btn">
                 Install
               </button>
             ) : undefined
@@ -72,7 +72,7 @@ export function AccountPreferences() {
       )}
       <SettingRow
         title="Sign out"
-        description="Of Mach in this browser."
+        description="Of Mach1 in this browser."
         action={
           <form action={signOutAction}>
             <button type="submit" className="btn">

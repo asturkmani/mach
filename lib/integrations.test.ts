@@ -169,7 +169,7 @@ describe("integrations", () => {
       allow: {
         "api.masttro.example": [
           { match: { method: ["GET", "HEAD"] }, transform: [{ headers: { Authorization: `Bearer ${KEY}` } }] },
-          { response: { statusCode: 403, contentType: "text/plain", body: "Mach: Masttro is read-only, so only GET requests are allowed." } },
+          { response: { statusCode: 403, contentType: "text/plain", body: "Mach1: Masttro is read-only, so only GET requests are allowed." } },
         ],
         "*": [],
       },

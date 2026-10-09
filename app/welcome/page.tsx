@@ -61,7 +61,7 @@ export default async function WelcomePage() {
         )}
         {domainCompany && !isDomainMember && (
           <div className="space-y-3 border border-line bg-raised p-4 text-sm">
-            <p className="text-ink">{domainCompany.name} is already on Mach</p>
+            <p className="text-ink">{domainCompany.name} is already on Mach1</p>
             {domainCompany.autoJoin ? (
               <>
                 <p className="text-muted">Everyone with an @{domain} email can join.</p>

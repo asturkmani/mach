@@ -58,7 +58,7 @@ export function VoiceButton({ onText, className = "" }: { onText: (text: string)
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      return toast("Mach needs your microphone for voice messages. Allow it in the browser and try again.");
+      return toast("Mach1 needs your microphone for voice messages. Allow it in the browser and try again.");
     }
     const mimeType = pickType();
     const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
@@ -76,7 +76,7 @@ export function VoiceButton({ onText, className = "" }: { onText: (text: string)
         if (result.text) onText(result.text);
         else toast(result.error ?? (result.text === "" ? "Didn't catch any words. Try again." : "Couldn't transcribe that. Try again, or type it."));
       } catch {
-        toast("Couldn't reach Mach to transcribe that. Try again.");
+        toast("Couldn't reach Mach1 to transcribe that. Try again.");
       } finally {
         setState("idle");
       }
