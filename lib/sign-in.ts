@@ -95,7 +95,7 @@ export async function ssoConnectionFor(email: string): Promise<string | null> {
  */
 export async function startWithEmail(
   email: string,
-  options: { invitationToken?: string; ipAddress?: string; userAgent?: string } = {},
+  options: { ipAddress?: string; userAgent?: string } = {},
 ): Promise<{ next: "sso"; connectionId: string } | { next: "code" } | { next: "error"; message: string }> {
   const connectionId = await ssoConnectionFor(email);
   if (connectionId) return { next: "sso", connectionId };
@@ -127,8 +127,23 @@ export async function pendingInvitation(email: string): Promise<{ id: string; to
   }
 }
 
-export const withCode = (email: string, code: string, invitationToken?: string) =>
-  attempt(() => getWorkOS().userManagement.authenticateWithMagicAuth({ clientId: clientId(), email, code, invitationToken }));
+/**
+ * Signs in with the emailed code. An invitation's token goes here only (sent
+ * with the code request too, WorkOS accepts it then and refuses it now). If
+ * WorkOS says the invitation was already used, the person has usually joined
+ * already: sign in without it.
+ */
+export async function withCode(email: string, code: string, invitationToken?: string): Promise<Outcome> {
+  const signIn = (token?: string) => () =>
+    getWorkOS().userManagement.authenticateWithMagicAuth({ clientId: clientId(), email, code, invitationToken: token });
+  if (!invitationToken) return attempt(signIn());
+  try {
+    return { kind: "signed-in", auth: await signIn(invitationToken)() };
+  } catch (error) {
+    if (errorCode(error) === "invitation_invalid") return attempt(signIn());
+    return attempt(() => Promise.reject(error));
+  }
+}
 
 export const withEmailVerification = (pendingAuthenticationToken: string, code: string) =>
   attempt(() => getWorkOS().userManagement.authenticateWithEmailVerification({ clientId: clientId(), pendingAuthenticationToken, code }));

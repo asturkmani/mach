@@ -82,7 +82,6 @@ export async function emailStep(input: Context & { email: string }): Promise<Ste
   const pending: Pending = { email, returnTo: input.returnTo, invitationToken };
   const h = await headers();
   const next = await startWithEmail(email, {
-    invitationToken: pending.invitationToken,
     ipAddress: h.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined,
     userAgent: h.get("user-agent") ?? undefined,
   });

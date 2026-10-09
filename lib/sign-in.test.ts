@@ -90,6 +90,25 @@ describe("signing in on Mach1's own page", () => {
     });
   });
 
+  it("uses an invitation only to sign in, and signs in without one WorkOS says was already used", async () => {
+    workos.userManagement.createMagicAuth.mockResolvedValueOnce({ id: "magic_1" });
+    await startWithEmail("sara@cedar.example");
+    expect(workos.userManagement.createMagicAuth).toHaveBeenCalledWith({ email: "sara@cedar.example" });
+
+    const auth = { user: { id: "user_1" }, accessToken: "a", refreshToken: "r" };
+    workos.userManagement.authenticateWithMagicAuth.mockRejectedValueOnce(workosError({ code: "invitation_invalid" })).mockResolvedValueOnce(auth);
+    expect(await withCode("sara@cedar.example", "123456", "tok")).toEqual({ kind: "signed-in", auth });
+    expect(workos.userManagement.authenticateWithMagicAuth).toHaveBeenLastCalledWith({
+      clientId: "client_test",
+      email: "sara@cedar.example",
+      code: "123456",
+      invitationToken: undefined,
+    });
+
+    workos.userManagement.authenticateWithMagicAuth.mockRejectedValueOnce(workosError({ code: "invalid_one_time_code" }));
+    expect(await withCode("sara@cedar.example", "000000", "tok")).toEqual({ kind: "error", message: "That code didn't work. Check it, or send a new one." });
+  });
+
   it("finds the open invitation for an email, so a lost invitation link still joins the company", async () => {
     const later = new Date(Date.now() + 86_400_000).toISOString();
     const earlier = new Date(Date.now() - 1000).toISOString();
