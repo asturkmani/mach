@@ -16,6 +16,33 @@ const STEP = `${JOB_DIR}/.mach/browser-step.py`;
 const PORT = 9333;
 export const VIEWPORT = { width: 1280, height: 800 };
 
+/** Where the sign-in helper finds this browser and the tab it's on, to sign in inside it. */
+export const LIVE_BROWSER = { cdp: `http://127.0.0.1:${PORT}`, tabs: `${BROWSER_DIR}/state.json` };
+
+/**
+ * Finding "the tab the agent is on" again from a new connection: by the tab's
+ * DevTools target id, saved in the state file (the order of tabs isn't stable
+ * between connections). Shared with the sign-in helper, which signs in there.
+ */
+export const TAB_PY = String.raw`def target_id(context, page):
+    try:
+        session = context.new_cdp_session(page)
+        info = session.send("Target.getTargetInfo")
+        session.detach()
+        return info["targetInfo"]["targetId"]
+    except Exception:
+        return None
+
+def current_page(context, state):
+    pages = [pg for pg in context.pages if not pg.url.startswith("devtools://")] or [context.new_page()]
+    wanted = state.get("target")
+    if wanted:
+        for candidate in pages:
+            if target_id(context, candidate) == wanted:
+                return candidate
+    return pages[-1]
+`;
+
 /** Keeps the browser open until the ready file is removed. */
 const SERVER_PY = String.raw`# The browser agent's browser. Written by Mach1.
 import os, sys, time
@@ -50,6 +77,7 @@ def load_state():
     except Exception:
         return {}
 
+${TAB_PY}
 def settle(page, ms=6000):
     try:
         page.wait_for_load_state("domcontentloaded", timeout=ms)
@@ -210,10 +238,7 @@ def tabs(context, page):
 with sync_playwright() as p:
     browser = p.chromium.connect_over_cdp("http://127.0.0.1:${PORT}", timeout=20000)
     context = browser.contexts[0]
-    state = load_state()
-    pages = context.pages or [context.new_page()]
-    index = state.get("tab", len(pages) - 1)
-    page = pages[index] if 0 <= index < len(pages) else pages[-1]
+    page = current_page(context, load_state())
     dialogs = []
     def on_dialog(dialog):
         dialogs.append({"type": dialog.type, "message": dialog.message[:300]})
@@ -252,23 +277,6 @@ with sync_playwright() as p:
                 result["read"] = page.evaluate(ELEMENTS_JS, command.get("query") or "")
         elif kind == "script":
             result["printed"] = run_script(page, context, command["code"])
-        elif kind == "import_state":
-            saved = json.load(open(command["path"]))
-            if saved.get("cookies"):
-                context.add_cookies(saved["cookies"])
-            for origin in saved.get("origins", []):
-                items = origin.get("localStorage") or []
-                if not items:
-                    continue
-                helper = context.new_page()
-                try:
-                    helper.goto(origin["origin"], wait_until="domcontentloaded", timeout=20000)
-                    helper.evaluate("items => items.forEach(i => localStorage.setItem(i.name, i.value))", items)
-                finally:
-                    helper.close()
-            if command.get("url"):
-                page.goto(command["url"], wait_until="domcontentloaded", timeout=30000)
-                settle(page)
         elif kind == "export_state":
             context.storage_state(path=command["path"])
         elif kind == "evidence":
@@ -297,7 +305,7 @@ with sync_playwright() as p:
         except Exception as error:
             result["screenshotError"] = str(error)[:200]
     with open(state_path, "w") as f:
-        json.dump({"tab": context.pages.index(page) if page in context.pages else len(context.pages) - 1}, f)
+        json.dump({"target": target_id(context, page)}, f)
 with open(out_path, "w") as f:
     json.dump(result, f)
 `;
@@ -309,7 +317,6 @@ export type BrowserCommand =
   | { type: "look"; region?: { x: number; y: number; width: number; height: number } }
   | { type: "read"; mode: "elements" | "outline" | "text"; query?: string }
   | { type: "script"; code: string }
-  | { type: "import_state"; path: string; url?: string }
   | { type: "export_state"; path: string }
   | { type: "evidence"; path: string; full_page?: boolean };
 
@@ -334,7 +341,7 @@ async function open(context: AgentContext): Promise<JobSandbox> {
 }
 
 /** Starts the browser if it isn't running (it stops with the sandbox). */
-async function ensureBrowser(sandbox: JobSandbox): Promise<void> {
+export async function ensureBrowser(sandbox: JobSandbox): Promise<void> {
   const alive = await sandbox.run("bash", ["-c", `[ -f ${READY} ] && kill -0 "$(cat ${READY})" 2>/dev/null && echo yes || echo no`]);
   if (alive.stdout.trim() === "yes") return;
   await sandbox.run("bash", ["-c", `mkdir -p ${PROFILE} ${JOB_DIR}/.mach && rm -f ${READY} ${PROFILE}/SingletonLock`]);

@@ -13,6 +13,7 @@ import {
 } from "@/lib/integrations";
 import { redact, seal, unseal } from "@/lib/secrets";
 import { addMessage, getTask, setPendingLogin, takeLoginCode, updateTask } from "@/lib/tasks";
+import { ensureBrowser, LIVE_BROWSER, TAB_PY } from "@/lib/agents/browser-live";
 
 // The browser every agent has in its sandbox. browser_login signs it in to a
 // site with the company's saved credentials: a helper in the sandbox fills the
@@ -174,6 +175,7 @@ def totp(secret, step=30, digits=6):
     return str((struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 10 ** digits).zfill(digits)
 
 ${FORM_PY}
+${TAB_PY}
 SIGN_IN = re.compile(r"^\s*(sign ?in|log ?in|login)\b", re.I)
 
 def sign_in_button(page):
@@ -246,13 +248,36 @@ def enter_code(page, field):
     field.fill(sign_in_code())
     submit(page, field)
 
-def sign_in(page):
+def import_saved(context, path):
+    """An earlier session (cookies and local storage) into a browser that doesn't have it."""
+    with open(path) as f:
+        saved = json.load(f)
+    if saved.get("cookies"):
+        context.add_cookies(saved["cookies"])
+    for origin in saved.get("origins", []):
+        items = origin.get("localStorage") or []
+        if items:
+            helper = context.new_page()
+            try:
+                helper.goto(origin["origin"], wait_until="domcontentloaded", timeout=20000)
+                helper.evaluate("items => items.forEach(i => localStorage.setItem(i.name, i.value))", items)
+            finally:
+                helper.close()
+
+def sign_in(page, saved=None):
     status("signing_in")
     check = cfg.get("checkUrl") or creds.get("landingUrl")
     page.goto(check or cfg["loginUrl"], wait_until="domcontentloaded")
     settle(page)
     if signed_in(page):
-        return  # the saved session still works
+        return  # already signed in
+    if saved:
+        # Not signed in here yet: try the session saved by an earlier sign-in before the form.
+        saved()
+        page.goto(check or cfg["loginUrl"], wait_until="domcontentloaded")
+        settle(page)
+        if signed_in(page):
+            return
     if not form_showing(page):
         page.goto(cfg["loginUrl"], wait_until="domcontentloaded")
         settle(page)
@@ -288,15 +313,31 @@ def sign_in(page):
         if not signed_in(page):
             raise RuntimeError("signed in, but " + cfg["checkUrl"] + " shows the sign-in form again")
 
+# live: sign in inside the browser agent's own browser, in the tab it's using, so the session is its own
+# (including what a site keeps per tab), instead of a separate browser whose cookies would be copied over.
+live = creds.get("live")
 page = None
 try:
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        context = browser.new_context(
-            storage_state=state_path if os.path.exists(state_path) else None, viewport={"width": 1366, "height": 900})
-        page = context.new_page()
+        saved = None
+        if live:
+            browser = p.chromium.connect_over_cdp(live["cdp"], timeout=20000)
+            context = browser.contexts[0]
+            try:
+                with open(live["tabs"]) as f:
+                    tab_state = json.load(f)
+            except Exception:
+                tab_state = {}
+            page = current_page(context, tab_state)
+            if os.path.exists(state_path):
+                saved = lambda: import_saved(context, state_path)
+        else:
+            browser = p.chromium.launch()
+            context = browser.new_context(
+                storage_state=state_path if os.path.exists(state_path) else None, viewport={"width": 1366, "height": 900})
+            page = context.new_page()
         try:
-            sign_in(page)
+            sign_in(page, saved)
         except Exception:
             # Keep what the page showed while the browser is still open, for whoever works out what went wrong.
             try:
@@ -311,7 +352,8 @@ try:
         with open(base + ".landing", "w") as f:
             json.dump({"url": page.url, "title": page.title(), "heading": heading.inner_text().strip()[:200] if heading else ""}, f)
         status("ok")
-        browser.close()
+        if not live:
+            browser.close()  # a live browser stays open for the browser agent
 except Exception as error:
     status("failed: " + (str(error).strip().splitlines() or ["unknown error"])[0][:300])
 `;
@@ -545,7 +587,15 @@ async function readSeen(sandbox: JobSandbox, slug: string): Promise<string | nul
 }
 
 /** Signs the agent's browser in to a website login, or finishes a sign-in that was waiting for a code. */
-export async function browserLogin(context: AgentContext, input: { login: string; again?: boolean }): Promise<LoginResult> {
+/**
+ * live: sign in inside the browser agent's running browser (see browser-live.ts)
+ * rather than a browser of the helper's own.
+ */
+export async function browserLogin(
+  context: AgentContext,
+  input: { login: string; again?: boolean },
+  options: { live?: boolean } = {},
+): Promise<LoginResult> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.login);
   if (!integration || integration.kind !== "login" || !allowedFor(integration, context.agentId)) {
@@ -575,7 +625,8 @@ export async function browserLogin(context: AgentContext, input: { login: string
     return finish(context, sandbox, slug, name, await waitForHelper(sandbox, slug, 90));
   }
 
-  if (current === "ok" && !input.again && (await sandbox.readFile(`${LOGIN_DIR}/${slug}.json`))) {
+  if (options.live) await ensureBrowser(sandbox);
+  else if (current === "ok" && !input.again && (await sandbox.readFile(`${LOGIN_DIR}/${slug}.json`))) {
     return { text: signedInText(name, slug, await readLanding(sandbox, slug), true) };
   }
 
@@ -602,6 +653,7 @@ export async function browserLogin(context: AgentContext, input: { login: string
           totp: login.secrets.totp ?? "",
           // Where an earlier sign-in landed: a page to check whether the saved session still works.
           landingUrl: login.landingUrl ?? "",
+          live: options.live ? LIVE_BROWSER : undefined,
         }),
       ),
     },

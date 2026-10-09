@@ -10,7 +10,8 @@ import { getBrowserSession } from "@/lib/browser-sessions";
 import { listTaskFiles } from "@/lib/files";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
-import { setSandboxProvider } from "@/lib/sandbox";
+import { setSandboxProvider, workspaceSandboxName } from "@/lib/sandbox";
+import { sendWorkspaceLoginCode } from "@/lib/agents/browser-steps";
 import { saveCredentials, saveIntegration } from "@/lib/integrations";
 import { createTask, getTask, listMessages } from "@/lib/tasks";
 import { replyToTask } from "@/lib/work";
@@ -25,12 +26,15 @@ const ORG = "org_cedar";
 async function ledgerSandboxes() {
   const png = await sharp({ create: { width: 64, height: 40, channels: 3, background: "#fff" } }).png().toBuffer();
   const jpeg = await sharp(png).jpeg().toBuffer();
-  const site = { tagged: "" as string, commands: [] as Record<string, unknown>[] };
+  const site = { tagged: "" as string, commands: [] as Record<string, unknown>[], signIns: [] as unknown[] };
   const LOGINS = "/vercel/job/.logins";
   const sandboxes = fakeSandboxes({
     // The sign-in helper: Masttro wants a code the first time.
     "login.py": (files) => {
-      for (const path of [...files.keys()].filter((p) => p.startsWith("/tmp/mach-login-"))) files.delete(path);
+      for (const path of [...files.keys()].filter((p) => p.startsWith("/tmp/mach-login-"))) {
+        site.signIns.push(JSON.parse(files.get(path)!.toString()).live);
+        files.delete(path);
+      }
       files.set(`${LOGINS}/masttro-web.status`, Buffer.from("needs_code"));
     },
     "login-wait.sh": (files) => {
@@ -225,8 +229,49 @@ describe("the browser agent", () => {
     await Promise.all(runs);
 
     expect(await getTask(ORG, task.id)).toMatchObject({ status: "review", pendingLogin: null });
-    expect(site.commands.map((c) => c.type)).toContain("import_state");
+    // The helper signed in inside the browser agent's own browser, in the tab it was using.
+    expect(site.signIns).toEqual([{ cdp: "http://127.0.0.1:9333", tabs: "/vercel/job/.browser/state.json" }]);
     expect(site.tagged).toBe("Dividends");
     expect(JSON.stringify(await listMessages(task.id))).not.toContain("123456");
+  });
+
+  it("for the Chief of Staff, takes the code from the chat's code card and signs in, in the same session", async () => {
+    const { clerk } = await setUp();
+    const login = await saveIntegration(ORG, {
+      kind: "login",
+      name: "Masttro (web)",
+      slug: "masttro-web",
+      config: { loginUrl: "https://app.masttro.example/login", domains: [], fields: [{ name: "username", label: "Username", secret: false }, { name: "password", label: "Password" }] },
+      access: "write",
+      agentIds: [clerk.id],
+    });
+    await saveCredentials(ORG, login.id, { username: "ahmed@cedar.example", password: "pw" });
+    const { sandboxes, site } = await ledgerSandboxes();
+    setSandboxProvider(sandboxes.provider);
+    const workspace = { organizationId: ORG, taskId: null, agentId: null, agentName: "Chief of Staff" };
+    const using = sandboxUser(workspace, {});
+
+    setBrowserAgentModel(
+      scriptedModel([
+        [["sign_in", { login: "masttro-web" }]],
+        [["finish", { status: "needs_input", message: "Masttro wants a code.", question: "What's the code?" }]],
+      ]),
+    );
+    const first = await runBrowserAgent(workspace, using, { task: "Check the cash balance in Masttro", login: "masttro-web" }, { durable: false, logins: null });
+    expect(first).toMatchObject({ status: "needs_input", needsCode: { slug: "masttro-web", name: "Masttro (web)" } });
+
+    // The person types the code into the card: it goes straight to the waiting sign-in in the workspace sandbox.
+    expect(await sendWorkspaceLoginCode(ORG, "masttro-web", "123 456")).toEqual({});
+    expect(sandboxes.machines.get(workspaceSandboxName(ORG))).toBeDefined();
+
+    setBrowserAgentModel(
+      scriptedModel([
+        [["sign_in", { login: "masttro-web" }]],
+        [["finish", { status: "done", message: "Signed in; the cash balance is £120.00." }]],
+      ]),
+    );
+    const second = await runBrowserAgent(workspace, using, { session: first.session, message: "The code is entered." }, { durable: false, logins: null });
+    expect(second).toMatchObject({ status: "done", session: first.session, needsCode: undefined });
+    expect(site.signIns).toHaveLength(1);
   });
 });

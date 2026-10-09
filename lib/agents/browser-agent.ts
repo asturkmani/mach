@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { JOB_DIR } from "@/lib/sandbox";
 import { browserStep, VIEWPORT, type BrowserCommand, type StepResult } from "@/lib/agents/browser-live";
-import { browserLogin, LOGIN_DIR } from "@/lib/agents/browser-steps";
+import { browserLogin } from "@/lib/agents/browser-steps";
 import { readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
 import type { SandboxUser } from "@/lib/agents/toolkit";
@@ -225,14 +225,15 @@ function browserAgentTools(context: AgentContext, using: SandboxUser, state: Run
             execute: ({ login, again }) =>
               using(async (): Promise<StepOutput> => {
                 state.login = login;
-                const signed = await browserLogin(context, { login, again });
+                // The helper signs in inside this browser, in the tab you're on.
+                const signed = await browserLogin(context, { login, again }, { live: true });
                 if (signed.needsCode) {
                   state.needsCode = signed.needsCode;
                   return { text: `${signed.text} Finish with needs_input asking the caller for the ${signed.needsCode.name} sign-in code; call sign_in again when you're called back.` };
                 }
-                if (!/^(Signed in|Already signed in)/.test(signed.text)) return { text: signed.text };
-                const result = await browserStep(context, { type: "import_state", path: `${LOGIN_DIR}/${login}.json` });
-                return { text: `${signed.text.split(" The session is in")[0]} Your browser now has the session.\n${describeStep(result)}`, screenshot: result.screenshot };
+                const result = await browserStep(context, { type: "look" });
+                if (!/^(Signed in|Already signed in)/.test(signed.text)) return { text: `${signed.text}\n${describeStep(result)}`, screenshot: result.screenshot };
+                return { text: `${signed.text.split(" The session is in")[0]} You're signed in, in this tab.\n${describeStep(result)}`, screenshot: result.screenshot };
               }),
             toModelOutput: withScreenshot,
           }),
