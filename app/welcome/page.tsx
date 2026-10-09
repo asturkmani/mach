@@ -2,6 +2,7 @@ import { getWorkOS } from "@workos-inc/authkit-nextjs";
 import { redirect } from "next/navigation";
 
 import { signOutAction } from "@/app/(app)/actions";
+import { MachLockup } from "@/components/brand";
 import { joinRequestFor } from "@/lib/members";
 import { findOrganizationByDomain } from "@/lib/orgs";
 import { getCompanyDomain, getSessionContext } from "@/lib/session";
@@ -30,7 +31,7 @@ export default async function WelcomePage() {
     <main className="flex min-h-dvh items-center justify-center px-4">
       <div className="frame w-full max-w-md space-y-6 bg-panel p-6 sm:p-8">
         <div className="space-y-2">
-          <p className="label">Mach</p>
+          <MachLockup size={20} />
           <h1 className="text-2xl font-medium tracking-tight">
             Welcome, {context.user.name}
           </h1>

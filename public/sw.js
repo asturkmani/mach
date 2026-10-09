@@ -7,7 +7,7 @@
 // Pages and data always come from the network: nothing about the company is
 // stored on the device.
 
-const VERSION = "mach-v1";
+const VERSION = "mach-v2";
 const OFFLINE = "/offline.html";
 const PRECACHE = [OFFLINE, "/icons/icon-192.png", "/icons/badge-96.png"];
 

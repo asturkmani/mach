@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 
-import { MachMark } from "@/components/brand";
+import { MachLockup } from "@/components/brand";
 import { enabledProviders, safeReturnTo, SIGN_IN_COOKIE, unsealPending } from "@/lib/sign-in";
 
 import { SignInForm, type Start } from "./sign-in-form";
@@ -36,9 +36,9 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
     <main className="flex min-h-dvh items-center justify-center px-4 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="frame w-full max-w-sm space-y-6 bg-panel p-6 sm:p-8">
         <div className="space-y-4">
-          <MachMark size={36} />
+          <MachLockup size={26} />
           <div className="space-y-1">
-            <h1 className="text-2xl font-medium tracking-tight">{invitationToken ? "Join your team on Mach" : "Sign in to Mach"}</h1>
+            <h1 className="text-2xl font-medium tracking-tight">{invitationToken ? "Join your team" : "Sign in"}</h1>
             <p className="text-sm text-muted">New here? The same steps create your account.</p>
           </div>
         </div>
