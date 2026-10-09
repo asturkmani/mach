@@ -484,3 +484,11 @@ create unique index if not exists personal_connections_person on personal_connec
 
 -- A task asked for over WhatsApp: when it's ready or needs an answer, the person who asked hears on WhatsApp.
 alter table tasks add column if not exists reply_by_whatsapp boolean not null default false;
+
+-- What a person's assistant (the Chief of Staff talking with them) knows about them: preferences, what
+-- they look after, what it's following up on. Only it reads these, and only while talking with them.
+alter table people add column if not exists memory text not null default '';
+
+-- Long conversations: the model sees the latest messages in full and a summary of everything before.
+alter table chats add column if not exists summary text not null default '';
+alter table chats add column if not exists summarized_through text; -- the id of the last message the summary covers

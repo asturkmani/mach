@@ -4,8 +4,10 @@ import { EditableText } from "@/app/(app)/team/team-controls";
 import { AccountPreferences } from "@/components/account-preferences";
 import { WhatsAppNumber } from "@/components/channel-settings";
 import { GitHubConnection } from "@/components/github-connection";
+import { PersonalNotes } from "@/components/personal-notes";
 import { SettingRow, SettingsGroup } from "@/components/setting-row";
 import { whatsappNumber } from "@/lib/channels/twilio";
+import { getPersonalMemory } from "@/lib/agents/conversation";
 import { getGitHubConnection, githubConfigured, githubInstallUrl } from "@/lib/github";
 import { formatPhone } from "@/lib/phone-format";
 import { requireAppContext } from "@/lib/session";
@@ -15,7 +17,11 @@ import { requireAppContext } from "@/lib/session";
 // accounts elsewhere (GitHub), and this browser's preferences.
 export default async function AccountSettingsPage({ searchParams }: PageProps<"/settings/account">) {
   const { organization, person, user } = await requireAppContext();
-  const [github, params] = await Promise.all([getGitHubConnection(organization.id, person.id), searchParams]);
+  const [github, params, notes] = await Promise.all([
+    getGitHubConnection(organization.id, person.id),
+    searchParams,
+    getPersonalMemory(organization.id, person.id),
+  ]);
   return (
     <>
       <SettingsGroup title="Your profile" description="What the team and the Chief of Staff know about you. It's the same as your row on the Team page.">
@@ -49,6 +55,14 @@ export default async function AccountSettingsPage({ searchParams }: PageProps<"/
           }
         />
         <WhatsAppNumber whatsapp={whatsappNumber()} linked={person.whatsapp} />
+      </SettingsGroup>
+      <SettingsGroup
+        title="What your assistant knows about you"
+        description="Notes the Chief of Staff keeps as it gets to know you, and reads only while talking with you. Nobody else sees them."
+      >
+        <div className="py-4">
+          <PersonalNotes notes={notes} />
+        </div>
       </SettingsGroup>
       <SettingsGroup
         title="Your accounts"

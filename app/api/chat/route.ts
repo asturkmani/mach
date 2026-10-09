@@ -4,7 +4,8 @@ import { after } from "next/server";
 import { forModel, MAX_CHAT_ATTACHMENTS, restoreOriginals, saveChatAttachments, type ChatUpload } from "@/lib/agents/chat-attachments";
 import { generateMessageId, loadChiefOfStaff } from "@/lib/agents/cos-turn";
 import { prepareHistory } from "@/lib/agents/history";
-import { endReply, loadChat, saveChat, stopRequested, takeTurn } from "@/lib/chats";
+import { conversationWindow, saveConversation } from "@/lib/agents/conversation";
+import { endReply, loadChat, stopRequested, takeTurn } from "@/lib/chats";
 import { getSessionContext } from "@/lib/session";
 
 // Long enough for a reply that searches the web, uses the Chief of Staff's
@@ -53,10 +54,34 @@ export async function POST(request: Request) {
   if (!(await takeTurn(body.id))) return new Response("Still answering your last message. Try again in a moment.", { status: 409 });
   const chat = (await loadChat(body.id, context.organization.id, context.user.id))!;
 
+  // Attached files go into the company's file library; the message keeps a link to each.
+  if (uploads.length) {
+    try {
+      userMessage.parts.push(...(await saveChatAttachments(context.organization.id, context.person.id, uploads)));
+    } catch (error) {
+      await endReply(chat.id);
+      return new Response(error instanceof Error ? error.message : "Couldn't attach those files.", { status: 400 });
+    }
+  }
+
+  // Resending a message (e.g. retrying after an error) replaces it and anything after it.
+  const retryIndex = chat.messages.findIndex((message) => message.id === userMessage.id);
+  const retried = retryIndex === -1 ? null : chat.messages[retryIndex];
+  // A retry sends the text again but not the files, which are already saved with the first try.
+  if (retried && !uploads.length) userMessage.parts.push(...retried.parts.filter((p) => p.type === "file"));
+  // The model sees the latest messages in full and a summary of the rest.
+  const { earlier, older, recent } = await conversationWindow(chat.id, [
+    ...(retryIndex === -1 ? chat.messages : chat.messages.slice(0, retryIndex)),
+    userMessage,
+  ]);
+
   let agent;
   let close: () => Promise<void>;
   try {
-    ({ agent, close } = await loadChiefOfStaff({ organization: context.organization, user: context.user, person: context.person }, { viewing }));
+    ({ agent, close } = await loadChiefOfStaff(
+      { organization: context.organization, user: context.user, person: context.person },
+      { viewing, earlier },
+    ));
   } catch (error) {
     await endReply(chat.id);
     // Configuration problems (e.g. no model set) are shown to the user as-is.
@@ -65,26 +90,9 @@ export async function POST(request: Request) {
     });
   }
 
-  // Attached files go into the company's file library; the message keeps a link to each.
-  if (uploads.length) {
-    try {
-      userMessage.parts.push(...(await saveChatAttachments(context.organization.id, context.person.id, uploads)));
-    } catch (error) {
-      await endReply(chat.id);
-      await close();
-      return new Response(error instanceof Error ? error.message : "Couldn't attach those files.", { status: 400 });
-    }
-  }
-
-  // Resending a message (e.g. retrying after an error) replaces it and anything after it.
-  const history = await prepareHistory(chat.messages, agent.tools);
-  const retryIndex = history.findIndex((message) => message.id === userMessage.id);
-  const retried = retryIndex === -1 ? null : history[retryIndex];
-  // A retry sends the text again but not the files, which are already saved with the first try.
-  if (retried && !uploads.length) userMessage.parts.push(...retried.parts.filter((p) => p.type === "file"));
-  const messages = [...(retryIndex === -1 ? history : history.slice(0, retryIndex)), userMessage];
+  const messages = await prepareHistory(recent, agent.tools);
   // Save the question first so it isn't lost if the run fails.
-  await saveChat(chat.id, messages);
+  await saveConversation(chat.id, older, messages);
 
   // The reply runs to the end even if the browser goes away (the panel closed, a reload): it isn't tied to
   // the request, the stream is read to its end after the response, and only Stop (stopChatAction) ends it early.
@@ -106,7 +114,7 @@ export async function POST(request: Request) {
       clearInterval(watch);
       clearTimeout(unwatch);
       // What the model was shown (attached images as data) is never stored; the conversation keeps its file links.
-      await saveChat(chat.id, await prepareHistory(restoreOriginals(finished, messages), agent.tools));
+      await saveConversation(chat.id, older, await prepareHistory(restoreOriginals(finished, messages), agent.tools));
       await endReply(chat.id);
       // Stop the workspace sandbox if this turn used it (it keeps running while a sign-in waits for a code).
       await close();

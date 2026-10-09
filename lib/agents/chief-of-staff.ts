@@ -44,6 +44,7 @@ import {
   setCompanyName,
   setSection,
 } from "@/lib/profile/markdown";
+import { MEMORY_LIMIT, savePersonalMemory } from "@/lib/agents/conversation";
 import { getGitHubConnection } from "@/lib/github";
 import { updateProfile } from "@/lib/profile/store";
 import { describeSchedule, getSchedule } from "@/lib/schedules";
@@ -77,6 +78,10 @@ type Context = {
   channel?: Channel;
   /** The GitHub account of the person you're talking to, if they connected one. */
   github?: { login: string; status: "connected" | "expired" } | null;
+  /** Your notes about the person you're talking to (only you see them, only while talking with them). */
+  memory?: string;
+  /** A summary of the conversation before the messages you're shown in full. */
+  earlier?: string;
 };
 
 function channelInstructions(channel: Channel): string {
@@ -173,13 +178,25 @@ function githubLine({ github, person }: Context): string {
   return `${person.name} ${github ? "needs to reconnect their GitHub" : "hasn't connected GitHub yet"}: before any GitHub work, send them ${appUrl("/connect/github")} to connect theirs (a minute; they choose which repositories Mach1 may use), then carry on once they say it's done.`;
 }
 
+/** What you know about the person you're talking to, and your conversation with them so far. */
+function personalInstructions({ person, memory, earlier }: Context): string {
+  if (!person) return "";
+  return `
+You are ${person.name}'s own assistant as well as the company's Chief of Staff: you work on their behalf, and for the company through them.
+
+What you know about ${person.name} (your notes; only you see them, and only while talking with them):
+${memory?.trim() || "(nothing yet)"}
+Keep these notes current with update_personal_notes when you learn something lasting about them: how they like answers, what they look after, who and what they care about, what you're following up on for them. Facts about the company go in the profile instead. Never put credentials in notes.
+${earlier?.trim() ? `\nEarlier in your conversation with ${person.name} (a summary; the latest messages follow in full):\n${earlier.trim()}\n` : ""}`;
+}
+
 export function chiefOfStaffInstructions(context: Context): string {
   const { organization, user, profile } = context;
   const today = new Date().toISOString().slice(0, 10);
   return `You are the Chief of Staff of ${organization.name}, a company that uses Mach1, a command center where people and AI agents run the business together.
 
 You are talking to ${context.person?.name ?? user.name} (${user.email}), who is already in the people list under that name. If you learn their role or manager, save it.
-
+${personalInstructions(context)}
 ${organization.onboardingCompletedAt ? afterOnboardingInstructions(context) : onboardingInstructions(context)}
 
 ${workInstructions(context)}
@@ -380,6 +397,16 @@ function workTools(context: Context) {
             ? `Not created: ${output.error}`
             : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
       }),
+    }),
+    update_personal_notes: tool({
+      description:
+        "Rewrite your notes about the person you're talking to (they replace the old notes, so keep what's still true). Only you see them, and only while talking with this person.",
+      inputSchema: z.object({ notes: z.string().max(MEMORY_LIMIT).describe("Short bullet points.") }),
+      execute: async ({ notes }) => {
+        if (!context.person) return "There's no one signed in to keep notes about.";
+        await savePersonalMemory(orgId, context.person.id, notes);
+        return "Saved your notes.";
+      },
     }),
     start_coding: tool({
       description:

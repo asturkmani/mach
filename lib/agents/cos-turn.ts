@@ -9,7 +9,8 @@ import { describeViewing } from "@/lib/agents/viewing";
 import { closeSandbox } from "@/lib/agents/sandbox-steps";
 import { listAgents } from "@/lib/agents/store";
 import type { SandboxSession } from "@/lib/agents/toolkit";
-import { endReply, getOrCreateChat, saveChat, takeTurn, type Chat } from "@/lib/chats";
+import { conversationWindow, getPersonalMemory, saveConversation } from "@/lib/agents/conversation";
+import { endReply, getOrCreateChat, takeTurn, type Chat } from "@/lib/chats";
 import { getGitHubConnection } from "@/lib/github";
 import { listLibrary } from "@/lib/files";
 import { listIntegrations } from "@/lib/integrations";
@@ -39,10 +40,12 @@ export async function loadChiefOfStaff(
     research?: boolean;
     /** The path of the screen they're on in the app, if the message came from the chat panel. */
     viewing?: string;
+    /** A summary of the conversation before the messages the model is shown in full. */
+    earlier?: string;
   } = {},
 ) {
   const organizationId = context.organization.id;
-  const [profile, agents, tasks, jobs, files, integrations, pages, github] = await Promise.all([
+  const [profile, agents, tasks, jobs, files, integrations, pages, github, memory] = await Promise.all([
     loadProfile(organizationId),
     listAgents(organizationId),
     listTasks(organizationId, { closedLimit: 0 }),
@@ -51,11 +54,26 @@ export async function loadChiefOfStaff(
     listIntegrations(organizationId),
     listPages(organizationId),
     context.person ? getGitHubConnection(organizationId, context.person.id) : null,
+    context.person ? getPersonalMemory(organizationId, context.person.id) : "",
   ]);
   const viewing = options.viewing ? await describeViewing(organizationId, options.viewing).catch(() => null) : null;
   const sandbox: SandboxSession = {};
   const agent = createChiefOfStaff(
-    { ...context, profile, agents, openTasks: tasks, jobs, files, integrations, pages, channel: options.channel, viewing, github },
+    {
+      ...context,
+      profile,
+      agents,
+      openTasks: tasks,
+      jobs,
+      files,
+      integrations,
+      pages,
+      channel: options.channel,
+      viewing,
+      github,
+      memory,
+      earlier: options.earlier,
+    },
     { sandbox, model: options.model, research: options.research },
   );
   return {
@@ -107,16 +125,17 @@ async function answer(
   channel: Channel,
   options: { model?: LanguageModel; research?: boolean },
 ): Promise<string> {
-  const { agent, close } = await loadChiefOfStaff(context, { channel, ...options });
-  const history = await prepareHistory(chat.messages, agent.tools);
   const question: UIMessage = {
     id: generateMessageId(),
     role: "user",
     parts: [{ type: "text", text }],
     metadata: { channel },
   };
-  const messages = [...history, question];
-  await saveChat(chat.id, messages);
+  // The model sees the latest messages in full and a summary of the rest.
+  const { earlier, older, recent } = await conversationWindow(chat.id, [...chat.messages, question]);
+  const { agent, close } = await loadChiefOfStaff(context, { channel, earlier, ...options });
+  const messages = await prepareHistory(recent, agent.tools);
+  await saveConversation(chat.id, older, messages);
 
   let finished: UIMessage[] = messages;
   try {
@@ -134,7 +153,7 @@ async function answer(
       // A failed model call ends the stream with an error chunk rather than throwing.
       if (chunk.type === "error") throw new Error(chunk.errorText);
     }
-    await saveChat(chat.id, await prepareHistory(finished, agent.tools));
+    await saveConversation(chat.id, older, await prepareHistory(finished, agent.tools));
   } finally {
     await close();
   }

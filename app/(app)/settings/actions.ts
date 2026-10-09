@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { MEMORY_LIMIT, savePersonalMemory } from "@/lib/agents/conversation";
 import { disconnectGitHub } from "@/lib/github";
 import { setAutoJoin } from "@/lib/orgs";
 import { requireAppContext } from "@/lib/session";
@@ -21,4 +22,13 @@ export async function disconnectGitHubAction(): Promise<void> {
   const { organization, person } = await requireAppContext();
   await disconnectGitHub(organization.id, person.id);
   revalidatePath("/settings/account");
+}
+
+/** Rewrites what your assistant knows about you (only it reads this, and only while talking with you). */
+export async function savePersonalNotesAction(notes: string): Promise<{ error?: string }> {
+  const { organization, person } = await requireAppContext();
+  if (notes.length > MEMORY_LIMIT) return { error: `Keep it under ${MEMORY_LIMIT} characters.` };
+  await savePersonalMemory(organization.id, person.id, notes);
+  revalidatePath("/settings/account");
+  return {};
 }
