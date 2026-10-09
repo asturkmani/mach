@@ -7,7 +7,7 @@ import { handleEmail, handleWhatsApp } from "@/lib/channels/inbound";
 import { emailAddress, findByPhone, firstTime, phoneDigits } from "@/lib/channels/senders";
 import { splitMessage, twilioSignature, validTwilioSignature, whatsappText } from "@/lib/channels/twilio";
 import { createOrganization, setEmailInbox } from "@/lib/orgs";
-import { linkMember, setPhone } from "@/lib/people";
+import { getPerson, linkMember, savePerson, setPhone, updatePerson } from "@/lib/people";
 import { startWhatsAppLink } from "@/lib/channels/whatsapp-links";
 import { useTestDb } from "@/test/db";
 import { getDb } from "@/lib/db";
@@ -189,6 +189,11 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     const reply = await linkWhatsApp(ORG, ahmed.id, "whatsapp:+447700900123");
     expect(reply).toContain("Linked. This number now reaches the Chief of Staff as Ahmed at Cedar Legacy");
     expect((await findByPhone("+447700900123"))?.person.id).toBe(ahmed.id);
+    // The linked number is their phone everywhere, and only linking another number changes it.
+    expect(await getPerson(ORG, ahmed.id)).toMatchObject({ phone: "+447700900123", whatsapp: "447700900123" });
+    await expect(updatePerson(ORG, ahmed.id, { phone: "+44 7700 900999" })).rejects.toThrow("linked WhatsApp number");
+    await savePerson(ORG, { name: "Ahmed", phone: "+44 7700 900999" });
+    expect((await getPerson(ORG, ahmed.id))!.phone).toBe("+447700900123");
 
     // A code works once, and a made-up or expired one doesn't link anything.
     const { code } = await startWhatsAppLink(ORG, ahmed.id);

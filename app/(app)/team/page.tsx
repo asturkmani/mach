@@ -9,14 +9,13 @@ import { listAgents } from "@/lib/agents/store";
 import { AGENT_TEMPLATES } from "@/lib/agents/templates";
 import { memberRoles } from "@/lib/members";
 import { listPeople } from "@/lib/people";
-import { phoneDigits } from "@/lib/channels/senders";
 import { formatPhone } from "@/lib/phone-format";
 import { requireAppContext } from "@/lib/session";
 import { isRunning, listTasks } from "@/lib/tasks";
 import { timeIn } from "@/lib/agents/prompts";
 import { listScheduledJobs } from "@/lib/work-overview";
 
-import { AddPersonForm, PersonActions, ManagerSelect } from "./team-controls";
+import { AddPersonForm, EditableText, PersonActions, ManagerSelect } from "./team-controls";
 
 const STATUS_LABELS = {
   active: { label: "Joined", className: "text-ok" },
@@ -93,28 +92,55 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2.5">
                               <Face name={person.name} size={24} />
-                              <div>
-                                <div>
-                                  {person.name}
-                                  {person.id === me.id && <span className="text-muted"> (you)</span>}
-                                  {roleOf(person.workosUserId) === "admin" && <span className="label ml-2 text-accent-ink">Admin</span>}
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-baseline gap-x-1">
+                                  <EditableText personId={person.id} field="name" value={person.name} label="Name" placeholder="Name" />
+                                  {person.id === me.id && <span className="text-muted">(you)</span>}
+                                  {roleOf(person.workosUserId) === "admin" && <span className="label ml-1 text-accent-ink">Admin</span>}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint">
-                                  {[person.email, person.phone && phoneDigits(person.phone) !== person.whatsapp ? person.phone : null]
-                                    .filter(Boolean)
-                                    .join(" · ") || (person.whatsapp ? "" : "No contact details")}
-                                  {person.whatsapp && (
-                                    <span className="inline-flex items-center gap-1" title="WhatsApp linked: they proved the number is theirs, so it reaches the Chief of Staff as them">
-                                      {(person.email || (person.phone && phoneDigits(person.phone) !== person.whatsapp)) && <span>·</span>}
-                                      {formatPhone(person.whatsapp)}
-                                      <BadgeCheck size={12} className="text-ok" aria-label="Verified WhatsApp" />
-                                    </span>
-                                  )}
+                                  <EditableText
+                                    personId={person.id}
+                                    field="email"
+                                    value={person.email ?? ""}
+                                    label="Email"
+                                    placeholder="Add email"
+                                    locked={person.workosUserId ? `The address ${person.name} signs in with. It changes only with their sign-in.` : undefined}
+                                    className="text-xs"
+                                  />
+                                  <span>·</span>
+                                  <span className="inline-flex items-center gap-1">
+                                    <EditableText
+                                      personId={person.id}
+                                      field="phone"
+                                      value={person.whatsapp ? formatPhone(person.whatsapp) : (person.phone ?? "")}
+                                      label="Phone"
+                                      placeholder="Add phone"
+                                      locked={
+                                        person.whatsapp
+                                          ? `${person.name}'s linked WhatsApp: they proved it's theirs, so it reaches the Chief of Staff as them. They change it by linking another number.`
+                                          : undefined
+                                      }
+                                      className="text-xs"
+                                    />
+                                    {person.whatsapp && <BadgeCheck size={12} className="text-ok" aria-label="Verified WhatsApp" />}
+                                  </span>
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-3 py-2.5">{person.role || <span className="text-faint">—</span>}</td>
+                          <td className="max-w-72 px-3 py-2.5">
+                            <EditableText personId={person.id} field="role" value={person.role} label="Role" placeholder="Add role" />
+                            <EditableText
+                              personId={person.id}
+                              field="responsibilities"
+                              value={person.responsibilities}
+                              label="Responsibilities"
+                              placeholder="Add responsibilities"
+                              className="text-xs text-muted"
+                              multiline
+                            />
+                          </td>
                           <td className="px-3 py-2">
                             <ManagerSelect
                               key={person.managerName ?? ""}

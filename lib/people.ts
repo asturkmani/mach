@@ -120,8 +120,10 @@ export async function savePerson(organizationId: string, input: PersonInput): Pr
      on conflict (organization_id, lower(name)) do update set
        role = coalesce($3, people.role),
        responsibilities = coalesce($4, people.responsibilities),
-       email = case when $9 then $5 else people.email end,
-       phone = case when $10 then $6 else people.phone end,
+       -- A joined person's email is the address they sign in with, and what email to the Chief of Staff is
+       -- matched on: only their own sign-in changes it, never someone describing them.
+       email = case when $9 and people.workos_user_id is null then $5 else people.email end,
+       phone = case when $10 and people.whatsapp is null then $6 else people.phone end,
        manager_id = case when $7 then $8 else people.manager_id end,
        updated_at = now()
      returning id`,
@@ -149,6 +151,57 @@ export async function removePerson(organizationId: string, id: string): Promise<
  * Renames someone, keeping everything attached to them (tasks, reporting
  * lines, their login). Returns null if no one has the current name.
  */
+export type PersonPatch = Partial<Record<"name" | "role" | "responsibilities" | "email" | "phone", string>>;
+
+export class PersonError extends Error {}
+
+/**
+ * Edits someone's details (the fields given). The email of someone who has
+ * joined is the address they sign in with and email the Chief of Staff from,
+ * so it can't be changed here. The phone is contact details only (a WhatsApp
+ * number is linked by its owner).
+ */
+export async function updatePerson(organizationId: string, id: string, patch: PersonPatch): Promise<Person> {
+  const person = await getPerson(organizationId, id);
+  if (!person) throw new PersonError("That person no longer exists.");
+  const set: string[] = [];
+  const params: unknown[] = [organizationId, id];
+  const add = (column: string, value: unknown) => {
+    params.push(value);
+    set.push(`${column} = $${params.length}`);
+  };
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    if (!name) throw new PersonError("A person needs a name.");
+    const clash = await findIdByName(organizationId, name);
+    if (clash && clash !== id) throw new PersonError(`Someone called ${name} is already on the team.`);
+    add("name", name);
+  }
+  if (patch.role !== undefined) add("role", patch.role.trim());
+  if (patch.responsibilities !== undefined) add("responsibilities", patch.responsibilities.trim());
+  if (patch.email !== undefined) {
+    const email = patch.email.trim().toLowerCase();
+    if (person.workosUserId && email !== (person.email ?? "").toLowerCase()) {
+      throw new PersonError(`That's the address ${person.name} signs in with, so it can't be changed here.`);
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new PersonError("That email address doesn't look right.");
+    if (!person.workosUserId) add("email", email || null);
+  }
+  if (patch.phone !== undefined) {
+    const phone = patch.phone.trim();
+    // A linked WhatsApp number is their phone; only linking another number from their own account changes it.
+    if (person.whatsapp && phone.replace(/\D/g, "").replace(/^00/, "") !== person.whatsapp) {
+      throw new PersonError(`That's ${person.name}'s linked WhatsApp number. They change it by linking another number in Settings → Account.`);
+    }
+    if (phone && phone.replace(/\D/g, "").length < 7) throw new PersonError("That phone number doesn't look right.");
+    add("phone", phone || null);
+  }
+  if (set.length) {
+    await getDb().query(`update people set ${set.join(", ")}, updated_at = now() where organization_id = $1 and id = $2`, params);
+  }
+  return (await getPerson(organizationId, id))!;
+}
+
 export async function renamePerson(organizationId: string, currentName: string, newName: string): Promise<Person | null> {
   const id = await findIdByName(organizationId, currentName);
   const name = newName.trim();

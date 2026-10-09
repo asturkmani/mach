@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createOrganization } from "@/lib/orgs";
-import { linkMember, listPeople, markInvited, removePersonByName, renamePerson, savePerson, syncPeopleSection } from "@/lib/people";
+import { getPerson, linkMember, listPeople, markInvited, removePersonByName, renamePerson, savePerson, syncPeopleSection, updatePerson } from "@/lib/people";
 import { getSection } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { useTestDb } from "@/test/db";
@@ -80,6 +80,25 @@ describe("people", () => {
     const added = await linkMember(ORG, { id: "user_2", email: "sam@other.example", name: "Sam" });
     expect(added).toMatchObject({ name: "sam@other.example", status: "active" });
     expect(await listPeople(ORG)).toHaveLength(2);
+  });
+
+  it("edits anyone's details from the Team page, but never a joined person's sign-in email", async () => {
+    await createOrganization({ id: ORG, name: "Cedar Legacy" });
+    const ahmed = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
+    const lina = await savePerson(ORG, { name: "Lina", email: "lina@old.example" });
+
+    const edited = await updatePerson(ORG, lina.id, { name: "Lina Haddad", role: "Operations", responsibilities: "Banking, payroll", email: "Lina@Cedar.example", phone: "+44 7700 900456" });
+    expect(edited).toMatchObject({ name: "Lina Haddad", role: "Operations", responsibilities: "Banking, payroll", email: "lina@cedar.example", phone: "+44 7700 900456" });
+    await expect(updatePerson(ORG, lina.id, { name: "ahmed" })).rejects.toThrow("Someone called ahmed is already on the team.");
+    await expect(updatePerson(ORG, lina.id, { email: "not an email" })).rejects.toThrow("doesn't look right");
+    expect((await updatePerson(ORG, lina.id, { phone: "" })).phone).toBeNull();
+
+    // Ahmed has joined: his email is how he signs in and how email to the Chief of Staff is matched to him.
+    await expect(updatePerson(ORG, ahmed.id, { email: "intruder@evil.example" })).rejects.toThrow("signs in with");
+    expect((await updatePerson(ORG, ahmed.id, { email: "ahmed@cedar.example", role: "Principal" })).role).toBe("Principal");
+    // Nor can the Chief of Staff change it when told "Ahmed's email is ...".
+    await savePerson(ORG, { name: "Ahmed", email: "intruder@evil.example", phone: "+44 7700 900999" });
+    expect(await getPerson(ORG, ahmed.id)).toMatchObject({ email: "ahmed@cedar.example", phone: "+44 7700 900999" });
   });
 
   it("renders the people section of the profile from the database", async () => {

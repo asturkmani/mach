@@ -4,7 +4,7 @@ import { getWorkOS } from "@workos-inc/authkit-nextjs";
 import { revalidatePath } from "next/cache";
 
 import { setRole, type Role } from "@/lib/members";
-import { getPerson, markInvited, removePerson, savePerson, syncPeopleSection } from "@/lib/people";
+import { getPerson, markInvited, PersonError, removePerson, savePerson, syncPeopleSection, updatePerson, type PersonPatch } from "@/lib/people";
 import { requireAppContext } from "@/lib/session";
 
 export type ActionResult = { error?: string; message?: string };
@@ -41,6 +41,23 @@ export async function addPersonAction(_: ActionResult, form: FormData): Promise<
   }
   await syncPeopleSection(organization.id);
   return ok(`Added ${name}.`);
+}
+
+/** Edits someone's details on the Team page (anyone on the team can, as they can add people). */
+export async function updatePersonAction(personId: string, patch: PersonPatch): Promise<ActionResult> {
+  const { organization } = await requireAppContext();
+  const allowed: (keyof PersonPatch)[] = ["name", "role", "responsibilities", "email", "phone"];
+  const clean = Object.fromEntries(
+    Object.entries(patch).filter(([k, v]) => allowed.includes(k as keyof PersonPatch) && typeof v === "string" && v.length <= 2000),
+  ) as PersonPatch;
+  try {
+    await updatePerson(organization.id, personId, clean);
+  } catch (error) {
+    if (error instanceof PersonError) return { error: error.message };
+    throw error;
+  }
+  await syncPeopleSection(organization.id);
+  return ok();
 }
 
 export async function setManagerAction(personId: string, managerName: string): Promise<ActionResult> {

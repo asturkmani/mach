@@ -4,7 +4,7 @@ import { useActionState, useRef, useState, useTransition } from "react";
 
 import type { PersonStatus } from "@/lib/people";
 
-import { addPersonAction, inviteAction, removePersonAction, setManagerAction, setRoleAction, type ActionResult } from "./actions";
+import { addPersonAction, inviteAction, removePersonAction, setManagerAction, setRoleAction, updatePersonAction, type ActionResult } from "./actions";
 
 const inputClass = "field";
 
@@ -153,5 +153,114 @@ export function PersonActions({
       </div>
       <Feedback result={result} />
     </div>
+  );
+}
+
+/**
+ * A detail on the Team page that turns into a field when clicked: Enter (or
+ * clicking away) saves, Esc puts it back. Locked ones say why instead.
+ */
+export function EditableText({
+  personId,
+  field,
+  value,
+  placeholder,
+  label,
+  locked,
+  className = "",
+  multiline = false,
+}: {
+  personId: string;
+  field: "name" | "role" | "responsibilities" | "email" | "phone";
+  value: string;
+  placeholder: string;
+  label: string;
+  /** Why it can't be edited here, if it can't. */
+  locked?: string;
+  className?: string;
+  multiline?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [pending, startTransition] = useTransition();
+  const [result, setResult] = useState<ActionResult>({});
+  const cancelled = useRef(false);
+
+  if (locked) {
+    return (
+      <span className={className} title={locked}>
+        {value || <span className="text-faint">{placeholder}</span>}
+      </span>
+    );
+  }
+  const save = () => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
+    setEditing(false);
+    if (draft.trim() === value.trim()) return;
+    startTransition(async () => {
+      const outcome = await updatePersonAction(personId, { [field]: draft });
+      setResult(outcome);
+      if (outcome.error) setDraft(value);
+    });
+  };
+  const keys = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (e.key === "Escape") {
+      cancelled.current = true;
+      setDraft(value);
+      setEditing(false);
+    } else if (e.key === "Enter" && (!multiline || e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      e.currentTarget.blur();
+    }
+  };
+  const input = "field w-full px-1.5 py-0.5";
+
+  return (
+    <span className="block">
+      {editing ? (
+        multiline ? (
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={save}
+            onKeyDown={keys}
+            rows={2}
+            aria-label={label}
+            placeholder={placeholder}
+            className={`${input} resize-y text-sm`}
+          />
+        ) : (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={save}
+            onKeyDown={keys}
+            aria-label={label}
+            placeholder={placeholder}
+            className={`${input} ${className}`}
+          />
+        )
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(value);
+            setResult({});
+            setEditing(true);
+          }}
+          disabled={pending}
+          title={`Edit ${label.toLowerCase()}`}
+          className={`-mx-1 cursor-text rounded-none px-1 text-left hover:bg-hover disabled:opacity-60 ${className}`}
+        >
+          {(pending ? draft : value) || <span className="text-faint">{placeholder}</span>}
+        </button>
+      )}
+      {result.error && <span className="block text-xs text-danger">{result.error}</span>}
+    </span>
   );
 }

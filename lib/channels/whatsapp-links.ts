@@ -52,10 +52,11 @@ export async function completeWhatsAppLink(text: string, from: string): Promise<
      where whatsapp = $1 and workos_user_id is distinct from $2`,
     [digits, link.workos_user_id],
   );
-  await getDb().query("update people set whatsapp = $2, whatsapp_linked_at = now(), updated_at = now() where id = $1", [
-    link.person_id,
-    digits,
-  ]);
+  // Their linked WhatsApp is their phone number everywhere (Team page, profile): one number, not two.
+  await getDb().query(
+    "update people set whatsapp = $2, phone = '+' || $2, whatsapp_linked_at = now(), updated_at = now() where id = $1",
+    [link.person_id, digits],
+  );
   return { linked: true, personName: link.name, companyName: link.company };
 }
 
