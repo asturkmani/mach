@@ -56,11 +56,13 @@ def totp(secret, step=30, digits=6):
 
 USER = [sel["username"]] if sel.get("username") else [
     'input[autocomplete="username"]', 'input[type="email"]', 'input[name*="user" i]', 'input[id*="user" i]',
-    'input[name*="email" i]', 'input[id*="email" i]', 'input[name*="login" i]', 'input[type="text"]']
-PASSWORD = [sel.get("password") or 'input[type="password"]']
-CODE = [sel["code"]] if sel.get("code") else [
-    'input[autocomplete="one-time-code"]', 'input[name*="otp" i]', 'input[id*="otp" i]', 'input[name*="mfa" i]',
-    'input[name*="2fa" i]', 'input[name*="code" i]', 'input[id*="code" i]', 'input[name*="token" i]', 'input[inputmode="numeric"]']
+    'input[placeholder*="user" i]', 'input[name*="email" i]', 'input[id*="email" i]', 'input[placeholder*="email" i]',
+    'input[name*="login" i]', 'input[type="text"]']
+# A sign-in code field, by any of the ways sites name one: its name, id, placeholder, label or
+# autocomplete. Some sites (Masttro) make it a password field called just "Token".
+CODE_WORDS = re.compile(r"one.?time|otp|mfa|2fa|two.?factor|token|code|passcode|verification|authenticat|security.?key", re.I)
+FIELDS = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"])'
+SUBMIT = re.compile(r"^\s*(sign ?in|log ?in|login|continue|next|verify|submit|confirm)\b", re.I)
 ERRORS = ['[role="alert"]', '.alert-danger', '.error', '.invalid-feedback', '[class*="error" i]']
 
 def visible(page, selectors):
@@ -72,6 +74,36 @@ def visible(page, selectors):
                     return element
             except Exception:
                 pass
+    return None
+
+def is_code(element):
+    """True for a field that takes a sign-in code rather than a username or password."""
+    try:
+        described = element.evaluate("""e => [e.name, e.id, e.placeholder, e.getAttribute('aria-label'),
+            e.autocomplete, ...Array.from(e.labels || []).map(l => l.innerText)].filter(Boolean).join(' ')""")
+    except Exception:
+        return False
+    return bool(CODE_WORDS.search(described)) and not re.search(r"user|e.?mail|password|country|promo|coupon|zip|post", described, re.I)
+
+def code_field(page):
+    if sel.get("code"):
+        return visible(page, [sel["code"]])
+    for element in page.locator(FIELDS).all():
+        try:
+            if element.is_visible() and is_code(element):
+                return element
+        except Exception:
+            pass
+    return None
+
+def password_field(page):
+    """The visible password field that isn't a code field dressed as one."""
+    for element in page.locator(sel.get("password") or 'input[type="password"]').all():
+        try:
+            if element.is_visible() and (sel.get("password") or not is_code(element)):
+                return element
+        except Exception:
+            pass
     return None
 
 def settle(page):
@@ -86,15 +118,36 @@ def on_sign_in_page(page):
 
 def signed_in(page):
     failed = re.search(r"fail|error|denied|invalid", page.url, re.I)
-    return not failed and not visible(page, PASSWORD) and not visible(page, CODE) and not on_sign_in_page(page)
+    return not failed and not password_field(page) and not code_field(page) and not on_sign_in_page(page)
+
+def submit_button(page):
+    if sel.get("submit"):
+        return visible(page, [sel["submit"]])
+    for role in ("button", "link"):
+        for element in page.get_by_role(role, name=SUBMIT).all():
+            try:
+                if element.is_visible() and element.is_enabled():
+                    return element
+            except Exception:
+                pass
+    return visible(page, ['button[type="submit"]', 'input[type="submit"]'])
 
 def submit(page, field):
-    button = visible(page, [sel["submit"]]) if sel.get("submit") else None
+    # The form's own button where there is one: on some sites (React forms) Enter does nothing.
+    button = submit_button(page)
     if button:
         button.click()
     else:
         field.press("Enter")
     settle(page)
+
+def bot_check(page):
+    """True when a bot check (Cloudflare and the like) stands in front of the page."""
+    try:
+        text = page.inner_text("body")[:2000]
+    except Exception:
+        return False
+    return bool(re.search(r"performing security verification|verify(ing)? you are (a )?human|just a moment|checking your browser|are you a robot", text, re.I))
 
 def page_error(page):
     element = visible(page, ERRORS)
@@ -139,28 +192,32 @@ try:
         page.goto(check or cfg["loginUrl"], wait_until="domcontentloaded")
         settle(page)
         if not signed_in(page):
-            if not visible(page, PASSWORD) and not visible(page, USER):
+            if not password_field(page) and not visible(page, USER):
                 page.goto(cfg["loginUrl"], wait_until="domcontentloaded")
                 settle(page)
-            user, password = visible(page, USER), visible(page, PASSWORD)
+            if not password_field(page) and not visible(page, USER):
+                if bot_check(page):
+                    raise RuntimeError("the site's bot check blocks automated browsers at " + page.url)
+                raise RuntimeError("couldn't find a sign-in form at " + page.url + "; check the sign-in page address on the Integrations page")
+            user, password = visible(page, USER), password_field(page)
             if user and creds.get("username"):
                 user.fill(creds["username"])
             if not password and user:
                 # Two-step sign-in: the password comes on the next page.
                 submit(page, user)
-                password = visible(page, PASSWORD)
+                password = password_field(page)
             if not password:
                 raise RuntimeError("couldn't find the password field " + page_error(page))
             password.fill(creds["password"])
-            code_field = visible(page, CODE)
-            if code_field:
-                # The code is asked for on the same page.
-                enter_code(page, code_field)
+            code = code_field(page)
+            if code:
+                # The code is asked for on the same page, alongside the password.
+                enter_code(page, code)
             else:
                 submit(page, password)
-                code_field = visible(page, CODE)
-                if code_field:
-                    enter_code(page, code_field)
+                code = code_field(page)
+                if code:
+                    enter_code(page, code)
             if cfg.get("checkUrl"):
                 page.goto(cfg["checkUrl"], wait_until="domcontentloaded")
                 settle(page)
@@ -491,6 +548,9 @@ export async function browsePage(context: AgentContext, input: { url: string; sa
     text.trim() || "(no text)",
     page.links?.length ? `\nLinks:\n${page.links.filter(([, href]) => href.startsWith("http")).slice(0, 40).map(([label, href]) => `- ${label || "(no text)"}: ${href}`).join("\n")}` : "",
     page.requests.length ? `\nData the page loaded:\n${page.requests.map((r) => `- ${r.status} ${r.type || "?"} ${r.url}`).join("\n")}` : "",
+    /performing security verification|verify(ing)? you are (a )?human|checking your browser/i.test(page.text.slice(0, 2000))
+      ? "\nThis page is a bot check (e.g. Cloudflare) that blocks agents' browsers, and trying again won't get past it. Ask the people to save the page as a PDF and attach it, or use the site's API if it has one."
+      : "",
     savePath ? `\nSaved the full ${page.contentType || "page"} (${page.bytes ?? 0} bytes) to ${savePath}.` : "",
   ];
   return redact(lines.filter((l, i) => l || i === 2).join("\n"), await knownSecrets(context.organizationId));

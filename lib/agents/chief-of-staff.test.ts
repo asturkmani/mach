@@ -79,6 +79,27 @@ describe("Chief of Staff", () => {
     expect(lastPrompt).toContain("Not complete yet. Missing: Team and reporting lines (2 people, 1 needs a manager)");
   });
 
+  it("finishes onboarding for a company of one once they say it's just them", async () => {
+    const organization = await setUpOrg();
+    const model = scriptedModel([
+      [
+        ["update_section", { section: "Overview", content: "Solo bookkeeping practice." }],
+        ["save_person", { name: "Ahmed", role: "Founder", reportsTo: "" }],
+        ["update_section", { section: "Goals", content: "- Ten clients" }],
+      ],
+      // Without justMe, a lone person isn't taken as the whole team.
+      [["complete_onboarding", {}]],
+      [["complete_onboarding", { justMe: true }]],
+      "You're set up.",
+    ]);
+    const agent = createChiefOfStaff({ organization, user, profile: await loadProfile(ORG) }, { model, research: false });
+    await agent.generate({ prompt: "It's just me. I do bookkeeping for small firms." });
+
+    const prompts = model.doGenerateCalls.map((call) => JSON.stringify(call.prompt));
+    expect(prompts.at(-2)).toContain("Not complete yet. Missing: Team and reporting lines (1 person)");
+    expect((await getOrganization(ORG))!.onboardingCompletedAt).toBeInstanceOf(Date);
+  });
+
   it("offers research tools, reads the website first and drops the interview after onboarding", async () => {
     const organization = await setUpOrg();
     const onboarding = createChiefOfStaff({ organization, user, profile: "" }, { model: scriptedModel(["Hi"]) });

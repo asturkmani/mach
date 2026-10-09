@@ -81,6 +81,13 @@ describe("onboarding checklist", () => {
     ]);
   });
 
+  it("takes one person as the whole team only once they've said it's just them", () => {
+    const md = setSection(emptyProfile(), "People & Responsibilities", renderPeople([person("Ahmed", "Founder")]));
+    expect(onboardingChecklist(md)[1].done).toBe(false);
+    expect(onboardingChecklist(md, { justMe: true })[1]).toEqual({ label: "Team and reporting lines", done: true, detail: "1 person" });
+    expect(onboardingChecklist(emptyProfile(), { justMe: true })[1].done).toBe(false);
+  });
+
   it("flags people without a manager", () => {
     const md = setSection(
       emptyProfile(),

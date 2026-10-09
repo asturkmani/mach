@@ -169,7 +169,11 @@ export function isCaptured(markdown: string, section: string): boolean {
   return body !== "" && body !== EMPTY_SECTION;
 }
 
-export function onboardingChecklist(markdown: string): ChecklistItem[] {
+/**
+ * What onboarding still needs. A company of one is fine: `justMe` says the
+ * person has confirmed nobody else works there, so their own entry is the team.
+ */
+export function onboardingChecklist(markdown: string, { justMe = false }: { justMe?: boolean } = {}): ChecklistItem[] {
   const peopleBody = getSection(markdown, PEOPLE_SECTION) ?? "";
   const people = peopleBody
     .split("\n")
@@ -181,7 +185,7 @@ export function onboardingChecklist(markdown: string): ChecklistItem[] {
     { label: "What the company does", done: isCaptured(markdown, "Overview") },
     {
       label: "Team and reporting lines",
-      done: people.length > 1 && withoutManager <= 1,
+      done: (people.length > 1 || (justMe && people.length === 1)) && withoutManager <= 1,
       detail:
         people.length === 0
           ? undefined

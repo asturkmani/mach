@@ -87,7 +87,7 @@ function onboardingInstructions({ organization }: Context): string {
 
 Only three things are needed to finish onboarding:
 1. What the company does and for whom (Overview). ${website}
-2. The team and who reports to whom. Ask for everyone in one go ("Who's on the team? Give me names, roles and who each reports to."). Mention they can also add people on the Team page and invite them from there.
+2. The team and who reports to whom. Ask for everyone in one go ("Who's on the team? Give me names, roles and who each reports to."). Mention they can also add people on the Team page and invite them from there. If it's just them, that's a complete answer: save their own role and pass justMe to complete_onboarding. Don't push for a team that doesn't exist.
 3. The top one to three priorities right now (Goals).
 
 How to run it:
@@ -276,12 +276,17 @@ function profileTools(context: Context) {
     }),
     complete_onboarding: tool({
       description:
-        "Mark onboarding as finished. Only succeeds once the company overview, the team with reporting lines (everyone but the person at the top has a manager) and top priorities are captured; otherwise it lists what's missing.",
-      inputSchema: z.object({}),
-      execute: async () => {
+        "Mark onboarding as finished. Only succeeds once the company overview, the team with reporting lines (everyone but the person at the top has a manager) and top priorities are captured; otherwise it lists what's missing. A one-person company counts: set justMe once they've said nobody else works there.",
+      inputSchema: z.object({
+        justMe: z
+          .boolean()
+          .optional()
+          .describe("True only when the person you're talking to has said they're the only person in the company."),
+      }),
+      execute: async ({ justMe }) => {
         // Queued behind any profile updates still in flight from this step.
         const profile = await updateProfile(orgId, (md) => md);
-        const missing = onboardingChecklist(profile)
+        const missing = onboardingChecklist(profile, { justMe })
           .filter((item) => !item.done)
           .map((item) => (item.detail ? `${item.label} (${item.detail})` : item.label));
         if (missing.length > 0) return { onboardingComplete: false, missing, profile };
@@ -292,7 +297,7 @@ function profileTools(context: Context) {
         type: "text" as const,
         value: output.onboardingComplete
           ? "Onboarding is marked complete. Now reply to them: a three-line summary of what you captured, then one line saying they can tell you anything new at any time or ask you to get work done."
-          : `Not complete yet. Missing: ${output.missing.join("; ")}. If you saved this in the same step, call complete_onboarding again. Otherwise ask one short question about it; if someone has no manager, ask where they fit (for example whether the person you're talking to is one of the people already listed).`,
+          : `Not complete yet. Missing: ${output.missing.join("; ")}. If you saved this in the same step, call complete_onboarding again. Otherwise ask one short question about it; if someone has no manager, ask where they fit (for example whether the person you're talking to is one of the people already listed); if only one person is listed, ask whether it's just them, and if so call complete_onboarding with justMe.`,
       }),
     }),
   };
@@ -459,9 +464,14 @@ function workTools(context: Context) {
         name: z.string().min(1).max(60).describe("e.g. Masttro (web)"),
         slug: z.string().optional().describe("Short handle, e.g. masttro-web. Reuse it to reconfigure."),
         description: z.string().describe("What agents do there."),
-        loginUrl: z.string().describe("The sign-in page, e.g. https://app.masttro.com/login"),
+        loginUrl: z
+          .string()
+          .describe("The page with the sign-in form itself, e.g. https://app.masttro.com/login. Not a docs page or anything public."),
         checkUrl: z.string().optional().describe("A page that only shows when signed in, e.g. the dashboard."),
-        domains: z.array(z.string()).optional(),
+        domains: z
+          .array(z.string())
+          .optional()
+          .describe("Every other site this account opens, e.g. a help centre on its own domain that signs in through it (masttro.zendesk.com)."),
         agents: z
           .array(z.string())
           .optional()
