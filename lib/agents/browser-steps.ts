@@ -27,34 +27,15 @@ export const LOGIN_DIR = `${JOB_DIR}/.logins`;
 const HELPER = `${JOB_DIR}/.mach/login.py`;
 const WAITER = `${JOB_DIR}/.mach/login-wait.sh`;
 const BROWSER = `${JOB_DIR}/.mach/browse.py`;
+const INSPECTOR = `${JOB_DIR}/.mach/inspect.py`;
 
-/** Runs in the sandbox: signs in with Playwright and reports through LOGIN_DIR/<slug>.status. */
-const LOGIN_PY = String.raw`# Signs the job's browser in to a website. Written by Mach1; credentials
-# arrive in a file that is deleted as soon as it's read.
-import base64, hashlib, hmac, json, os, re, struct, sys, time
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
-
-slug, creds_path = sys.argv[1], sys.argv[2]
-with open(creds_path) as f:
-    creds = json.load(f)
-os.remove(creds_path)
-base = os.path.join("${LOGIN_DIR}", slug)
-state_path = base + ".json"
-cfg = creds["config"]
-sel = cfg.get("selectors") or {}
-
-def status(text):
-    with open(base + ".status", "w") as f:
-        f.write(text)
-
-def totp(secret, step=30, digits=6):
-    key = secret.replace(" ", "").upper()
-    key = base64.b32decode(key + "=" * (-len(key) % 8))
-    digest = hmac.new(key, struct.pack(">Q", int(time.time()) // step), hashlib.sha1).digest()
-    offset = digest[-1] & 0x0F
-    return str((struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 10 ** digits).zfill(digits)
-
-USER = [sel["username"]] if sel.get("username") else [
+/**
+ * Finding a sign-in form's parts, for the sign-in helper and inspect_site: a
+ * username, a password, a sign-in code (by name, id, placeholder, label or
+ * autocomplete; Masttro's is a password field called "Token") and the button
+ * that submits it. Expects sel: CSS selectors given for the site, or {}.
+ */
+const FORM_PY = String.raw`USER = [sel["username"]] if sel.get("username") else [
     'input[autocomplete="username"]', 'input[type="email"]', 'input[name*="user" i]', 'input[id*="user" i]',
     'input[placeholder*="user" i]', 'input[name*="email" i]', 'input[id*="email" i]', 'input[placeholder*="email" i]',
     'input[name*="login" i]', 'input[type="text"]']
@@ -113,13 +94,6 @@ def settle(page):
         pass
     page.wait_for_timeout(1000)
 
-def on_sign_in_page(page):
-    return page.url.split("?")[0].rstrip("/") == cfg["loginUrl"].split("?")[0].rstrip("/")
-
-def signed_in(page):
-    failed = re.search(r"fail|error|denied|invalid", page.url, re.I)
-    return not failed and not password_field(page) and not code_field(page) and not on_sign_in_page(page)
-
 def submit_button(page):
     if sel.get("submit"):
         return visible(page, [sel["submit"]])
@@ -132,6 +106,106 @@ def submit_button(page):
                 pass
     return visible(page, ['button[type="submit"]', 'input[type="submit"]'])
 
+def bot_check(page):
+    """True when a bot check (Cloudflare and the like) stands in front of the page."""
+    try:
+        text = page.inner_text("body")[:2000]
+    except Exception:
+        return False
+    return bool(re.search(r"performing security verification|verify(ing)? you are (a )?human|just a moment|checking your browser|are you a robot", text, re.I))
+
+def field_label(element):
+    try:
+        return element.evaluate("""e => (Array.from(e.labels || []).map(l => l.innerText.trim()).find(Boolean)
+            || e.placeholder || e.getAttribute('aria-label') || e.name || e.id || e.type || '').slice(0, 40)""")
+    except Exception:
+        return "?"
+
+def describe_form(page):
+    """What a person would see of the sign-in form: its fields (and which take a code) and buttons."""
+    fields = []
+    for element in page.locator(FIELDS).all()[:12]:
+        try:
+            if not element.is_visible():
+                continue
+            kind = "code" if is_code(element) else element.get_attribute("type") or "text"
+            fields.append({"label": field_label(element), "kind": kind})
+        except Exception:
+            pass
+    buttons = []
+    for element in page.get_by_role("button").all()[:12]:
+        try:
+            name = element.inner_text().strip()
+            if name and element.is_visible():
+                buttons.append(name[:30])
+        except Exception:
+            pass
+    return {"fields": fields, "buttons": buttons[:6]}
+
+def form_words(form):
+    fields = ", ".join(f"{f['label']} ({f['kind']})" for f in form["fields"]) or "no fields"
+    return fields + ("; buttons: " + ", ".join(form["buttons"]) if form["buttons"] else "")
+`;
+
+/** Runs in the sandbox: signs in with Playwright and reports through LOGIN_DIR/<slug>.status. */
+const LOGIN_PY = String.raw`# Signs the job's browser in to a website. Written by Mach1; credentials
+# arrive in a file that is deleted as soon as it's read.
+import base64, hashlib, hmac, json, os, re, struct, sys, time
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+
+slug, creds_path = sys.argv[1], sys.argv[2]
+with open(creds_path) as f:
+    creds = json.load(f)
+os.remove(creds_path)
+base = os.path.join("${LOGIN_DIR}", slug)
+state_path = base + ".json"
+cfg = creds["config"]
+sel = cfg.get("selectors") or {}
+
+def status(text):
+    with open(base + ".status", "w") as f:
+        f.write(text)
+
+def totp(secret, step=30, digits=6):
+    key = secret.replace(" ", "").upper()
+    key = base64.b32decode(key + "=" * (-len(key) % 8))
+    digest = hmac.new(key, struct.pack(">Q", int(time.time()) // step), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    return str((struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 10 ** digits).zfill(digits)
+
+${FORM_PY}
+SIGN_IN = re.compile(r"^\s*(sign ?in|log ?in|login)\b", re.I)
+
+def sign_in_button(page):
+    for role in ("button", "link"):
+        for element in page.get_by_role(role, name=SIGN_IN).all():
+            try:
+                if element.is_visible():
+                    return element
+            except Exception:
+                pass
+    return None
+
+def form_showing(page):
+    """A sign-in form is on the page: a password or code field, or a username with a Sign in button.
+    Judged by what's on the page, not its address: some apps (Masttro) sign in at the app's own address."""
+    return bool(password_field(page) or code_field(page) or (visible(page, USER) and sign_in_button(page)))
+
+def signed_in(page):
+    failed = re.search(r"fail|error|denied|invalid", page.url, re.I)
+    return not failed and not bot_check(page) and not form_showing(page)
+
+def wait_signed_in(page, seconds=30):
+    """After submitting: apps can take a while to swap the form for the app, so keep looking."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if signed_in(page):
+            return True
+        if page_error(page) and time.time() > deadline - seconds + 3:
+            return False
+        page.wait_for_timeout(1000)
+    return signed_in(page)
+
 def submit(page, field):
     # The form's own button where there is one: on some sites (React forms) Enter does nothing.
     button = submit_button(page)
@@ -140,14 +214,6 @@ def submit(page, field):
     else:
         field.press("Enter")
     settle(page)
-
-def bot_check(page):
-    """True when a bot check (Cloudflare and the like) stands in front of the page."""
-    try:
-        text = page.inner_text("body")[:2000]
-    except Exception:
-        return False
-    return bool(re.search(r"performing security verification|verify(ing)? you are (a )?human|just a moment|checking your browser|are you a robot", text, re.I))
 
 def page_error(page):
     element = visible(page, ERRORS)
@@ -180,6 +246,48 @@ def enter_code(page, field):
     field.fill(sign_in_code())
     submit(page, field)
 
+def sign_in(page):
+    status("signing_in")
+    check = cfg.get("checkUrl") or creds.get("landingUrl")
+    page.goto(check or cfg["loginUrl"], wait_until="domcontentloaded")
+    settle(page)
+    if signed_in(page):
+        return  # the saved session still works
+    if not form_showing(page):
+        page.goto(cfg["loginUrl"], wait_until="domcontentloaded")
+        settle(page)
+    if not form_showing(page):
+        if bot_check(page):
+            raise RuntimeError("the site's bot check blocks automated browsers at " + page.url)
+        raise RuntimeError("couldn't find a sign-in form at " + page.url + "; check the sign-in page address")
+    user, password = visible(page, USER), password_field(page)
+    if user and creds.get("username"):
+        user.fill(creds["username"])
+    if not password and user:
+        # Two-step sign-in: the password comes on the next page.
+        submit(page, user)
+        password = password_field(page)
+    if not password:
+        raise RuntimeError("couldn't find the password field " + page_error(page))
+    password.fill(creds["password"])
+    code = code_field(page)
+    if code:
+        # The code is asked for on the same page, alongside the password.
+        enter_code(page, code)
+    else:
+        submit(page, password)
+        code = code_field(page)
+        if code:
+            enter_code(page, code)
+    if not wait_signed_in(page):
+        error = page_error(page)
+        raise RuntimeError("the sign-in form is still showing after submitting (" + page.url + ")" + (": " + error if error else ", with no error on the page"))
+    if cfg.get("checkUrl"):
+        page.goto(cfg["checkUrl"], wait_until="domcontentloaded")
+        settle(page)
+        if not signed_in(page):
+            raise RuntimeError("signed in, but " + cfg["checkUrl"] + " shows the sign-in form again")
+
 page = None
 try:
     with sync_playwright() as p:
@@ -187,42 +295,17 @@ try:
         context = browser.new_context(
             storage_state=state_path if os.path.exists(state_path) else None, viewport={"width": 1366, "height": 900})
         page = context.new_page()
-        status("signing_in")
-        check = cfg.get("checkUrl") or creds.get("landingUrl")
-        page.goto(check or cfg["loginUrl"], wait_until="domcontentloaded")
-        settle(page)
-        if not signed_in(page):
-            if not password_field(page) and not visible(page, USER):
-                page.goto(cfg["loginUrl"], wait_until="domcontentloaded")
-                settle(page)
-            if not password_field(page) and not visible(page, USER):
-                if bot_check(page):
-                    raise RuntimeError("the site's bot check blocks automated browsers at " + page.url)
-                raise RuntimeError("couldn't find a sign-in form at " + page.url + "; check the sign-in page address on the Integrations page")
-            user, password = visible(page, USER), password_field(page)
-            if user and creds.get("username"):
-                user.fill(creds["username"])
-            if not password and user:
-                # Two-step sign-in: the password comes on the next page.
-                submit(page, user)
-                password = password_field(page)
-            if not password:
-                raise RuntimeError("couldn't find the password field " + page_error(page))
-            password.fill(creds["password"])
-            code = code_field(page)
-            if code:
-                # The code is asked for on the same page, alongside the password.
-                enter_code(page, code)
-            else:
-                submit(page, password)
-                code = code_field(page)
-                if code:
-                    enter_code(page, code)
-            if cfg.get("checkUrl"):
-                page.goto(cfg["checkUrl"], wait_until="domcontentloaded")
-                settle(page)
-            if not signed_in(page):
-                raise RuntimeError("still not signed in (" + page.url + ") " + page_error(page))
+        try:
+            sign_in(page)
+        except Exception:
+            # Keep what the page showed while the browser is still open, for whoever works out what went wrong.
+            try:
+                page.screenshot(path=base + ".png")
+                with open(base + ".seen", "w") as f:
+                    json.dump({"url": page.url, "title": page.title(), "botCheck": bot_check(page), "error": page_error(page), **describe_form(page)}, f)
+            except Exception:
+                pass
+            raise
         context.storage_state(path=state_path)
         heading = visible(page, ["h1", "h2"])
         with open(base + ".landing", "w") as f:
@@ -230,11 +313,6 @@ try:
         status("ok")
         browser.close()
 except Exception as error:
-    try:
-        if page:
-            page.screenshot(path=base + ".png")
-    except Exception:
-        pass
     status("failed: " + (str(error).strip().splitlines() or ["unknown error"])[0][:300])
 `;
 
@@ -246,6 +324,88 @@ for _ in $(seq 1 "$2"); do
   sleep 1
 done
 cat "$f" 2>/dev/null || echo starting
+`;
+
+/**
+ * Runs in the sandbox: opens each link as a fresh visitor and writes down what
+ * a person would find there: where it really ends up, a sign-in form and its
+ * fields, a bot check, and a public API description (OpenAPI/Swagger) on that
+ * site, summarised.
+ */
+const INSPECT_PY = String.raw`# Looks at websites for setting up integrations. Written by Mach1.
+import json, re, sys
+from urllib.parse import urlparse
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+
+urls, out_path = json.loads(sys.argv[1]), sys.argv[2]
+sel = {}
+${FORM_PY}
+SPEC_PATHS = ["/swagger/v1/swagger.json", "/api/swagger/v1/swagger.json", "/openapi.json", "/swagger.json", "/api/openapi.json",
+    "/api/swagger.json", "/v3/api-docs", "/api-docs", "/api/v1/openapi.json", "/docs/openapi.json"]
+
+def summarise_spec(url, spec):
+    paths = spec.get("paths") or {}
+    ops = [f"{m.upper()} {p}" for p, item in paths.items() for m in (item or {}) if m.lower() in ("get", "post", "put", "patch", "delete")]
+    schemes = (spec.get("components") or {}).get("securitySchemes") or spec.get("securityDefinitions") or {}
+    servers = [s.get("url") for s in spec.get("servers") or [] if s.get("url")] or ([spec.get("host", "") + spec.get("basePath", "")] if spec.get("host") else [])
+    return {"url": url, "title": (spec.get("info") or {}).get("title", ""), "servers": servers,
+            "auth": {k: {"type": v.get("type"), "scheme": v.get("scheme"), "in": v.get("in"), "name": v.get("name")} for k, v in schemes.items()},
+            "operations": len(ops), "sample": ops[:25]}
+
+def find_spec(context, origins, loaded):
+    for url in loaded + [o + p for o in origins for p in SPEC_PATHS]:
+        try:
+            r = context.request.get(url, timeout=10000)
+            if r.status != 200:
+                continue
+            spec = r.json()
+            if isinstance(spec, dict) and ("openapi" in spec or "swagger" in spec):
+                return summarise_spec(url, spec)
+        except Exception:
+            pass
+    return None
+
+results = []
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    for url in urls[:6]:
+        context = browser.new_context(viewport={"width": 1366, "height": 900})
+        page = context.new_page()
+        visited, loaded = [], []
+        page.on("framenavigated", lambda frame: frame == page.main_frame and visited.append(frame.url))
+        def on_response(response):
+            try:
+                ctype = response.headers.get("content-type") or ""
+                if ("json" in ctype or "yaml" in ctype) and re.search(r"swagger|openapi|api-docs", response.url, re.I):
+                    loaded.append(response.url)
+            except Exception:
+                pass
+        page.on("response", on_response)
+        found = {"requested": url}
+        try:
+            response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            settle(page)
+            form = describe_form(page)
+            found.update({
+                "url": page.url, "status": response.status if response else None, "title": page.title(),
+                "hosts": list(dict.fromkeys(urlparse(u).hostname for u in [url] + visited + [page.url] if urlparse(u).hostname)),
+                "botCheck": bot_check(page),
+                "signInForm": bool(password_field(page) or (code_field(page) and visible(page, USER))),
+                "codeField": bool(code_field(page)),
+                "form": form,
+                "links": page.eval_on_selector_all("a[href]", """els => els.map(a => [a.innerText.trim().slice(0, 60), a.href])
+                    .filter(([t, h]) => /api|developer|docs|integrat|sign ?in|log ?in|help/i.test(t + ' ' + h)).slice(0, 12)"""),
+                "text": page.inner_text("body")[:600] if page.locator("body").count() else "",
+            })
+            origins = list(dict.fromkeys(f"{urlparse(u).scheme}://{urlparse(u).hostname}" for u in [url, page.url]))
+            found["apiSpec"] = find_spec(context, origins, loaded)
+        except Exception as error:
+            found["error"] = (str(error).strip().splitlines() or ["failed"])[0][:200]
+        results.append(found)
+        context.close()
+    browser.close()
+with open(out_path, "w") as f:
+    json.dump(results, f)
 `;
 
 /** Runs in the sandbox: opens a page (signed in with a saved session, if given) and writes what it found as JSON. */
@@ -353,11 +513,35 @@ async function finish(context: AgentContext, sandbox: JobSandbox, slug: string, 
   if (status.startsWith("failed")) {
     if (context.taskId) await setPendingLogin(context.taskId, null);
     await setLoginStatus(context.organizationId, slug, "failing", status.replace(/^failed:\s*/, "Sign-in failed: "));
+    const seen = await readSeen(sandbox, slug);
     return {
-      text: `Couldn't sign in to ${name}: ${status.replace(/^failed:\s*/, "")}. A screenshot of the page is at ${LOGIN_DIR}/${slug}.png (look at it with your own Playwright code or attach it). If the credentials are wrong, say so in your report: people update them on the Integrations page.`,
+      text: `Couldn't sign in to ${name}: ${status.replace(/^failed:\s*/, "")}.${seen ? ` What the page showed: ${seen}.` : ""} A screenshot is at ${LOGIN_DIR}/${slug}.png. Work out why before telling anyone: is the sign-in page right (inspect_site), is a field missed (reconnect with selectors), is it a bot check? Only wrong or missing credentials need the people: then say so plainly and they update them in the card or on the Integrations page.`,
     };
   }
   return { text: `The sign-in to ${name} is still going. Call browser_login again in a moment.` };
+}
+
+type Seen = { url: string; title: string; botCheck: boolean; error: string; fields: { label: string; kind: string }[]; buttons: string[] };
+
+/** What the sign-in page showed when it failed, in a line. */
+async function readSeen(sandbox: JobSandbox, slug: string): Promise<string | null> {
+  const raw = await sandbox.readFile(`${LOGIN_DIR}/${slug}.seen`).catch(() => null);
+  if (!raw) return null;
+  try {
+    const seen = JSON.parse(raw.toString("utf8")) as Seen;
+    const fields = seen.fields.map((f) => `${f.label || "?"} (${f.kind})`).join(", ") || "no fields";
+    return [
+      `${seen.url}${seen.title ? ` ("${seen.title}")` : ""}`,
+      seen.botCheck ? "a bot check is in the way" : "",
+      `fields: ${fields}`,
+      seen.buttons.length ? `buttons: ${seen.buttons.join(", ")}` : "",
+      seen.error ? `error on the page: "${seen.error}"` : "",
+    ]
+      .filter(Boolean)
+      .join("; ");
+  } catch {
+    return null;
+  }
 }
 
 /** Signs the agent's browser in to a website login, or finishes a sign-in that was waiting for a code. */
@@ -399,6 +583,7 @@ export async function browserLogin(context: AgentContext, input: { login: string
   const config = integration.config as LoginConfig;
   const creds = `/tmp/mach-login-${slug}-${crypto.randomUUID()}.json`;
   await sandbox.run("mkdir", ["-p", LOGIN_DIR, `${JOB_DIR}/.mach`]);
+  await sandbox.run("rm", ["-f", `${LOGIN_DIR}/${slug}.seen`]);
   await sandbox.writeFiles([
     { path: HELPER, content: Buffer.from(LOGIN_PY) },
     { path: WAITER, content: Buffer.from(LOGIN_WAIT_SH) },
@@ -554,4 +739,76 @@ export async function browsePage(context: AgentContext, input: { url: string; sa
     savePath ? `\nSaved the full ${page.contentType || "page"} (${page.bytes ?? 0} bytes) to ${savePath}.` : "",
   ];
   return redact(lines.filter((l, i) => l || i === 2).join("\n"), await knownSecrets(context.organizationId));
+}
+
+export type SiteInspection = {
+  requested: string;
+  url?: string;
+  status?: number | null;
+  title?: string;
+  hosts?: string[];
+  botCheck?: boolean;
+  signInForm?: boolean;
+  codeField?: boolean;
+  form?: { fields: { label: string; kind: string }[]; buttons: string[] };
+  links?: [string, string][];
+  text?: string;
+  apiSpec?: {
+    url: string;
+    title: string;
+    servers: string[];
+    auth: Record<string, { type?: string; scheme?: string; in?: string; name?: string }>;
+    operations: number;
+    sample: string[];
+  } | null;
+  error?: string;
+};
+
+/** Opens each link in the sandbox's browser as a fresh visitor and reports what's there (see INSPECT_PY). */
+export async function inspectSites(context: AgentContext, urls: string[]): Promise<SiteInspection[]> {
+  const sandbox = await open(context);
+  const out = `/tmp/mach-inspect-${crypto.randomUUID()}.json`;
+  await sandbox.run("mkdir", ["-p", `${JOB_DIR}/.mach`]);
+  await sandbox.writeFiles([{ path: INSPECTOR, content: Buffer.from(INSPECT_PY) }]);
+  const run = await sandbox.run("python3", [INSPECTOR, JSON.stringify(urls), out], { cwd: JOB_DIR, timeoutMs: 180_000 });
+  const raw = await sandbox.readFile(out);
+  if (!raw) {
+    const why = (run.stderr || run.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300);
+    return urls.map((requested) => ({ requested, error: why || "the browser failed" }));
+  }
+  return JSON.parse(raw.toString("utf8")) as SiteInspection[];
+}
+
+/** One inspection in plain lines for the model. */
+export function inspectionText(site: SiteInspection): string {
+  if (site.error && !site.url) return `${site.requested}: couldn't open it (${site.error}).`;
+  const moved = site.url && site.url.split("?")[0] !== site.requested.split("?")[0] ? ` → ended up at ${site.url}` : "";
+  const fields = site.form?.fields.map((f) => `${f.label || "?"} (${f.kind})`).join(", ");
+  const spec = site.apiSpec;
+  return [
+    `${site.requested}${moved}${site.status ? ` [${site.status}]` : ""}${site.title ? ` "${site.title}"` : ""}`,
+    site.hosts && site.hosts.length > 1 ? `  Went through: ${site.hosts.join(" → ")}` : "",
+    site.botCheck ? "  A bot check (e.g. Cloudflare) blocks automated browsers here: agents can't read this page." : "",
+    site.signInForm
+      ? `  Sign-in form: ${fields}${site.codeField ? " (includes a sign-in code field: the code is asked for on the same form)" : ""}${site.form?.buttons.length ? `; buttons: ${site.form.buttons.join(", ")}` : ""}`
+      : `  No sign-in form here${fields ? ` (fields: ${fields})` : ""}.`,
+    spec
+      ? `  Public API description at ${spec.url}: "${spec.title}", servers ${spec.servers.join(", ") || "(relative to that site)"}, auth ${
+          Object.entries(spec.auth).map(([k, a]) => `${k}: ${[a.type, a.scheme, a.in && `in ${a.in}`, a.name].filter(Boolean).join(" ")}`).join("; ") || "not stated"
+        }, ${spec.operations} operations, e.g. ${spec.sample.slice(0, 12).join(", ")}`
+      : "  No public API description found on this site.",
+    site.links?.length ? `  Relevant links: ${site.links.map(([t, h]) => `${t || "(no text)"} ${h}`).join(" | ")}` : "",
+    site.text ? `  Page starts: ${site.text.replace(/\s+/g, " ").slice(0, 300)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** The inspect_site tool: what's really at each link. */
+export async function inspectSite(context: AgentContext, input: { urls: string[] }): Promise<string> {
+  "use step";
+  const urls = input.urls.filter((u) => /^https?:\/\//i.test(u)).slice(0, 6);
+  if (!urls.length) return "Give full links, starting with https://.";
+  const sites = await inspectSites(context, urls);
+  return redact(sites.map(inspectionText).join("\n\n"), await knownSecrets(context.organizationId));
 }
