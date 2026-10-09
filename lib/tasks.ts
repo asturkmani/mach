@@ -348,6 +348,55 @@ export async function searchTasks(organizationId: string, query: string, limit =
   return withMembers(rows);
 }
 
+/** Tasks that repeat on a schedule (archived ones aside), by number. */
+export async function listScheduledTasks(organizationId: string): Promise<Task[]> {
+  const rows = await getDb().query<TaskRow>(
+    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
+       and exists (select 1 from task_schedules s where s.task_id = t.id)
+     order by t.number`,
+    [organizationId],
+  );
+  return withMembers(rows);
+}
+
+export type TaskFilters = {
+  /** Words in the title, description, summary or thread, or a task number. */
+  query?: string;
+  status?: TaskStatus;
+  /** A person or agent on it, by name. */
+  member?: string;
+  includeClosed?: boolean;
+  limit?: number;
+};
+
+/** Every matching task, open ones first, newest activity first. */
+export async function findTasks(organizationId: string, filters: TaskFilters): Promise<Task[]> {
+  const q = filters.query?.trim() ?? "";
+  const number = Number(q.replace(/^#/, ""));
+  const rows = await getDb().query<TaskRow>(
+    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
+       and ($2 = '' or t.number = $3 or t.title ilike '%' || $2 || '%' or t.summary ilike '%' || $2 || '%'
+            or t.description ilike '%' || $2 || '%'
+            or exists (select 1 from task_messages m where m.task_id = t.id and m.body ilike '%' || $2 || '%'))
+       and ($4::text is null or t.status = $4)
+       and ($5 or $4::text is not null or t.status not in ('done', 'cancelled'))
+       and ($6::text is null or exists (
+             select 1 from task_members tm left join people p on p.id = tm.person_id left join agents a on a.id = tm.agent_id
+             where tm.task_id = t.id and lower(coalesce(p.name, a.name)) = lower($6)))
+     order by (t.status in ('done', 'cancelled')), t.updated_at desc limit $7`,
+    [
+      organizationId,
+      q,
+      Number.isSafeInteger(number) ? number : -1,
+      filters.status ?? null,
+      filters.includeClosed ?? false,
+      filters.member?.trim() || null,
+      Math.min(Math.max(filters.limit ?? 20, 1), 50),
+    ],
+  );
+  return withMembers(rows);
+}
+
 export async function listAgentTasks(organizationId: string, agentId: string): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
     `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1

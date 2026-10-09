@@ -328,7 +328,7 @@ export async function setPageRefresh(
         title: `Refresh page: ${page.title}`.slice(0, 100),
         description,
         status: "backlog",
-        workerRole: "Page data refresh",
+        workerRole: `${page.title} refresh`.slice(0, 60),
         by,
       });
       await getDb().query("update pages set task_id = $2 where id = $1", [page.id, task.id]);
