@@ -13,6 +13,7 @@ import {
   withCompany,
   withEmailVerification,
   type Outcome,
+  pendingInvitation,
   type Pending,
 } from "@/lib/sign-in";
 
@@ -77,7 +78,8 @@ function link(path: string, params: Record<string, string | undefined>): string 
 export async function emailStep(input: Context & { email: string }): Promise<Step> {
   const email = input.email.trim().toLowerCase();
   if (!EMAIL.test(email)) return { error: "Enter your email address." };
-  const pending: Pending = { email, returnTo: input.returnTo, invitationToken: input.invitationToken || undefined };
+  const invitationToken = input.invitationToken || (await pendingInvitation(email))?.token;
+  const pending: Pending = { email, returnTo: input.returnTo, invitationToken };
   const h = await headers();
   const next = await startWithEmail(email, {
     invitationToken: pending.invitationToken,

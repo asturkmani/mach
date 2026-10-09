@@ -4,11 +4,12 @@ import { redirect } from "next/navigation";
 import { signOutAction } from "@/app/(app)/actions";
 import { MachLockup } from "@/components/brand";
 import { joinRequestFor } from "@/lib/members";
-import { findOrganizationByDomain } from "@/lib/orgs";
+import { findOrganizationByDomain, getOrganization } from "@/lib/orgs";
+import { pendingInvitation } from "@/lib/sign-in";
 import { getCompanyDomain, getSessionContext } from "@/lib/session";
 import { websiteFromEmail } from "@/lib/website";
 
-import { joinCompanyAction, openCompany, requestToJoinAction } from "./actions";
+import { acceptInvitationAction, joinCompanyAction, openCompany, requestToJoinAction } from "./actions";
 import { WaitForAdmin } from "./wait-for-admin";
 import { CreateCompanyForm } from "./create-company-form";
 
@@ -20,6 +21,13 @@ export default async function WelcomePage() {
     userId: context.user.id,
     statuses: ["active"],
   });
+
+  // Invited by a company, but signed in without the invitation's link (or with Google).
+  const invitation = await pendingInvitation(context.user.email);
+  const invitedTo =
+    invitation && !memberships.data.some((m) => m.organizationId === invitation.organizationId)
+      ? ((await getOrganization(invitation.organizationId))?.name ?? "Your team")
+      : null;
 
   // A company already owns this work email domain: join it rather than create a duplicate.
   const domain = await getCompanyDomain();
@@ -35,13 +43,23 @@ export default async function WelcomePage() {
           <h1 className="text-2xl font-medium tracking-tight">
             Welcome, {context.user.name}
           </h1>
-          {!domainCompany && (
+          {!domainCompany && !invitedTo && (
             <p className="text-muted">
               Name your company to get started. If you add your website, your Chief of Staff reads it so you
               don&apos;t have to explain the basics.
             </p>
           )}
         </div>
+        {invitedTo && (
+          <div className="space-y-3 border border-line bg-raised p-4 text-sm">
+            <p className="text-ink">{invitedTo} invited you to Mach1</p>
+            <form action={acceptInvitationAction}>
+              <button type="submit" className="btn btn-primary w-full justify-center py-2">
+                Join {invitedTo}
+              </button>
+            </form>
+          </div>
+        )}
         {memberships.data.length > 0 && (
           <div className="space-y-2">
             <p className="label">You&apos;re already a member of</p>
@@ -59,7 +77,7 @@ export default async function WelcomePage() {
             {!domainCompany && <p className="pt-2 text-sm text-muted">Or create a new company:</p>}
           </div>
         )}
-        {domainCompany && !isDomainMember && (
+        {domainCompany && !isDomainMember && !invitedTo && (
           <div className="space-y-3 border border-line bg-raised p-4 text-sm">
             <p className="text-ink">{domainCompany.name} is already on Mach1</p>
             {domainCompany.autoJoin ? (
@@ -100,7 +118,7 @@ export default async function WelcomePage() {
             </form>
           </div>
         )}
-        {!domainCompany && (
+        {!domainCompany && !invitedTo && (
           <CreateCompanyForm defaultWebsite={websiteFromEmail(context.user.email) ?? ""} domain={domain} />
         )}
       </div>

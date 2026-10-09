@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const workos = {
   sso: { listConnections: vi.fn() },
-  userManagement: { createMagicAuth: vi.fn(), listUsers: vi.fn(), authenticateWithMagicAuth: vi.fn() },
+  userManagement: { createMagicAuth: vi.fn(), listUsers: vi.fn(), authenticateWithMagicAuth: vi.fn(), listInvitations: vi.fn() },
 };
 vi.mock("@workos-inc/authkit-nextjs", () => ({ getWorkOS: () => workos }));
 
-const { attempt, safeReturnTo, sealPending, startWithEmail, unsealPending, withCode } = await import("@/lib/sign-in");
+const { attempt, pendingInvitation, safeReturnTo, sealPending, startWithEmail, unsealPending, withCode } = await import("@/lib/sign-in");
 
 /** An error shaped like the WorkOS SDK's, with its raw response. */
 const workosError = (rawData: Record<string, unknown>) => Object.assign(new Error("WorkOS error"), { name: "AuthenticationException", rawData });
@@ -88,5 +88,24 @@ describe("signing in on Mach1's own page", () => {
       code: "123456",
       invitationToken: "inv_1",
     });
+  });
+
+  it("finds the open invitation for an email, so a lost invitation link still joins the company", async () => {
+    const later = new Date(Date.now() + 86_400_000).toISOString();
+    const earlier = new Date(Date.now() - 1000).toISOString();
+    workos.userManagement.listInvitations.mockResolvedValueOnce({
+      data: [
+        { id: "inv_revoked", token: "t0", state: "revoked", organizationId: "org_a", expiresAt: later },
+        { id: "inv_expired", token: "t1", state: "pending", organizationId: "org_a", expiresAt: earlier },
+        { id: "inv_open", token: "t2", state: "pending", organizationId: "org_cedar", expiresAt: later },
+      ],
+    });
+    expect(await pendingInvitation("sara@cedar.example")).toEqual({ id: "inv_open", token: "t2", organizationId: "org_cedar" });
+    expect(workos.userManagement.listInvitations).toHaveBeenCalledWith({ email: "sara@cedar.example", limit: 20, order: "desc" });
+
+    workos.userManagement.listInvitations.mockResolvedValueOnce({ data: [] });
+    expect(await pendingInvitation("sara@cedar.example")).toBeNull();
+    workos.userManagement.listInvitations.mockRejectedValueOnce(workosError({ code: "server_error" }));
+    expect(await pendingInvitation("sara@cedar.example")).toBeNull();
   });
 });

@@ -111,6 +111,22 @@ export async function startWithEmail(
   }
 }
 
+/**
+ * The newest invitation still open for this email, if any. Someone who reaches
+ * the sign-in page without the invitation's token (WorkOS's invite page drops
+ * it on the way) still joins the company that invited them.
+ */
+export async function pendingInvitation(email: string): Promise<{ id: string; token: string; organizationId: string } | null> {
+  try {
+    const { data } = await getWorkOS().userManagement.listInvitations({ email, limit: 20, order: "desc" });
+    const open = data.find((i) => i.state === "pending" && i.organizationId && new Date(i.expiresAt).getTime() > Date.now());
+    return open ? { id: open.id, token: open.token, organizationId: open.organizationId! } : null;
+  } catch (error) {
+    console.error("Looking up invitations failed", errorCode(error));
+    return null;
+  }
+}
+
 export const withCode = (email: string, code: string, invitationToken?: string) =>
   attempt(() => getWorkOS().userManagement.authenticateWithMagicAuth({ clientId: clientId(), email, code, invitationToken }));
 

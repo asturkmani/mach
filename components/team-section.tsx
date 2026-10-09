@@ -1,7 +1,12 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
+
+const CloseForm = createContext<() => void>(() => {});
+
+/** For a section's add form: closes it (after adding, say). */
+export const useCloseForm = () => useContext(CloseForm);
 
 /** A part of the Team page (people, agents): its heading, a button that opens its add form, and its list. */
 export function TeamSection({
@@ -38,7 +43,11 @@ export function TeamSection({
             </button>
           ))}
       </div>
-      {open && form && <div className="mb-4">{form}</div>}
+      {open && form && (
+        <div className="mb-4">
+          <CloseForm.Provider value={() => setOpen(false)}>{form}</CloseForm.Provider>
+        </div>
+      )}
       {children}
     </section>
   );

@@ -4,6 +4,7 @@ import { getWorkOS, switchToOrganization } from "@workos-inc/authkit-nextjs";
 import { revalidatePath } from "next/cache";
 
 import { createOrganization, findOrganizationByDomain } from "@/lib/orgs";
+import { pendingInvitation } from "@/lib/sign-in";
 import { addToCompany, requestToJoin } from "@/lib/members";
 import { linkMember, syncPeopleSection } from "@/lib/people";
 import { getCompanyDomain, getSessionContext } from "@/lib/session";
@@ -88,4 +89,13 @@ export async function joinCompanyAction(): Promise<void> {
   if (!company?.autoJoin) throw new Error("Ask to join instead: this company's admins let people in.");
   await addToCompany(company.id, user);
   await switchToOrganization(company.id, { returnTo: "/" });
+}
+
+/** Accepts the invitation waiting for this person's email (one that reached them without its link's token). */
+export async function acceptInvitationAction(): Promise<void> {
+  const { user } = await getSessionContext();
+  const invitation = await pendingInvitation(user.email);
+  if (!invitation) throw new Error("That invitation is no longer open. Ask for a new one.");
+  await getWorkOS().userManagement.acceptInvitation(invitation.id);
+  await switchToOrganization(invitation.organizationId, { returnTo: "/" });
 }

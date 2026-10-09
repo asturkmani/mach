@@ -2,6 +2,8 @@
 
 import { useActionState, useRef, useState, useTransition } from "react";
 
+import { useShell } from "@/components/shell/shell";
+import { useCloseForm } from "@/components/team-section";
 import type { PersonStatus } from "@/lib/people";
 
 import { addPersonAction, inviteAction, removePersonAction, setManagerAction, setRoleAction, updatePersonAction, type ActionResult } from "./actions";
@@ -16,9 +18,15 @@ function Feedback({ result }: { result: ActionResult }) {
 
 export function AddPersonForm({ managers, canInvite }: { managers: string[]; canInvite: boolean }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const close = useCloseForm();
+  const { toast } = useShell();
   const [state, action, pending] = useActionState<ActionResult, FormData>(async (previous, form) => {
     const result = await addPersonAction(previous, form);
-    if (!result.error) formRef.current?.reset();
+    if (!result.error) {
+      // Added: the form goes away, and what happened shows briefly.
+      if (result.message) toast(result.message);
+      close();
+    }
     return result;
   }, {});
 
