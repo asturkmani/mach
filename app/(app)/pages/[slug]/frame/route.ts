@@ -12,7 +12,7 @@ export async function GET(request: Request, { params }: RouteContext<"/pages/[sl
   if (!context.organization) return new Response("Not found.", { status: 404 });
   const { slug } = await params;
   const url = new URL(request.url);
-  const page = await getPage(context.organization.id, slug);
+  const page = await getPage(context.organization.id, slug, { viewer: context.person.id });
   const version = Number(url.searchParams.get("v")) || undefined;
   const html = page && (await pageHtml(context.organization.id, slug, version));
   if (!page || !html) return new Response("Not found.", { status: 404 });

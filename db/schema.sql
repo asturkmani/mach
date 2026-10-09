@@ -496,3 +496,9 @@ alter table chats add column if not exists summarized_through text; -- the id of
 -- Who can see a task: everyone in the company, or (private) only whoever created it, the people on it
 -- and anyone @-mentioned on it. Tasks from before this are company tasks.
 alter table tasks add column if not exists visibility text not null default 'company' check (visibility in ('company', 'private'));
+
+-- Who can see a file in the library: the company, or (private) its owner and anyone who can see a task
+-- it's on. A page: the company, or (private) whoever made it. Files and pages from before are the company's.
+alter table files add column if not exists visibility text not null default 'company' check (visibility in ('company', 'private'));
+alter table files add column if not exists owner_person_id uuid references people (id) on delete set null;
+alter table pages add column if not exists visibility text not null default 'company' check (visibility in ('company', 'private'));

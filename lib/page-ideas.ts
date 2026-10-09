@@ -45,7 +45,8 @@ async function inputs(organizationId: string): Promise<string> {
   const [profile, integrations, pages, drive] = await Promise.all([
     loadProfile(organizationId),
     listIntegrations(organizationId),
-    listPages(organizationId),
+    // Only the company's pages: ideas are the same for everyone.
+    listPages(organizationId, { companyOnly: true }),
     listDrive(organizationId, { limit: 40 }),
   ]);
   const sources = integrations.map(

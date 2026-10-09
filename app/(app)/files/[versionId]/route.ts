@@ -1,4 +1,4 @@
-import { readVersion } from "@/lib/files";
+import { canReadVersion, readVersion } from "@/lib/files";
 import { getSessionContext } from "@/lib/session";
 
 /** Downloads one version of a library file (or shows it inline with ?inline=1, for images). */
@@ -6,6 +6,8 @@ export async function GET(request: Request, { params }: RouteContext<"/files/[ve
   const context = await getSessionContext();
   if (!context.organization) return new Response("Not found.", { status: 404 });
   const { versionId } = await params;
+  // Only files this person may see: the company's, theirs, or on a task they can see.
+  if (!(await canReadVersion(context.organization.id, versionId, context.person.id))) return new Response("Not found.", { status: 404 });
   const file = await readVersion(context.organization.id, versionId);
   if (!file) return new Response("Not found.", { status: 404 });
 

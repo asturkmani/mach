@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArchiveRestore, ArrowLeft, Lock, Paperclip, Play, Repeat, Users, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Paperclip, Play, Repeat, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -33,6 +33,7 @@ import { appendDictation, VoiceButton } from "@/components/voice-input";
 import { linkMentions } from "@/lib/mentions";
 import { useCommands, useKeys, useShell } from "@/components/shell/shell";
 import { Face, PriorityMark, useStoredFlag, When } from "@/components/ui";
+import { VisibilityToggle } from "@/components/kit";
 import { CosToggle } from "@/components/shell/cos-toggle";
 import { byline, type TaskView } from "@/lib/task-view";
 import { PRIORITIES, PRIORITY_WORDS, STATUS_WORDS, TASK_STATUSES, type Priority, type TaskStatus } from "@/lib/task-words";
@@ -251,7 +252,14 @@ export function TaskDetail({
           {task.kind === "suggestion" && <span className="label text-accent-ink">Profile suggestion</span>}
           {task.kind === "join_request" && <span className="label text-accent-ink">Asking to join</span>}
           {task.archived && <span className="label text-faint">Archived</span>}
-          {task.kind === "task" && <VisibilityButton taskId={task.id} visibility={task.visibility} canChange={task.canShare} />}
+          {task.kind === "task" && (
+            <VisibilityToggle
+              visibility={task.visibility}
+              canChange={task.canShare}
+              change={(next) => setVisibilityAction(task.id, next)}
+              privateMeans="Only whoever created it, the people on it and anyone mentioned can see this"
+            />
+          )}
           {task.schedule && (
             <span className="label flex items-center gap-1 text-faint" title={task.schedule.description}>
               <Repeat size={11} /> <span className="hidden sm:inline">{task.schedule.paused ? "Repeats (paused)" : "Repeats"}</span>
@@ -828,34 +836,3 @@ function useStarting(task: Pick<Detail, "running" | "status" | "agents" | "updat
   return waiting && now !== null && now - new Date(task.updatedAt).getTime() < 3 * 60_000;
 }
 
-/** Private (only whoever created it and the people on it) or shared with the company; a click switches it. */
-function VisibilityButton({ taskId, visibility, canChange }: { taskId: string; visibility: "company" | "private"; canChange: boolean }) {
-  const { toast } = useShell();
-  const [pending, start] = useTransition();
-  const shared = visibility === "company";
-  const label = shared ? "Company" : "Private";
-  const title = shared ? "Everyone in the company can see this" : "Only whoever created it and the people on it can see this";
-  if (!canChange) {
-    return (
-      <span className="label flex items-center gap-1 text-faint" title={title}>
-        {shared ? <Users size={11} /> : <Lock size={11} />} {label}
-      </span>
-    );
-  }
-  return (
-    <button
-      className="label flex items-center gap-1 text-faint hover:text-ink"
-      title={`${title}. Click to ${shared ? "make it private" : "share it with the company"}.`}
-      disabled={pending}
-      onClick={() =>
-        start(async () => {
-          const result = await setVisibilityAction(taskId, shared ? "private" : "company");
-          if (result.error) toast(result.error);
-          else toast(shared ? "Now private" : "Shared with the company");
-        })
-      }
-    >
-      {shared ? <Users size={11} /> : <Lock size={11} />} {label}
-    </button>
-  );
-}

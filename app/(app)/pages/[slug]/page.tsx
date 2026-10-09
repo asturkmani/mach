@@ -12,9 +12,9 @@ import { getTask } from "@/lib/tasks";
 // its versions) over the page itself, in a sandboxed frame. ?v= shows an
 // older version.
 export default async function PagePage({ params, searchParams }: PageProps<"/pages/[slug]">) {
-  const { organization, person } = await requireAppContext();
+  const { organization, person, isAdmin } = await requireAppContext();
   const [{ slug }, query] = await Promise.all([params, searchParams]);
-  const page = await getPage(organization.id, slug);
+  const page = await getPage(organization.id, slug, { viewer: person.id });
   if (!page || page.version === 0) notFound();
   const [files, versions, task, schedule, ideas] = await Promise.all([
     pageDataStatus(organization.id, page),
@@ -29,7 +29,14 @@ export default async function PagePage({ params, searchParams }: PageProps<"/pag
 
   return (
     <PageView
-      page={{ slug: page.slug, title: page.title, description: page.description, version: page.version }}
+      page={{
+        slug: page.slug,
+        title: page.title,
+        description: page.description,
+        version: page.version,
+        visibility: page.visibility,
+        canShare: page.createdByPersonId === person.id || isAdmin,
+      }}
       viewing={viewing}
       files={files.map((f) => ({ path: f.path, live: Boolean(f.live), updatedAt: f.updatedAt?.toISOString() ?? null, problem: f.problem ?? null }))}
       ideas={ideas}

@@ -41,7 +41,7 @@ export async function describeViewing(organizationId: string, path: string, view
   }
   if (section === "pages") {
     if (!id) return "Pages, with no page open";
-    const page = await getPage(organizationId, id);
+    const page = await getPage(organizationId, id, { viewer });
     if (!page) return null;
     const version = Number(url.searchParams.get("v"));
     return [

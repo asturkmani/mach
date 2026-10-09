@@ -8,7 +8,7 @@ import { saveVersion } from "@/lib/files";
 import { isMachSource, MACH_SOURCES } from "@/lib/mach-data";
 import { getSchedule, type Schedule } from "@/lib/schedules";
 import { loadBytes } from "@/lib/storage";
-import { getTask } from "@/lib/tasks";
+import { setTaskVisibility, getTask } from "@/lib/tasks";
 import { archiveTask, createTaskWithTeam, rerunScript, scheduleTask, WorkError, type Actor } from "@/lib/work";
 
 // Pages: views of the company's data that people ask the Chief of Staff for
@@ -31,6 +31,9 @@ export type Page = {
   pinned: boolean;
   version: number;
   updatedAt: Date;
+  /** Everyone in the company sees it, or (private) only whoever made it. */
+  visibility: "company" | "private";
+  createdByPersonId: string | null;
 };
 
 export type PageVersion = { version: number; note: string; byName: string; createdAt: Date };
@@ -66,9 +69,12 @@ type PageRow = {
   pinned: boolean;
   version: number | null;
   updated_at: Date;
+  visibility: "company" | "private";
+  created_by_person_id: string | null;
 };
 
 const SELECT = `select p.id, p.slug, p.title, p.description, p.data, p.task_id, t.number as task_number, p.pinned, p.updated_at,
+  p.visibility, p.created_by_person_id,
   (select max(version) from page_versions v where v.page_id = p.id) as version
   from pages p left join tasks t on t.id = p.task_id`;
 
@@ -83,19 +89,43 @@ const toPage = (r: PageRow): Page => ({
   pinned: r.pinned,
   version: r.version ?? 0,
   updatedAt: r.updated_at,
+  visibility: r.visibility,
+  createdByPersonId: r.created_by_person_id,
 });
 
-/** The company's pages: pinned ones (Home's tabs) first, in the order they were made. */
-export async function listPages(organizationId: string): Promise<Page[]> {
-  const rows = await getDb().query<PageRow>(`${SELECT} where p.organization_id = $1 order by p.pinned desc, p.created_at`, [
-    organizationId,
-  ]);
+/** Whether the person in parameter `param` may see page p: a company page, or their own. */
+const pageVisibleTo = (param: string) => `(p.visibility = 'company' or p.created_by_person_id = ${param})`;
+
+type PageFilter = {
+  /** Only what this person may see. */
+  viewer?: string;
+  /** Only the company's pages (what everyone sees). */
+  companyOnly?: boolean;
+};
+
+/** The company's pages (that the viewer may see): pinned ones (Home's tabs) first, in the order they were made. */
+export async function listPages(organizationId: string, { viewer, companyOnly = false }: PageFilter = {}): Promise<Page[]> {
+  const rows = await getDb().query<PageRow>(
+    `${SELECT} where p.organization_id = $1 and ($2::uuid is null or ${pageVisibleTo("$2")}) and (not $3 or p.visibility = 'company')
+     order by p.pinned desc, p.created_at`,
+    [organizationId, viewer ?? null, companyOnly],
+  );
   return rows.map(toPage);
 }
 
-export async function getPage(organizationId: string, slug: string): Promise<Page | null> {
-  const [row] = await getDb().query<PageRow>(`${SELECT} where p.organization_id = $1 and p.slug = $2`, [organizationId, slug]);
+export async function getPage(organizationId: string, slug: string, { viewer }: PageFilter = {}): Promise<Page | null> {
+  const [row] = await getDb().query<PageRow>(
+    `${SELECT} where p.organization_id = $1 and p.slug = $2 and ($3::uuid is null or ${pageVisibleTo("$3")})`,
+    [organizationId, slug, viewer ?? null],
+  );
   return row ? toPage(row) : null;
+}
+
+/** Shares a page with the company, or makes it private to whoever made it; its refresh job follows. */
+export async function setPageVisibility(organizationId: string, slug: string, visibility: "company" | "private"): Promise<void> {
+  const page = await mustGet(organizationId, slug);
+  await getDb().query("update pages set visibility = $2, updated_at = now() where id = $1", [page.id, visibility]);
+  if (page.taskId) await setTaskVisibility(organizationId, page.taskId, visibility);
 }
 
 async function mustGet(organizationId: string, slug: string): Promise<Page> {
@@ -147,7 +177,8 @@ export async function savePage(
   if (data.length > MAX_PAGE_FILES) throw new PageError(`A page can read at most ${MAX_PAGE_FILES} drive files.`);
 
   const db = getDb();
-  let page = input.slug ? await getPage(organizationId, input.slug) : null;
+  // Only a page its author may see can get a new version; anyone else's private page is left alone.
+  let page = input.slug ? await getPage(organizationId, input.slug, { viewer: input.by.personId }) : null;
   const created = !page;
   if (!page) {
     const base = pageSlug(input.slug || title);
@@ -159,9 +190,10 @@ export async function savePage(
     let slug = base;
     for (let n = 2; taken.has(slug); n++) slug = `${base}-${n}`;
     const [row] = await db.query<{ id: string }>(
-      `insert into pages (organization_id, slug, title, description, data, created_by_person_id)
-       values ($1, $2, $3, $4, $5, $6) returning id`,
-      [organizationId, slug, title, input.description?.trim() ?? "", data, input.by.personId ?? null],
+      `insert into pages (organization_id, slug, title, description, data, created_by_person_id, visibility)
+       values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+      // A page someone asks for is theirs until they share it.
+      [organizationId, slug, title, input.description?.trim() ?? "", data, input.by.personId ?? null, input.by.personId ? "private" : "company"],
     );
     page = { ...(await getPage(organizationId, slug))!, id: row.id };
   } else {
@@ -329,6 +361,8 @@ export async function setPageRefresh(
         description,
         status: "backlog",
         workerRole: `${page.title} refresh`.slice(0, 60),
+        // Whoever can see the page can see the job that keeps it fresh.
+        visibility: page.visibility,
         by,
       });
       await getDb().query("update pages set task_id = $2 where id = $1", [page.id, task.id]);

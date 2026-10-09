@@ -16,6 +16,8 @@ import {
   searchTasks,
   setTaskVisibility,
 } from "@/lib/tasks";
+import { canReadVersion, findFiles, listLibrary, saveVersion, setFileVisibility } from "@/lib/files";
+import { getPage, listPages, savePage, setPageVisibility } from "@/lib/pages";
 import { createTaskWithTeam } from "@/lib/work";
 import { useTestDb } from "@/test/db";
 
@@ -67,5 +69,38 @@ describe("private and company work", () => {
     // Pages read the company's tasks only, since a page can be shared with everyone.
     const onPages = (await MACH_SOURCES["mach:tasks"].load(ORG)) as { title: string }[];
     expect(onPages.map((t) => t.title)).toEqual(["Weekly family report"]);
+  });
+
+  it("shows files to their owner and to whoever can see a task they're on, and pages to whoever made them, until shared", async () => {
+    const sara = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
+    const omar = await linkMember(ORG, { id: "user_omar", email: "omar@cedar.example", name: "Omar" });
+    const by = { name: "Sara", personId: sara.id };
+
+    // A file attached in Sara's chat is hers; one made on her private task is seen by whoever can see the task.
+    const attached = await saveVersion(ORG, { name: "my-plan.pdf", kind: "deliverable", bytes: Buffer.from("plan"), personId: sara.id });
+    const task = await createTaskWithTeam(ORG, { title: "Model my portfolio", by });
+    const made = await saveVersion(ORG, { name: "model.xlsx", kind: "deliverable", bytes: Buffer.from("model"), taskId: task.id });
+    const names = async (viewer: string) => (await listLibrary(ORG, { viewer })).map((f) => f.name).sort();
+    expect(await names(sara.id)).toEqual(["model.xlsx", "my-plan.pdf"]);
+    expect(await names(omar.id)).toEqual([]);
+    expect(await canReadVersion(ORG, made.versionId, omar.id)).toBe(false);
+    expect(await findFiles(ORG, ["my-plan.pdf"], { viewer: omar.id })).toEqual([]);
+
+    // Sharing the task shares its files; sharing a file shares it on its own.
+    await setTaskVisibility(ORG, task.id, "company");
+    expect(await names(omar.id)).toEqual(["model.xlsx"]);
+    await setFileVisibility(ORG, attached.fileId, "company");
+    expect(await canReadVersion(ORG, attached.versionId, omar.id)).toBe(true);
+
+    // A page Sara has the Chief of Staff build is hers until she shares it, with its refresh job.
+    const { page } = await savePage(ORG, { title: "My net worth", html: "<h1>Net worth</h1>", data: ["mach:people"], by });
+    expect(page.visibility).toBe("private");
+    expect(await getPage(ORG, page.slug, { viewer: omar.id })).toBeNull();
+    expect((await listPages(ORG, { viewer: omar.id })).map((p) => p.slug)).toEqual([]);
+    // Omar's Chief of Staff can't overwrite it by its slug: it makes his own page instead.
+    const { page: his } = await savePage(ORG, { slug: page.slug, title: "Mine", html: "<p>x</p>", data: [], by: { name: "Omar", personId: omar.id } });
+    expect(his.slug).not.toBe(page.slug);
+    await setPageVisibility(ORG, page.slug, "company");
+    expect((await getPage(ORG, page.slug, { viewer: omar.id }))?.title).toBe("My net worth");
   });
 });

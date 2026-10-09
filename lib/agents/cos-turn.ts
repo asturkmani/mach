@@ -50,9 +50,9 @@ export async function loadChiefOfStaff(
     listAgents(organizationId),
     listTasks(organizationId, { closedLimit: 0, viewer: context.person?.id }),
     listScheduledJobs(organizationId, { viewer: context.person?.id }),
-    listLibrary(organizationId, { limit: 30 }),
+    listLibrary(organizationId, { limit: 30, viewer: context.person?.id }),
     listIntegrations(organizationId),
-    listPages(organizationId),
+    listPages(organizationId, { viewer: context.person?.id }),
     context.person ? getGitHubConnection(organizationId, context.person.id) : null,
     context.person ? getPersonalMemory(organizationId, context.person.id) : "",
   ]);

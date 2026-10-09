@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Download, FileCode, FileSpreadsheet, Paperclip } from "lucide-react";
 
 import { DriveSection } from "@/components/drive-section";
+import { FileVisibility } from "@/components/file-visibility";
 import { PageBody } from "@/components/kit";
 import { PageHeader } from "@/components/page-header";
 import { When } from "@/components/ui";
@@ -17,8 +18,8 @@ function size(bytes: number): string {
 }
 
 export default async function FilesPage() {
-  const { organization } = await requireAppContext();
-  const [files, drive] = await Promise.all([listLibrary(organization.id, { limit: 500 }), listDrive(organization.id)]);
+  const { organization, person, isAdmin } = await requireAppContext();
+  const [files, drive] = await Promise.all([listLibrary(organization.id, { limit: 500, viewer: person.id }), listDrive(organization.id)]);
   const deliverables = files.filter((f) => f.kind === "deliverable");
   const code = files.filter((f) => f.kind === "code");
 
@@ -31,6 +32,7 @@ export default async function FilesPage() {
           <li key={file.id} className="flex items-center gap-3 px-4 py-2.5">
             <Icon size={15} className="shrink-0 text-muted" />
             <span className="min-w-0 flex-1 truncate font-mono text-sm">{file.name}</span>
+            <FileVisibility fileId={file.id} visibility={file.visibility} canChange={file.ownerPersonId === person.id || isAdmin} />
             <span className="label shrink-0 text-faint">v{latest?.version}</span>
             {latest?.taskNumber && (
               <Link href={`/tasks/${latest.taskNumber}`} className="label shrink-0 hover:text-ink">

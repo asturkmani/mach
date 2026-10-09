@@ -7,3 +7,4 @@ export { PageBody } from "./page-body";
 export { Section, useCloseForm } from "./section";
 export { Segmented, type SegmentedOption } from "./segmented";
 export { Sheet } from "./sheet";
+export { VisibilityToggle, type Visibility } from "./visibility";

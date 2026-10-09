@@ -175,7 +175,11 @@ export function taskBrief({
 
   return `<task number="${task.number}">
 Title: ${task.title}
-Status: ${task.status} · Priority: ${task.priority}
+Status: ${task.status} · Priority: ${task.priority}${
+    task.visibility === "private"
+      ? "\nPrivate: only whoever asked for it and the people on it see this task. Keep its data in the job folder, not on the company drive (which everyone's jobs share), unless they ask."
+      : ""
+  }
 Created: ${time(task.createdAt)}
 ${scheduleLine(schedule)}${task.pendingLogin ? `\nSign-in waiting: ${task.pendingLogin} asked for a code. If the newest reply sent it, call browser_login to finish signing in.` : ""}
 

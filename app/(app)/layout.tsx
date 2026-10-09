@@ -27,7 +27,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     anyRunning(organization.id),
     listIntegrations(organization.id),
     listWorking(organization.id, { viewer: person.id }),
-    listPages(organization.id),
+    listPages(organization.id, { viewer: person.id }),
   ]);
 
   return (

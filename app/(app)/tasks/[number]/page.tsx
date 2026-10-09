@@ -34,7 +34,7 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
   const [messages, taskFiles, library, people, agents, inbox, schedule] = await Promise.all([
     listMessages(task.id),
     listTaskFiles(organization.id, task.id),
-    listLibrary(organization.id),
+    listLibrary(organization.id, { viewer: person.id }),
     listPeople(organization.id),
     listAgents(organization.id),
     listInbox(organization.id, person.id),

@@ -16,8 +16,8 @@ async function Ideas({ organizationId }: { organizationId: string }) {
 // Pages in the left menu: the page looked at last, in its tabs. With no pages
 // yet, how to make one, and ideas written for this company.
 export default async function PagesPage() {
-  const { organization } = await requireAppContext();
-  const pages = (await listPages(organization.id))
+  const { organization, person } = await requireAppContext();
+  const pages = (await listPages(organization.id, { viewer: person.id }))
     .filter((p) => p.version > 0)
     .map((p) => ({ slug: p.slug, title: p.title, description: p.description }));
   return (

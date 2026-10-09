@@ -3,6 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { getDb } from "@/lib/db";
+import { visibleTo } from "@/lib/tasks";
 import { loadBytes, removeBytes, storeBytes } from "@/lib/storage";
 
 // The company file library. Every deliverable an agent attaches and every
@@ -32,7 +33,17 @@ export type LibraryFile = {
   updatedAt: Date;
   /** Newest first. */
   versions: FileVersion[];
+  /** The company's, or (private) its owner's and visible on the tasks it's on. */
+  visibility: "company" | "private";
+  ownerPersonId: string | null;
 };
+
+/**
+ * Whether the person in parameter `param` may see file f: a company file, one
+ * they own, or one on a task they may see.
+ */
+const fileVisibleTo = (param: string) => `(f.visibility = 'company' or f.owner_person_id = ${param}
+  or exists (select 1 from task_files vf join tasks t on t.id = vf.task_id where vf.file_id = f.id and ${visibleTo(param)}))`;
 
 export type TaskFile = LibraryFile & { role: "input" | "output" };
 
@@ -125,11 +136,19 @@ async function versionsOf(fileIds: string[]): Promise<Map<string, FileVersion[]>
   return byFile;
 }
 
-type FileRow = { id: string; name: string; kind: FileKind; updated_at: Date; role?: "input" | "output" };
+type FileRow = {
+  id: string;
+  name: string;
+  kind: FileKind;
+  updated_at: Date;
+  visibility: "company" | "private";
+  owner_person_id: string | null;
+  role?: "input" | "output";
+};
 
 export async function listTaskFiles(organizationId: string, taskId: string): Promise<TaskFile[]> {
   const rows = await getDb().query<FileRow>(
-    `select f.id, f.name, f.kind, f.updated_at, tf.role from task_files tf
+    `select f.id, f.name, f.kind, f.updated_at, f.visibility, f.owner_person_id, tf.role from task_files tf
      join files f on f.id = tf.file_id
      where tf.task_id = $1 and f.organization_id = $2
      order by (f.kind = 'code'), tf.added_at`,
@@ -143,16 +162,49 @@ export async function listTaskFiles(organizationId: string, taskId: string): Pro
     updatedAt: r.updated_at,
     role: r.role ?? "output",
     versions: versions.get(r.id) ?? [],
+    visibility: r.visibility,
+    ownerPersonId: r.owner_person_id,
   }));
 }
 
-export async function listLibrary(organizationId: string, { limit = 200 } = {}): Promise<LibraryFile[]> {
+/** The library (what the viewer may see, if given), newest first. */
+export async function listLibrary(organizationId: string, { limit = 200, viewer }: { limit?: number; viewer?: string } = {}): Promise<LibraryFile[]> {
   const rows = await getDb().query<FileRow>(
-    "select id, name, kind, updated_at from files where organization_id = $1 order by updated_at desc limit $2",
-    [organizationId, limit],
+    `select f.id, f.name, f.kind, f.updated_at, f.visibility, f.owner_person_id from files f
+     where f.organization_id = $1 and ($3::uuid is null or ${fileVisibleTo("$3")})
+     order by f.updated_at desc limit $2`,
+    [organizationId, limit, viewer ?? null],
   );
   const versions = await versionsOf(rows.map((r) => r.id));
-  return rows.map((r) => ({ id: r.id, name: r.name, kind: r.kind, updatedAt: r.updated_at, versions: versions.get(r.id) ?? [] }));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    kind: r.kind,
+    updatedAt: r.updated_at,
+    versions: versions.get(r.id) ?? [],
+    visibility: r.visibility,
+    ownerPersonId: r.owner_person_id,
+  }));
+}
+
+/** Whether this person may open this version (its file is theirs, the company's, or on a task they can see). */
+export async function canReadVersion(organizationId: string, versionId: string, personId: string): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(versionId)) return false;
+  const [row] = await getDb().query(
+    `select 1 from file_versions v join files f on f.id = v.file_id
+     where v.id = $1 and f.organization_id = $2 and ${fileVisibleTo("$3")}`,
+    [versionId, organizationId, personId],
+  );
+  return Boolean(row);
+}
+
+/** Shares a file with the company, or makes it private to its owner (and the tasks it's on). */
+export async function setFileVisibility(organizationId: string, fileId: string, visibility: "company" | "private"): Promise<void> {
+  await getDb().query("update files set visibility = $3, updated_at = now() where organization_id = $1 and id = $2", [
+    organizationId,
+    fileId,
+    visibility,
+  ]);
 }
 
 /** One version with its content, if it belongs to this organization. */
@@ -231,9 +283,14 @@ export async function saveVersion(organizationId: string, input: SaveVersionInpu
     fileId = existing?.id;
   }
   if (!fileId) {
+    // A task's file is seen by whoever can see the task; one someone added outside a task is theirs.
+    const [task] = input.taskId
+      ? await db.query<{ created_by_person_id: string | null }>("select created_by_person_id from tasks where id = $1", [input.taskId])
+      : [];
+    const owner = task ? task.created_by_person_id : (input.personId ?? null);
     const [created] = await db.query<{ id: string }>(
-      "insert into files (organization_id, name, kind) values ($1, $2, $3) returning id",
-      [organizationId, name, input.kind],
+      "insert into files (organization_id, name, kind, visibility, owner_person_id) values ($1, $2, $3, $4, $5) returning id",
+      [organizationId, name, input.kind, task || input.personId ? "private" : "company", owner],
     );
     fileId = created.id;
   } else {
@@ -324,12 +381,13 @@ export async function detachFromTask(taskId: string, fileId: string): Promise<vo
 }
 
 /** Finds library files by name, for the Chief of Staff to attach to new jobs. */
-export async function findFiles(organizationId: string, names: string[]): Promise<{ id: string; name: string }[]> {
+export async function findFiles(organizationId: string, names: string[], { viewer }: { viewer?: string } = {}): Promise<{ id: string; name: string }[]> {
   if (names.length === 0) return [];
   return getDb().query<{ id: string; name: string }>(
-    `select distinct on (lower(name)) id, name from files
-     where organization_id = $1 and lower(name) = any($2::text[]) and kind = 'deliverable'
-     order by lower(name), updated_at desc`,
-    [organizationId, names.map((n) => n.trim().toLowerCase())],
+    `select distinct on (lower(f.name)) f.id, f.name from files f
+     where f.organization_id = $1 and lower(f.name) = any($2::text[]) and f.kind = 'deliverable'
+       and ($3::uuid is null or ${fileVisibleTo("$3")})
+     order by lower(f.name), f.updated_at desc`,
+    [organizationId, names.map((n) => n.trim().toLowerCase()), viewer ?? null],
   );
 }

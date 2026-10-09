@@ -10,7 +10,7 @@ import { appUrl } from "@/lib/app-url";
 import { buildPageDocument } from "@/lib/page-frame";
 import { drivePath } from "@/lib/drive";
 import { isMachSource } from "@/lib/mach-sources";
-import { getPage, pageDataStatus, pageHtml, PageError, readPageData, savePage, setPageRefresh, type PageAuthor } from "@/lib/pages";
+import { getPage, pageDataStatus, pageHtml, PageError, readPageData, savePage, setPageRefresh, setPageVisibility, type PageAuthor } from "@/lib/pages";
 import { getSchedule } from "@/lib/schedules";
 
 // The Chief of Staff's tools for pages: views of the company's data, shown as
@@ -101,11 +101,23 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
                 .join("\n\n"),
       }),
     }),
+    share_page: tool({
+      description:
+        "Share a page with the whole company (its refresh job too), or make it private again to whoever made it. Only for pages the person you're talking to made.",
+      inputSchema: z.object({ page: z.string().describe("The page's slug."), withCompany: z.boolean() }),
+      execute: async ({ page: slug, withCompany }): Promise<string> => {
+        const page = await getPage(orgId, slug, { viewer: by.personId });
+        if (!page) return `There's no page called ${slug}.`;
+        if (!by.personId || page.createdByPersonId !== by.personId) return `Only whoever made ${page.title}, or an admin in the app, can change who sees it.`;
+        await setPageVisibility(orgId, slug, withCompany ? "company" : "private");
+        return withCompany ? `${page.title} is shared with the company.` : `${page.title} is private to whoever made it.`;
+      },
+    }),
     read_page: tool({
       description: "Read a page: its current HTML, the drive files it reads and how it's refreshed. Do this before changing a page.",
       inputSchema: z.object({ page: z.string().describe("The page's slug.") }),
       execute: async ({ page: slug }): Promise<string> => {
-        const page = await getPage(orgId, slug);
+        const page = await getPage(orgId, slug, { viewer: by.personId });
         const html = page && (await pageHtml(orgId, slug));
         if (!page || !html) return `There's no page called ${slug}.`;
         const schedule = page.taskId ? await getSchedule(page.taskId) : null;

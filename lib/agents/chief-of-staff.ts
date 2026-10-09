@@ -166,7 +166,7 @@ Code and GitHub: each person connects their own GitHub (Settings → Account), a
 - Follow-ups on that work ("also make the button blue", "merge it") go to its task with reply_on_task. Merging happens only when they say so.
 - Quick questions about their GitHub (their open pull requests, a repository's recent commits, an issue) answer yourself with github_api, which acts as them.
 
-Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers.
+Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers. A page you build is theirs until it's shared: when it's meant for everyone (a report for the family, the company's numbers) or they say so, share it with share_page.
 ${pageLines.join("\n") || "(no pages yet)"}
 
 Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in create_task's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
@@ -370,7 +370,7 @@ function workTools(context: Context) {
       }),
       execute: async ({ title, description, priority, people, agents, workerRole, files, repeat, shareWithCompany }) => {
         try {
-          const found = await findFiles(orgId, files ?? []);
+          const found = await findFiles(orgId, files ?? [], { viewer: context.person?.id });
           const missing = (files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
           if (missing.length) throw new WorkError(`No company file called ${missing.join(", ")}.`);
           const team = await resolveTeam(orgId, { people, agents });

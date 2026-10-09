@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useTransition } from "react";
 
-import { deletePageAction, refreshPageAction, restorePageAction } from "@/app/(app)/pages/actions";
+import { deletePageAction, refreshPageAction, restorePageAction, setPageVisibilityAction } from "@/app/(app)/pages/actions";
+import { VisibilityToggle } from "@/components/kit";
 import { CosToggle } from "@/components/shell/cos-toggle";
 import { PageTabs } from "@/components/page-tabs";
 import { startCosMessage, useShell } from "@/components/shell/shell";
@@ -27,7 +28,15 @@ export function PageView({
   refresh,
   ideas,
 }: {
-  page: { slug: string; title: string; description: string; version: number };
+  page: {
+    slug: string;
+    title: string;
+    description: string;
+    version: number;
+    visibility: "company" | "private";
+    /** The signed-in person may change who sees it (they made it, or they're an admin). */
+    canShare: boolean;
+  };
   /** An older version being looked at, or null for the latest. */
   viewing: number | null;
   files: FileStatus[];
@@ -104,6 +113,14 @@ export function PageView({
           </span>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-1 text-muted">
+          <span className="px-2">
+            <VisibilityToggle
+              visibility={page.visibility}
+              canChange={page.canShare}
+              change={(next) => setPageVisibilityAction(page.slug, next)}
+              privateMeans="Only whoever made it can see this page"
+            />
+          </span>
           {refresh && (
             <button
               className={button}

@@ -2,7 +2,7 @@
 
 import { refresh } from "next/cache";
 
-import { deletePage, getPage, PageError, restorePageVersion } from "@/lib/pages";
+import { deletePage, getPage, PageError, restorePageVersion, setPageVisibility } from "@/lib/pages";
 import { requireAppContext } from "@/lib/session";
 import { rerunScript, WorkError } from "@/lib/work";
 
@@ -27,7 +27,7 @@ async function attempt(work: (context: Awaited<ReturnType<typeof requireAppConte
 /** Runs the page's refresh job now. */
 export async function refreshPageAction(slug: string): Promise<PageActionResult> {
   return attempt(async ({ organization, person }) => {
-    const page = await getPage(organization.id, slug);
+    const page = await getPage(organization.id, slug, { viewer: person.id });
     if (!page?.taskId) throw new PageError("This page has no refresh job. Ask the Chief of Staff to set one up.");
     await rerunScript(organization.id, page.taskId, { name: person.name, personId: person.id });
   });
@@ -35,10 +35,24 @@ export async function refreshPageAction(slug: string): Promise<PageActionResult>
 
 export async function restorePageAction(slug: string, version: number): Promise<PageActionResult> {
   return attempt(async ({ organization, person }) => {
+    if (!(await getPage(organization.id, slug, { viewer: person.id }))) throw new PageError("There's no such page.");
     await restorePageVersion(organization.id, slug, version, { name: person.name, personId: person.id });
   });
 }
 
 export async function deletePageAction(slug: string): Promise<PageActionResult> {
-  return attempt(({ organization, person }) => deletePage(organization.id, slug, { name: person.name, personId: person.id }));
+  return attempt(async ({ organization, person }) => {
+    if (!(await getPage(organization.id, slug, { viewer: person.id }))) throw new PageError("There's no such page.");
+    await deletePage(organization.id, slug, { name: person.name, personId: person.id });
+  });
+}
+
+/** Shares a page (and its refresh job) with the company, or makes it private to whoever made it (they, or an admin). */
+export async function setPageVisibilityAction(slug: string, visibility: "company" | "private"): Promise<PageActionResult> {
+  return attempt(async ({ organization, person, isAdmin }) => {
+    const page = await getPage(organization.id, slug, { viewer: person.id });
+    if (!page) throw new PageError("There's no such page.");
+    if (page.createdByPersonId !== person.id && !isAdmin) throw new PageError("Only whoever made it, or an admin, can change who sees it.");
+    await setPageVisibility(organization.id, slug, visibility === "company" ? "company" : "private");
+  });
 }
