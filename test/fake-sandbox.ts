@@ -52,7 +52,8 @@ export function fakeSandboxes(scripts: Record<string, Handler> = {}) {
           return { exitCode: result.exitCode ?? 0, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
         }
         const script = args.join(" ");
-        if (script.includes("[ -d /vercel/drive ]") || script.includes("trust-network-proxy")) return ok;
+        // Setup that doesn't matter to tests (it's logged when it also sets who commits are by).
+        if (script.includes("[ -d /vercel/drive ]") || (script.includes("trust-network-proxy") && !script.includes("git config"))) return ok;
         if (script.includes("find code")) {
           const listed = under(JOB_DIR).filter((p) => p.startsWith("code/") || /^(run\.sh|config\.\w+|requirements\.txt)$/.test(p));
           return { ...ok, stdout: listed.join("\n") };

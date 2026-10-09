@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { DRIVE_DIR, drivePath, listDrive, MAX_DRIVE_FILE_BYTES, readDriveFile, writeDriveFile } from "@/lib/drive";
 import { contentTypeFor, isText, listTaskFiles, readTaskFiles, readVersion, saveVersion, type FileKind } from "@/lib/files";
 import { saveLoginSessions, waitingForCode } from "@/lib/agents/browser-steps";
+import { commitIdentity, githubSigning, githubToken } from "@/lib/github";
 import { knownSecrets, sandboxPolicy } from "@/lib/integrations";
 import { redact } from "@/lib/secrets";
 import { versionPreview } from "@/lib/previews";
@@ -240,25 +241,45 @@ function driveNote({ saved, problems }: { saved: string[]; problems: string[] })
  * Lets this run's code reach the company's data sources: requests to them
  * get their credentials added on the way out of the sandbox.
  */
-async function connectSources(context: AgentContext, sandbox: JobSandbox): Promise<string[]> {
-  const { policy, sources } = await sandboxPolicy(context.organizationId, context.agentId);
+async function connectSources(context: AgentContext, sandbox: JobSandbox): Promise<{ sources: string[]; github: string | null }> {
+  const github = await runGitHub(context);
+  const { policy, sources } = await sandboxPolicy(context.organizationId, context.agentId, github ? githubSigning(github.token) : {});
   await sandbox.setNetworkPolicy(policy);
-  // So the browser accepts the proxy that signs those requests (older templates lack the helper).
-  if (sources.length) await sandbox.run("bash", ["-c", "command -v trust-network-proxy >/dev/null && trust-network-proxy || true"]);
-  return sources;
+  // So the browser accepts the proxy that signs those requests (older templates lack the helper), and
+  // commits are signed as the person the run is for.
+  const identity = github ? commitIdentity(github.account) : null;
+  const setup = [
+    sources.length || github ? "(command -v trust-network-proxy >/dev/null && trust-network-proxy || true)" : "",
+    identity ? `git config --global user.name ${shellQuote(identity.name)} && git config --global user.email ${shellQuote(identity.email)}` : "",
+  ].filter(Boolean);
+  if (setup.length) await sandbox.run("bash", ["-c", setup.join("; ")]);
+  return { sources, github: github ? github.account.login : null };
 }
+
+/**
+ * The GitHub of the person a task run is for, if they connected it. Only on a
+ * task: its sandbox runs one run at a time, while the Chief of Staff's
+ * workspace sandbox is shared by everyone in the company.
+ */
+async function runGitHub(context: AgentContext) {
+  if (!context.taskId || !context.personId) return null;
+  return githubToken(context.organizationId, context.personId);
+}
+
+const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
 
 /** Starts (or resumes) the agent's sandbox for this run, connects data sources and brings its copy of the drive up to date. */
 export async function startSandbox(context: AgentContext): Promise<string> {
   "use step";
   const sandbox = await open(context);
   const added = context.taskId ? await syncTaskFiles(context as RunContext, sandbox) : [];
-  const sources = await connectSources(context, sandbox);
+  const { sources, github } = await connectSources(context, sandbox);
   const pulled = await pullDrive(context, sandbox);
   return [
     added.length ? `new on the job: ${added.join(", ")}` : "",
     pulled,
     sources.length ? `data sources connected: ${sources.join(", ")}` : "",
+    github ? `GitHub connected as @${github}` : "",
   ]
     .filter(Boolean)
     .join("; ");

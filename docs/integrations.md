@@ -5,7 +5,7 @@ Agents work with the company's other systems in two ways:
 - **Data sources** (kind `api`): an HTTP API, such as a portfolio system's read-only API. Agents call it with the `call_api` tool, or straight from code in their job's sandbox.
 - **Website logins** (kind `login`): an account on a website with no usable API, used by chosen agents through a headless Chromium in the job's sandbox. Example: an agent that enters data in Masttro's web app.
 
-Both are company-wide. Each can be limited to chosen agents, so the company can connect Masttro's API as a data source every analyst reads from, and give Masttro's web login only to the one data-entry agent.
+Both are company-wide. A person's own accounts (their GitHub) are not integrations: each person connects theirs, and it's used only for their own work; see [github.md](github.md). Each can be limited to chosen agents, so the company can connect Masttro's API as a data source every analyst reads from, and give Masttro's web login only to the one data-entry agent.
 
 Everything is in **Settings → Integrations**: status, who can use it, access, credentials, the guide agents keep, and recent `call_api` activity.
 

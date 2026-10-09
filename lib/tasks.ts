@@ -1,5 +1,6 @@
 import "server-only";
 
+import { tellOnWhatsApp } from "@/lib/channels/task-replies";
 import { getDb } from "@/lib/db";
 import { pushConfigured, pushToPeople } from "@/lib/push";
 import type { AgentKind, AgentStatus } from "@/lib/agents/store";
@@ -52,6 +53,8 @@ export type Task = {
   repeats: boolean;
   /** A website sign-in waiting on a person's code (the login's slug). */
   pendingLogin: string | null;
+  /** Asked for over WhatsApp: whoever asked hears there when it's ready or needs them. */
+  replyByWhatsApp: boolean;
   /** Who @-mentioned the person this list is for, when that's why it needs them. */
   mentionedBy?: string | null;
   createdAt: Date;
@@ -110,6 +113,7 @@ type TaskRow = {
   archived_at: Date | null;
   repeats: boolean;
   pending_login: string | null;
+  reply_by_whatsapp: boolean;
   mentioned_by?: string | null;
   created_at: Date;
   updated_at: Date;
@@ -132,7 +136,7 @@ const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary,
   t.priority, t.options, t.payload, t.later_until, t.created_by_person_id, t.created_by_agent_id, t.run_agent_id,
   t.run_started_at, t.run_began_at, t.run_activity, t.agent_turns, t.memory, t.sandbox_name, t.archived_at,
   exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats, t.pending_login,
-  t.created_at, t.updated_at, t.closed_at`;
+  t.reply_by_whatsapp, t.created_at, t.updated_at, t.closed_at`;
 
 /** Sorts urgent first, then high, medium, low. */
 export const PRIORITY_ORDER = `case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`;
@@ -167,6 +171,7 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     archivedAt: row.archived_at,
     repeats: row.repeats,
     pendingLogin: row.pending_login,
+    replyByWhatsApp: row.reply_by_whatsapp,
     mentionedBy: row.mentioned_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -486,6 +491,8 @@ export type NewTask = {
   createdBy?: { personId?: string; agentId?: string };
   people?: string[];
   agents?: string[];
+  /** Asked for over WhatsApp: tell whoever asked there when it's ready or needs them. */
+  replyByWhatsApp?: boolean;
 };
 
 export async function createTask(organizationId: string, input: NewTask): Promise<Task> {
@@ -498,9 +505,9 @@ export async function createTask(organizationId: string, input: NewTask): Promis
     try {
       const [row] = await db.query<{ id: string }>(
         `insert into tasks (organization_id, number, kind, title, description, summary, status, priority, options,
-                            payload, created_by_person_id, created_by_agent_id)
+                            payload, created_by_person_id, created_by_agent_id, reply_by_whatsapp)
          values ($1, (select coalesce(max(number), 0) + 1 from tasks where organization_id = $1), $2, $3, $4, $5, $6,
-                 $7, $8::jsonb, $9::jsonb, $10, $11)
+                 $7, $8::jsonb, $9::jsonb, $10, $11, $12)
          returning id`,
         [
           organizationId,
@@ -514,6 +521,7 @@ export async function createTask(organizationId: string, input: NewTask): Promis
           input.payload ? JSON.stringify(input.payload) : null,
           input.createdBy?.personId ?? null,
           input.createdBy?.agentId ?? null,
+          input.replyByWhatsApp ?? false,
         ],
       );
       id = row.id;
@@ -579,7 +587,9 @@ const NOTIFY_STATUS: Partial<Record<TaskStatus, string>> = { waiting: "needs you
 
 /** A task just started waiting on its people: a push notification to each of them (who turned them on). */
 async function notifyNeeded(organizationId: string, task: Task): Promise<void> {
-  if (!pushConfigured() || (task.laterUntil && task.laterUntil > new Date())) return;
+  if (task.laterUntil && task.laterUntil > new Date()) return;
+  if (task.replyByWhatsApp) await tellOnWhatsApp(organizationId, task);
+  if (!pushConfigured()) return;
   const people = task.members.filter((m) => m.type === "person").map((m) => m.id);
   await pushToPeople(
     organizationId,

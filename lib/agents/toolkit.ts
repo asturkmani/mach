@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { runBrowserAgent, type BrowserReport } from "@/lib/agents/browser-agent";
 import { browserLogin, browsePage } from "@/lib/agents/browser-steps";
+import { githubRequest } from "@/lib/agents/github-steps";
 import { callApi, readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
 import { listSandboxFiles, readSandboxFile, runCode, runShell, startSandbox, writeSandboxFile } from "@/lib/agents/sandbox-steps";
@@ -215,6 +216,22 @@ export function browserTools(
         save_as: z.string().optional().describe("Keep the whole page or response as a file in your sandbox's folder, e.g. inputs/openapi.json."),
       }),
       execute: (input) => using(() => browsePage(context, input)),
+    }),
+  };
+}
+
+/** GitHub as the person this work is for: their pull requests, issues, repositories. */
+export function githubTools(context: AgentContext): ToolSet {
+  return {
+    github_api: tool({
+      description:
+        "Call GitHub's REST API (https://api.github.com) as the person this work is for, with their own GitHub: e.g. GET /user/repos, GET /repos/{owner}/{repo}/pulls, POST /repos/{owner}/{repo}/pulls to open a pull request. Only repositories they let Mach1 use are reachable. Merge (PUT …/pulls/{n}/merge) only when they've said to.",
+      inputSchema: z.object({
+        method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+        path: z.string().min(1).describe("An API path, e.g. /repos/acme/site/pulls?state=open"),
+        body: z.unknown().optional().describe("A JSON body, for write requests."),
+      }),
+      execute: (input) => githubRequest(context, input),
     }),
   };
 }

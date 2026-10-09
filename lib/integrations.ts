@@ -3,6 +3,7 @@ import "server-only";
 import type { NetworkPolicy, NetworkPolicyRule } from "@vercel/sandbox";
 
 import { getDb } from "@/lib/db";
+import { githubSecrets } from "@/lib/github";
 import { redact, seal, unseal } from "@/lib/secrets";
 
 // Integrations connect the company's other systems to Mach1.
@@ -654,6 +655,8 @@ export async function knownSecrets(organizationId: string): Promise<string[]> {
       console.error("Couldn't read stored credentials", error);
     }
   }
+  // People's own GitHub tokens never enter a sandbox, but scrub them all the same.
+  values.push(...(await githubSecrets(organizationId)));
   return values.filter((v) => typeof v === "string" && v.length >= 6);
 }
 
@@ -667,7 +670,12 @@ export async function knownSecrets(organizationId: string): Promise<string[]> {
  * before. Credentials never enter the sandbox. Query-parameter keys can't be
  * added this way; those sources work through call_api only.
  */
-export async function sandboxPolicy(organizationId: string, agentId: string | null): Promise<{ policy: NetworkPolicy; sources: string[] }> {
+export async function sandboxPolicy(
+  organizationId: string,
+  agentId: string | null,
+  /** Headers for more hosts: the GitHub of the person a task run is for. */
+  extra: Record<string, Record<string, string>> = {},
+): Promise<{ policy: NetworkPolicy; sources: string[] }> {
   const sources = (await listIntegrations(organizationId, { agentId })).filter(
     (i) => i.kind === "api" && i.status !== "disabled" && i.hasCredentials,
   );
@@ -698,7 +706,8 @@ export async function sandboxPolicy(organizationId: string, agentId: string | nu
     for (const domain of (source.config as ApiConfig).domains) allow[domain] ??= rules;
     used.push(source.slug);
   }
-  if (!used.length) return { policy: "allow-all", sources: [] };
+  for (const [host, headers] of Object.entries(extra)) allow[host] = [{ transform: [{ headers }] }];
+  if (!used.length && !Object.keys(extra).length) return { policy: "allow-all", sources: [] };
   allow["*"] = [];
   return { policy: { allow }, sources: used };
 }

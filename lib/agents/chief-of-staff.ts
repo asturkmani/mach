@@ -15,6 +15,7 @@ import { appUrl } from "@/lib/app-url";
 import { skillList } from "@/lib/agents/skills";
 import {
   browserTools,
+  githubTools,
   integrationTools,
   researchTools,
   sandboxTools,
@@ -22,7 +23,7 @@ import {
   skillTool,
   type SandboxSession,
 } from "@/lib/agents/toolkit";
-import { createAgent, type Agent } from "@/lib/agents/store";
+import { codingAgent, createAgent, type Agent } from "@/lib/agents/store";
 import { findFiles, listTaskFiles, type LibraryFile } from "@/lib/files";
 import {
   IntegrationError,
@@ -43,6 +44,7 @@ import {
   setCompanyName,
   setSection,
 } from "@/lib/profile/markdown";
+import { getGitHubConnection } from "@/lib/github";
 import { updateProfile } from "@/lib/profile/store";
 import { describeSchedule, getSchedule } from "@/lib/schedules";
 import type { SessionUser } from "@/lib/session";
@@ -73,6 +75,8 @@ type Context = {
   viewing?: string | null;
   /** Set when this turn's message came by WhatsApp or email rather than the app. */
   channel?: Channel;
+  /** The GitHub account of the person you're talking to, if they connected one. */
+  github?: { login: string; status: "connected" | "expired" } | null;
 };
 
 function channelInstructions(channel: Channel): string {
@@ -151,11 +155,22 @@ Integrations: the company's other systems, connected so agents can use them with
 Your sandbox: like every agent, you have a Linux sandbox for the company with a browser in it. Use browse to read pages fetch_page can't (JavaScript apps, pages behind one of the company's logins), and run_code to work through what you saved (an API spec, say). For anything interactive on a website (checking something inside a signed-in app, testing a login, a quick change people asked for), hand it to the browser agent with use_browser: it sees the page, signs in with the company's logins and reports back with screenshots. It's for quick things while you set things up or answer a question; real work still goes to a task.
 ${integrationLines.join("\n") || "(none yet)"}
 
+Code and GitHub: each person connects their own GitHub (Settings → Account), and work in GitHub always runs as the person who asked, never anyone else. ${githubLine(context)}
+- For a code change in a repository ("fix the typo on the pricing page", "add a field to the signup form"), call start_coding with what they want and the repository if they named it. The Developer agent clones it, works on a branch, runs its checks, pushes and opens a pull request, then reports back with the link (on WhatsApp too, when they asked there). Don't write code in chat.
+- Follow-ups on that work ("also make the button blue", "merge it") go to its task with reply_on_task. Merging happens only when they say so.
+- Quick questions about their GitHub (their open pull requests, a repository's recent commits, an issue) answer yourself with github_api, which acts as them.
+
 Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers.
 ${pageLines.join("\n") || "(no pages yet)"}
 
 Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in create_task's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
 ${fileLines.join("\n") || "(none yet)"}`;
+}
+
+function githubLine({ github, person }: Context): string {
+  if (!person) return "";
+  if (github?.status === "connected") return `${person.name}'s GitHub is connected as @${github.login}.`;
+  return `${person.name} ${github ? "needs to reconnect their GitHub" : "hasn't connected GitHub yet"}: before any GitHub work, send them ${appUrl("/connect/github")} to connect theirs (a minute; they choose which repositories Mach1 may use), then carry on once they say it's done.`;
 }
 
 export function chiefOfStaffInstructions(context: Context): string {
@@ -364,6 +379,38 @@ function workTools(context: Context) {
           "error" in output
             ? `Not created: ${output.error}`
             : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
+      }),
+    }),
+    start_coding: tool({
+      description:
+        "Start a code change in a GitHub repository, done by the Developer agent as the person you're talking to (with their own GitHub): a task it works on straight away, ending in a pull request. They're on it and hear back when it's ready.",
+      inputSchema: z.object({
+        title: z.string().min(1).max(100).describe("The change, starting with a verb, e.g. 'Fix the typo on the pricing page'."),
+        request: z.string().min(1).describe("What they want, in their words plus anything you know: where, why, what done looks like."),
+        repository: z.string().optional().describe("owner/name, if they said which; the agent finds it otherwise."),
+      }),
+      execute: async ({ title, request, repository }) => {
+        if (!context.person) return { error: "Only a signed-in team member can start code changes." };
+        const github = await getGitHubConnection(orgId, context.person.id);
+        if (github?.status !== "connected") {
+          return { error: `${context.person.name} needs to connect their GitHub first: ${appUrl("/connect/github")}` };
+        }
+        const developer = await codingAgent(orgId);
+        const task = await createTaskWithTeam(orgId, {
+          title,
+          description: [request.trim(), repository ? `Repository: ${repository.trim()}` : ""].filter(Boolean).join("\n\n"),
+          agentIds: [developer.id],
+          replyByWhatsApp: context.channel === "whatsapp",
+          by,
+        });
+        return { task: { number: task.number, title: task.title }, agent: developer.name, github: github.login };
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value:
+          "error" in output
+            ? `Not started: ${output.error}`
+            : `Started task #${output.task.number}: ${output.agent} is on it as @${output.github}. It reports back with a pull request${context.channel === "whatsapp" ? ", here on WhatsApp too" : ""}.`,
       }),
     }),
     find_tasks: tool({
@@ -706,6 +753,7 @@ export function createChiefOfStaff(
       needsCode: login,
     })),
     ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),
+    ...githubTools(workspace),
     ...(options.research === false ? {} : researchTools()),
     use_skill: skillTool(),
   };

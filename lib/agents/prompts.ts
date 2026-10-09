@@ -139,6 +139,7 @@ export function taskBrief({
   schedule,
   drive,
   integrations,
+  workingFor,
 }: {
   task: Task;
   messages: TaskMessage[];
@@ -147,6 +148,8 @@ export function taskBrief({
   schedule?: Schedule | null;
   drive?: BriefDrive;
   integrations?: Integration[];
+  /** The person this run is for, and their GitHub if they connected it. */
+  workingFor?: WorkingFor | null;
 }): string {
   const members = task.members
     .map((m) =>
@@ -199,7 +202,18 @@ ${driveListing(drive)}
 
 <data_sources>
 ${integrationListing(integrations)}
-</data_sources>${loginListing(integrations)}`;
+</data_sources>${loginListing(integrations)}${workingForListing(workingFor)}`;
+}
+
+export type WorkingFor = { name: string; github: { login: string } | null; connectUrl: string };
+
+/** Who this run is for, and what of theirs it may use: their GitHub, if they connected it. */
+function workingForListing(workingFor?: WorkingFor | null): string {
+  if (!workingFor) return "";
+  const github = workingFor.github
+    ? `GitHub: connected as @${workingFor.github.login}. In your sandbox, git and the GitHub API act as ${workingFor.name}, within the repositories they let Mach1 use. Clone with a plain https://github.com/owner/repo.git URL (credentials are added on the way out; never put a token in a URL or a file). Work on a new branch, commit, push, and open a pull request with github_api. Never push to the default branch, and merge only when ${workingFor.name} says so.`
+    : `GitHub: ${workingFor.name} hasn't connected theirs. If the work needs GitHub, ask them to connect it at ${workingFor.connectUrl} (it takes a minute) and carry on once they say it's done. Never use anyone else's.`;
+  return `\n\n<working_for>\nThis run is for ${workingFor.name}: their latest message is what you're answering, or they asked for the task.\n${github}\n</working_for>`;
 }
 
 export function agentInstructions({

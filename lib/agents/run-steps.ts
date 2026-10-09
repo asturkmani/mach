@@ -15,7 +15,10 @@ import {
   type RunContext,
   type RunOutcome,
 } from "@/lib/agents/prompts";
+import { appUrl } from "@/lib/app-url";
+import { getGitHubConnection } from "@/lib/github";
 import { getOrganization } from "@/lib/orgs";
+import { getPerson } from "@/lib/people";
 import { loadProfile } from "@/lib/profile/store";
 import { deleteSchedule, getSchedule, saveSchedule, scheduleProblem, type ScheduleMode } from "@/lib/schedules";
 import { recordMentions } from "@/lib/task-mentions";
@@ -33,6 +36,7 @@ import {
   releaseRun,
   renewRun,
   updateTask,
+  type Task,
   type TaskMessage,
   type TaskOption,
 } from "@/lib/tasks";
@@ -122,11 +126,22 @@ export async function beginRun(
     )
     .map((m) => m.id);
   await reactToMessages(agent.id, answering, "👀");
+  // Who this run is for: what of theirs it may use (their GitHub) follows from it.
+  const forId = workingForId(task, messages, answering);
+  const [forPerson, github] = forId
+    ? await Promise.all([getPerson(organizationId, forId), getGitHubConnection(organizationId, forId)])
+    : [null, null];
+  if (forPerson) context.personId = forPerson.id;
+  const workingFor = forPerson && {
+    name: forPerson.name,
+    github: github?.status === "connected" ? { login: github.login } : null,
+    connectUrl: appUrl("/connect/github"),
+  };
   return {
     ok: true,
     context,
     model,
-    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations }) }),
+    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations, workingFor }) }),
     prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
     sources: integrations.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
@@ -134,6 +149,21 @@ export async function beginRun(
     images,
     answering,
   };
+}
+
+/**
+ * The person a run works for: whoever wrote the newest message it answers,
+ * else the last person to comment, else whoever asked for the task. Their own
+ * accounts (GitHub) are what the run may use; never anyone else's.
+ */
+export function workingForId(
+  task: Pick<Task, "createdByPersonId">,
+  messages: Pick<TaskMessage, "id" | "personId" | "kind">[],
+  answering: string[],
+): string | null {
+  const answered = messages.filter((m) => answering.includes(m.id) && m.personId);
+  const commented = messages.filter((m) => m.personId && m.kind === "comment");
+  return answered.at(-1)?.personId ?? commented.at(-1)?.personId ?? task.createdByPersonId ?? null;
 }
 
 const MAX_IMAGES = 4;

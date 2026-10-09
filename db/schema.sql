@@ -464,3 +464,23 @@ alter table agents add column if not exists builtin text;
 alter table integrations add column if not exists setup_task_id uuid references tasks (id) on delete set null;
 -- A thread message that carries an integration's credentials card.
 alter table task_messages add column if not exists integration_id uuid references integrations (id) on delete set null;
+
+-- Each person's own accounts elsewhere (GitHub first), connected by them and used only for their own work:
+-- the Chief of Staff chatting with them and task runs they asked for. Tokens are sealed (lib/secrets.ts).
+create table if not exists personal_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  person_id uuid not null references people (id) on delete cascade,
+  provider text not null check (provider in ('github')),
+  account_id text not null,
+  account_login text not null,
+  account_name text not null default '',
+  secrets bytea not null,
+  status text not null default 'connected' check (status in ('connected', 'expired')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists personal_connections_person on personal_connections (person_id, provider);
+
+-- A task asked for over WhatsApp: when it's ready or needs an answer, the person who asked hears on WhatsApp.
+alter table tasks add column if not exists reply_by_whatsapp boolean not null default false;

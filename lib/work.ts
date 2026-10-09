@@ -98,6 +98,8 @@ export async function createTaskWithTeam(
     inputFileIds?: string[];
     /** Makes it a recurring job. Its first run starts now. */
     schedule?: ScheduleInput;
+    /** Asked for over WhatsApp: whoever asked hears there when it's ready or needs them. */
+    replyByWhatsApp?: boolean;
     by: Actor;
   },
 ): Promise<Task> {
@@ -113,6 +115,7 @@ export async function createTaskWithTeam(
     createdBy: { personId: input.by.personId },
     people: [...(input.by.personId ? [input.by.personId] : []), ...own.personIds],
     agents: agentIds,
+    replyByWhatsApp: input.replyByWhatsApp,
   });
   for (const fileId of input.inputFileIds ?? []) await attachToTask(organizationId, task.id, fileId, "input");
   await addMessage(task.id, { author: input.by.name, personId: input.by.personId, kind: "event", body: "Created this task." });

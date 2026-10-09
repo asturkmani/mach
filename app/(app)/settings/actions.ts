@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { disconnectGitHub } from "@/lib/github";
 import { setAutoJoin } from "@/lib/orgs";
 import { requireAppContext } from "@/lib/session";
 
@@ -13,4 +14,11 @@ export async function setAutoJoinAction(on: boolean): Promise<{ error?: string }
   await setAutoJoin(organization.id, on);
   revalidatePath("/settings");
   return {};
+}
+
+/** Forgets your GitHub here and revokes what you granted Mach1 there. */
+export async function disconnectGitHubAction(): Promise<void> {
+  const { organization, person } = await requireAppContext();
+  await disconnectGitHub(organization.id, person.id);
+  revalidatePath("/settings/account");
 }

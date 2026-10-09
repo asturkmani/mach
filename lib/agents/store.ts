@@ -125,6 +125,36 @@ export async function integrationsAgent(organizationId: string): Promise<Agent> 
   return { ...agent, builtin: INTEGRATIONS_AGENT };
 }
 
+export const CODING_AGENT = "coding";
+
+/**
+ * The company's Developer agent, made the first time someone asks for a code
+ * change: it works in people's GitHub repositories, as the person who asked
+ * (their own GitHub, never anyone else's). Its playbook is the
+ * coding-in-github skill.
+ */
+export async function codingAgent(organizationId: string): Promise<Agent> {
+  const [row] = await getDb().query<AgentRow>(
+    `select ${COLUMNS} from agents where organization_id = $1 and builtin = $2 and status <> 'archived' order by created_at limit 1`,
+    [organizationId, CODING_AGENT],
+  );
+  if (row) {
+    if (row.status !== "active") await getDb().query("update agents set status = 'active', updated_at = now() where id = $1", [row.id]);
+    return toAgent({ ...row, status: "active" });
+  }
+  let name = "Developer";
+  for (let n = 2; await findAgentByName(organizationId, name); n++) name = `Developer ${n}`;
+  const agent = await createAgent(organizationId, {
+    name,
+    role: "Changes code in GitHub repositories",
+    description:
+      "Makes code changes people ask for in their GitHub repositories, as the person who asked: clones the repository, works on a branch, runs its checks, pushes and opens a pull request, then reports what changed with the link. Merges only when told to.",
+    instructions: "Load the coding-in-github skill before you start, and follow it.",
+  });
+  await getDb().query("update agents set builtin = $2 where id = $1", [agent.id, CODING_AGENT]);
+  return { ...agent, builtin: CODING_AGENT };
+}
+
 /** A throwaway agent for one task, named after its role ("Research worker", then "Research worker 2"). */
 export async function createWorker(organizationId: string, role = ""): Promise<Agent> {
   const base = role.trim() ? `${role.trim().replace(/\s+worker$/i, "")} worker` : "Worker";

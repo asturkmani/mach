@@ -24,6 +24,7 @@ import { askForLoginCode } from "@/lib/agents/browser-steps";
 import { attachSandboxFile, closeSandbox } from "@/lib/agents/sandbox-steps";
 import {
   browserTools,
+  githubTools,
   integrationTools,
   researchTools,
   sandboxTools,
@@ -306,6 +307,7 @@ export async function runAgentOnTask(
           end({ type: "asked" });
           return { text: asked, needsCode: login };
         }, { durable: true, heartbeat: () => keepLease(context, "Using the browser") }),
+        ...githubTools(context),
         ...(options.research === false ? {} : researchTools()),
         use_skill: skillTool(),
       }, interrupt),

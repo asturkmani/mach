@@ -10,6 +10,7 @@ import { closeSandbox } from "@/lib/agents/sandbox-steps";
 import { listAgents } from "@/lib/agents/store";
 import type { SandboxSession } from "@/lib/agents/toolkit";
 import { getOrCreateChat, saveChat } from "@/lib/chats";
+import { getGitHubConnection } from "@/lib/github";
 import { listLibrary } from "@/lib/files";
 import { listIntegrations } from "@/lib/integrations";
 import { listPages } from "@/lib/pages";
@@ -41,7 +42,7 @@ export async function loadChiefOfStaff(
   } = {},
 ) {
   const organizationId = context.organization.id;
-  const [profile, agents, tasks, jobs, files, integrations, pages] = await Promise.all([
+  const [profile, agents, tasks, jobs, files, integrations, pages, github] = await Promise.all([
     loadProfile(organizationId),
     listAgents(organizationId),
     listTasks(organizationId, { closedLimit: 0 }),
@@ -49,11 +50,12 @@ export async function loadChiefOfStaff(
     listLibrary(organizationId, { limit: 30 }),
     listIntegrations(organizationId),
     listPages(organizationId),
+    context.person ? getGitHubConnection(organizationId, context.person.id) : null,
   ]);
   const viewing = options.viewing ? await describeViewing(organizationId, options.viewing).catch(() => null) : null;
   const sandbox: SandboxSession = {};
   const agent = createChiefOfStaff(
-    { ...context, profile, agents, openTasks: tasks, jobs, files, integrations, pages, channel: options.channel, viewing },
+    { ...context, profile, agents, openTasks: tasks, jobs, files, integrations, pages, channel: options.channel, viewing, github },
     { sandbox, model: options.model, research: options.research },
   );
   return {
