@@ -220,10 +220,15 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     const now = Date.UTC(2026, 9, 8, 12);
     const timestamp = String(now / 1000);
     const signature = `v1,${svixSignature(secret, "msg_1", timestamp, body)}`;
-    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, body, now)).toBe(true);
-    expect(validSvixSignature({ id: "msg_1", timestamp, signature: `v1,bogus ${signature}` }, body, now)).toBe(true);
-    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, `${body} `, now)).toBe(false);
-    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, body, now + 10 * 60_000)).toBe(false);
+    const other = `whsec_${Buffer.from("another-account-key").toString("base64")}`;
+    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, body, [secret], now)).toBe(true);
+    // Any of the registered webhooks' secrets will do (an old account's and a new one's, while moving).
+    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, body, [other, secret], now)).toBe(true);
+    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, body, [other], now)).toBe(false);
+    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, body, [], now)).toBe(false);
+    expect(validSvixSignature({ id: "msg_1", timestamp, signature: `v1,bogus ${signature}` }, body, [secret], now)).toBe(true);
+    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, `${body} `, [secret], now)).toBe(false);
+    expect(validSvixSignature({ id: "msg_1", timestamp, signature }, body, [secret], now + 10 * 60_000)).toBe(false);
 
     await useTestDb();
     expect(await firstTime("twilio", "SM1")).toBe(true);

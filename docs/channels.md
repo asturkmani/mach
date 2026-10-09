@@ -47,9 +47,9 @@ The signature check uses the URL Twilio called. Behind a proxy that changes the 
 
 ### Email (AgentMail)
 
-1. **Get an API key:** create an AgentMail account and set `AGENTMAIL_API_KEY`.
-2. **Register the webhook (once per deployment):** run `pnpm email:webhook https://<your-domain>/api/email`. Set the secret it prints as `AGENTMAIL_WEBHOOK_SECRET`.
-3. **Create the company's address:** an admin clicks "Create address" in Settings → Channels. That creates an AgentMail inbox named after the company, e.g. `cedar-legacy@agentmail.to`, with a number added if the name is taken.
+1. **Get an API key:** add AgentMail from the Vercel Marketplace and connect it to the project, which sets `AGENTMAIL_API_KEY`. An account made on agentmail.to works too, with the key set by hand.
+2. **The webhook registers itself.** When an admin opens Settings → Channels (or creates the company's address), Mach1 checks that AgentMail posts incoming email to `APP_URL/api/email` on the key's account, and registers the webhook if it doesn't. Its signing secret is kept sealed in the database (`service_webhooks`, one row per key), so a new key, or a new account, needs nothing else. `AGENTMAIL_WEBHOOK_SECRET` is still accepted, for a webhook registered by hand with `pnpm email:webhook`.
+3. **Create the company's address:** an admin clicks "Create address" in Settings → Channels. That creates an AgentMail inbox named after the company, e.g. `cedar-legacy@agentmail.to`, with a number added if the name is taken. An address left on an AgentMail account Mach1 no longer uses (after moving to a new one) is noticed there and cleared, so the admin can create a new one.
 
 Deleting a company deletes its inbox too.
 
@@ -69,4 +69,4 @@ Deleting a company deletes its inbox too.
 | `lib/channels/twilio.ts`, `lib/channels/agentmail.ts` | The providers: signatures, sending, inboxes, WhatsApp formatting |
 | `lib/agents/cos-turn.ts` | One Chief of Staff turn, shared by the chat panel and both channels |
 | `components/channel-settings.tsx` | The Settings rows: the company's email address and WhatsApp sender (Channels), your WhatsApp number (Account) |
-| `scripts/agentmail-webhook.mjs` | Registers AgentMail's webhook and prints its secret |
+| `scripts/agentmail-webhook.mjs` | Registers AgentMail's webhook by hand and prints its secret (Mach1 normally does it itself) |

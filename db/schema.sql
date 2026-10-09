@@ -406,3 +406,14 @@ alter table organizations add column if not exists auto_join boolean not null de
 -- A colleague asking to join is a task in the admins' inbox ("join_request").
 alter table tasks drop constraint if exists tasks_kind_check;
 alter table tasks add constraint tasks_kind_check check (kind in ('task', 'suggestion', 'join_request'));
+
+-- Webhooks Mach1 registers with a service itself (AgentMail's, for incoming
+-- email): one per API key ("agentmail:<hash of the key>"), so changing the key
+-- (a new account) registers a new one. The signing secret is sealed.
+create table if not exists service_webhooks (
+  service text primary key,
+  url text not null,
+  webhook_id text not null,
+  secret bytea not null,
+  created_at timestamptz not null default now()
+);

@@ -3,7 +3,7 @@
 import { getWorkOS, signOut } from "@workos-inc/authkit-nextjs";
 import { refresh } from "next/cache";
 
-import { agentmailConfigured, createInbox } from "@/lib/channels/agentmail";
+import { agentmailConfigured, createInbox, ensureEmailWebhook } from "@/lib/channels/agentmail";
 import { phoneDigits } from "@/lib/channels/senders";
 import { setEmailInbox } from "@/lib/orgs";
 import { setPhone } from "@/lib/people";
@@ -54,6 +54,7 @@ export async function createEmailInboxAction(): Promise<{ error?: string }> {
   if (organization.emailInbox) return {};
   try {
     await setEmailInbox(organization.id, await createInbox(organization.name));
+    await ensureEmailWebhook();
   } catch (error) {
     console.error(error);
     return { error: "Couldn't create the email address. Try again." };

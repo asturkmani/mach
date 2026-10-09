@@ -16,8 +16,11 @@ export function EmailChannel({
   email,
   emailAvailable,
   isAdmin,
+  moved = false,
 }: {
   emailInbox: string | null;
+  /** The company's old address belonged to an email account Mach1 no longer uses. */
+  moved?: boolean;
   /** This person's own email address, the one replies go to. */
   email: string;
   /** Whether email can be set up (AgentMail is configured). */
@@ -52,7 +55,9 @@ export function EmailChannel({
         ) : !emailAvailable ? (
           `Not set up for Mach1 yet.${isAdmin ? " It needs an AgentMail API key (see docs/channels.md)." : ""}`
         ) : isAdmin ? (
-          "Give the Chief of Staff an address your team can write to."
+          moved
+            ? "Mach1 moved to a new email account, so the old address no longer works. Set up a new one for your team."
+            : "Give the Chief of Staff an address your team can write to."
         ) : (
           "An admin can give the Chief of Staff an address your team can write to."
         )

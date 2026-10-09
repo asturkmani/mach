@@ -1,6 +1,6 @@
 import { after } from "next/server";
 
-import { agentmailConfigured, validSvixSignature } from "@/lib/channels/agentmail";
+import { agentmailConfigured, validSvixSignature, webhookSecrets } from "@/lib/channels/agentmail";
 import { handleEmail, type ReceivedEmail } from "@/lib/channels/inbound";
 import { firstTime } from "@/lib/channels/senders";
 
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     timestamp: request.headers.get("svix-timestamp"),
     signature: request.headers.get("svix-signature"),
   };
-  if (!validSvixSignature(headers, body)) return new Response("Bad signature.", { status: 400 });
+  if (!validSvixSignature(headers, body, await webhookSecrets())) return new Response("Bad signature.", { status: 400 });
   const event = JSON.parse(body) as { event_type?: string; event_id?: string; message?: ReceivedEmail };
   // Only mail that passed the sender's authentication (SPF/DKIM): AgentMail labels the rest
   // message.received.unauthenticated, .spam or .blocked.
