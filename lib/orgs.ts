@@ -13,6 +13,8 @@ export type Organization = {
   onboardingCompletedAt: Date | null;
   /** The Chief of Staff's email address for the company (an AgentMail inbox), if one was set up. */
   emailInbox: string | null;
+  /** Colleagues with a verified email at the company's domain join without asking. */
+  autoJoin: boolean;
 };
 
 type OrgRow = {
@@ -23,9 +25,10 @@ type OrgRow = {
   timezone: string | null;
   onboarding_completed_at: Date | null;
   email_inbox: string | null;
+  auto_join: boolean;
 };
 
-const ORG_COLUMNS = "id, name, website, domain, timezone, onboarding_completed_at, email_inbox";
+const ORG_COLUMNS = "id, name, website, domain, timezone, onboarding_completed_at, email_inbox, auto_join";
 
 const toOrg = (row: OrgRow): Organization => ({
   id: row.id,
@@ -35,6 +38,7 @@ const toOrg = (row: OrgRow): Organization => ({
   timezone: row.timezone,
   onboardingCompletedAt: row.onboarding_completed_at,
   emailInbox: row.email_inbox,
+  autoJoin: row.auto_join ?? false,
 });
 
 export async function getOrganization(id: string): Promise<Organization | null> {
@@ -94,4 +98,9 @@ export async function setEmailInbox(organizationId: string, inbox: string | null
 export async function findOrganizationByInbox(inbox: string): Promise<Organization | null> {
   const [row] = await getDb().query<OrgRow>(`select ${ORG_COLUMNS} from organizations where lower(email_inbox) = lower($1)`, [inbox]);
   return row ? toOrg(row) : null;
+}
+
+/** Whether colleagues with the company's domain join without asking. */
+export async function setAutoJoin(id: string, on: boolean): Promise<void> {
+  await getDb().query("update organizations set auto_join = $2 where id = $1", [id, on]);
 }

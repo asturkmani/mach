@@ -398,3 +398,11 @@ create table if not exists push_subscriptions (
 );
 
 create index if not exists push_subscriptions_person on push_subscriptions (person_id);
+
+-- Colleagues with the company's work email domain join on their own when an
+-- admin turns this on; otherwise they ask, and an admin lets them in.
+alter table organizations add column if not exists auto_join boolean not null default false;
+
+-- A colleague asking to join is a task in the admins' inbox ("join_request").
+alter table tasks drop constraint if exists tasks_kind_check;
+alter table tasks add constraint tasks_kind_check check (kind in ('task', 'suggestion', 'join_request'));

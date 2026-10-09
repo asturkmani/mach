@@ -187,6 +187,7 @@ export async function pickOption(organizationId: string, taskId: string, by: Act
   const option = task.options[index];
   if (!option) throw new WorkError("That option isn't available any more.");
 
+  if (task.kind === "join_request") throw new WorkError("An admin answers this from their inbox.");
   if (task.kind === "suggestion") {
     return /^apply/i.test(option.label)
       ? applySuggestion(organizationId, task, by)

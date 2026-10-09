@@ -1,8 +1,10 @@
 "use server";
 
 import { getWorkOS, switchToOrganization } from "@workos-inc/authkit-nextjs";
+import { revalidatePath } from "next/cache";
 
 import { createOrganization, findOrganizationByDomain } from "@/lib/orgs";
+import { addToCompany, requestToJoin } from "@/lib/members";
 import { linkMember, syncPeopleSection } from "@/lib/people";
 import { getCompanyDomain, getSessionContext } from "@/lib/session";
 import { normalizeWebsite } from "@/lib/website";
@@ -23,7 +25,7 @@ export async function createCompany(_: CreateCompanyState, form: FormData): Prom
   const domain = await getCompanyDomain();
   if (domain) {
     const existing = await findOrganizationByDomain(domain);
-    if (existing) return { error: `${existing.name} already uses Mach for @${domain} emails. Ask someone there to invite you.` };
+    if (existing) return { error: `${existing.name} already uses Mach for @${domain} emails. Ask to join it instead.` };
   }
 
   const workos = getWorkOS();
@@ -62,4 +64,28 @@ export async function openCompany(form: FormData): Promise<void> {
   });
   if (memberships.data.length === 0) throw new Error("You're not a member of that company.");
   await switchToOrganization(organizationId, { returnTo: "/" });
+}
+
+/** The company that owns the signed-in person's verified work email domain, if there is one. */
+async function domainCompany() {
+  const domain = await getCompanyDomain();
+  return domain ? findOrganizationByDomain(domain) : null;
+}
+
+/** A colleague asks the company's admins to let them in. */
+export async function requestToJoinAction(): Promise<void> {
+  const { user } = await getSessionContext();
+  const company = await domainCompany();
+  if (!company) throw new Error("No company on Mach uses your email domain.");
+  await requestToJoin(company, { userId: user.id, email: user.email, name: user.name });
+  revalidatePath("/welcome");
+}
+
+/** Joins straight away, when the company's admins let colleagues join on their own. */
+export async function joinCompanyAction(): Promise<void> {
+  const { user } = await getSessionContext();
+  const company = await domainCompany();
+  if (!company?.autoJoin) throw new Error("Ask to join instead: this company's admins let people in.");
+  await addToCompany(company.id, user);
+  await switchToOrganization(company.id, { returnTo: "/" });
 }

@@ -16,6 +16,17 @@ New and returning people take the same steps: the first sign-in creates the acco
 
 **Other ways to sign in** (at the bottom of the page) opens WorkOS's own page, which handles anything Mach's doesn't: multi-factor authentication, password resets, and a Radar challenge. Mach sends people there automatically when WorkOS asks for one of these.
 
+## Finding your company
+
+A company's **email domain** is the work domain of whoever creates it, once their email is verified. Every way of signing in verifies it: a code, a password confirmed with a code, Google, Microsoft, or single sign-on. Personal addresses (gmail.com, outlook.com…) never claim one.
+
+When someone signs in for the first time with that domain, `/welcome` shows the company instead of offering to create a duplicate:
+
+- **Ask to join** (the default) puts a request, a task of kind `join_request`, in every admin's inbox, with a push notification: *Let them in* or *Decline*. They join as a member. Their page checks every 15 seconds and shows the company to open once an admin says yes. After a decline they can ask again.
+- **Join** straight away, when an admin has turned on **Colleagues join on their own** (Settings → General). This is off by default: contractors, or people who've left but whose mailbox still works, would otherwise get in.
+
+**Roles** live in WorkOS: `admin` or `member`. Whoever creates a company is its first admin. Admins make others admins (or members again) on the Team page. A company always keeps at least one admin, and nobody changes their own role. Code: `lib/members.ts`.
+
 ## How it works
 
 | Part | Where |

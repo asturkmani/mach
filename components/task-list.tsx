@@ -101,7 +101,7 @@ export function TaskList({
         unhide(task.id);
         return toast(result.error);
       }
-      toast(`${option.label}${task.kind === "suggestion" ? "" : `: sent to ${byline(task)}`}`);
+      toast(`${option.label}${task.kind !== "task" ? "" : `: sent to ${byline(task)}`}`);
     });
   };
 

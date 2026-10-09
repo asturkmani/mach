@@ -6,7 +6,7 @@ import { prepareHistory } from "./history";
 
 const agent = createChiefOfStaff(
   {
-    organization: { id: "org_1", name: "Cedar Legacy", website: null, domain: null, timezone: null, onboardingCompletedAt: null, emailInbox: null },
+    organization: { id: "org_1", name: "Cedar Legacy", website: null, domain: null, timezone: null, onboardingCompletedAt: null, emailInbox: null, autoJoin: false },
     user: { id: "user_1", email: "ahmed@cedar.example", name: "Ahmed" },
     profile: "",
   },

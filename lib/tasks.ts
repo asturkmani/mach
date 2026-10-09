@@ -15,7 +15,7 @@ export { PRIORITIES, TASK_STATUSES, type Priority, type TaskStatus };
 
 export const CLOSED_STATUSES: TaskStatus[] = ["done", "cancelled"];
 
-export type TaskKind = "task" | "suggestion";
+export type TaskKind = "task" | "suggestion" | "join_request";
 export type TaskOption = { label: string; recommended?: boolean };
 
 export type TaskMember =

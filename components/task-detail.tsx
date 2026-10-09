@@ -121,7 +121,7 @@ export function TaskDetail({
     act(
       () => pickOptionAction(task.id, n),
       () => {
-        toast(`${option.label}${task.kind === "suggestion" ? "" : `: sent to ${byline(task)}`}`);
+        toast(`${option.label}${task.kind !== "task" ? "" : `: sent to ${byline(task)}`}`);
         goNext();
       },
     );
@@ -241,6 +241,7 @@ export function TaskDetail({
           <span className="label text-faint">/</span>
           <span className="label">#{task.number}</span>
           {task.kind === "suggestion" && <span className="label text-accent-ink">Profile suggestion</span>}
+          {task.kind === "join_request" && <span className="label text-accent-ink">Asking to join</span>}
           {task.archived && <span className="label text-faint">Archived</span>}
           {task.schedule && (
             <span className="label flex items-center gap-1 text-faint" title={task.schedule.description}>

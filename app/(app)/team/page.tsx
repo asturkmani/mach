@@ -6,6 +6,7 @@ import { TeamSection } from "@/components/team-section";
 import { Face } from "@/components/ui";
 import { listAgents } from "@/lib/agents/store";
 import { AGENT_TEMPLATES } from "@/lib/agents/templates";
+import { memberRoles } from "@/lib/members";
 import { listPeople } from "@/lib/people";
 import { requireAppContext } from "@/lib/session";
 import { listTasks } from "@/lib/tasks";
@@ -30,11 +31,13 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   const { organization, person: me, isAdmin } = await requireAppContext();
   const params = await searchParams;
   const show = params.show === "people" || params.show === "agents" ? params.show : "all";
-  const [people, agents, tasks] = await Promise.all([
+  const [people, agents, tasks, roles] = await Promise.all([
     listPeople(organization.id),
     listAgents(organization.id),
     listTasks(organization.id, { closedLimit: 0 }),
+    memberRoles(organization.id).catch(() => new Map<string, { membershipId: string; role: "admin" | "member" }>()),
   ]);
+  const roleOf = (workosUserId: string | null) => (workosUserId ? (roles.get(workosUserId)?.role ?? null) : null);
   const defined = agents.filter((a) => a.kind === "defined");
   const workers = agents.filter((a) => a.kind === "worker");
   const openTasksFor = (id: string) => tasks.filter((t) => t.members.some((m) => m.id === id));
@@ -89,6 +92,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                                 <div>
                                   {person.name}
                                   {person.id === me.id && <span className="text-muted"> (you)</span>}
+                                  {roleOf(person.workosUserId) === "admin" && <span className="label ml-2 text-accent-ink">Admin</span>}
                                 </div>
                                 <div className="text-xs text-faint">
                                   {[person.email, person.phone].filter(Boolean).join(" · ") || "No contact details"}
@@ -115,6 +119,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                               hasEmail={Boolean(person.email)}
                               inviteUrl={person.inviteUrl}
                               canManage={isAdmin && person.id !== me.id}
+                              role={roleOf(person.workosUserId)}
                             />
                           </td>
                         </tr>

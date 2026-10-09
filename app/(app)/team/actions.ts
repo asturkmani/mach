@@ -3,6 +3,7 @@
 import { getWorkOS } from "@workos-inc/authkit-nextjs";
 import { revalidatePath } from "next/cache";
 
+import { setRole, type Role } from "@/lib/members";
 import { getPerson, markInvited, removePerson, savePerson, syncPeopleSection } from "@/lib/people";
 import { requireAppContext } from "@/lib/session";
 
@@ -103,4 +104,19 @@ export async function removePersonAction(personId: string): Promise<ActionResult
   await removePerson(organization.id, person.id);
   await syncPeopleSection(organization.id);
   return ok(`Removed ${person.name}.`);
+}
+
+/** Makes someone who has joined an admin, or a member again (admins only, not themselves). */
+export async function setRoleAction(personId: string, role: Role): Promise<ActionResult> {
+  const { organization, person: me, isAdmin } = await requireAppContext();
+  if (!isAdmin) return { error: "Only admins can change roles." };
+  if (personId === me.id) return { error: "Ask another admin to change your role." };
+  const person = await getPerson(organization.id, personId);
+  if (!person?.workosUserId) return { error: "They need to join before they can be an admin." };
+  try {
+    await setRole(organization.id, person.workosUserId, role);
+  } catch (error) {
+    return { error: errorMessage(error, "Couldn't change their role.") };
+  }
+  return ok(role === "admin" ? `${person.name} is now an admin.` : `${person.name} is now a member.`);
 }

@@ -48,7 +48,7 @@ describe("createCompany", () => {
     session.domain = "cedarlegacy.com";
 
     const result = await createCompany({}, form({ name: "Cedar Legacy London" }));
-    expect(result.error).toBe("Cedar Legacy already uses Mach for @cedarlegacy.com emails. Ask someone there to invite you.");
+    expect(result.error).toBe("Cedar Legacy already uses Mach for @cedarlegacy.com emails. Ask to join it instead.");
     expect(workos.organizations.createOrganization).not.toHaveBeenCalled();
   });
 

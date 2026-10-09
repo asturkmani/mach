@@ -62,6 +62,7 @@ function firstLine(text: string): string {
 /** Who a row is from: the agents on it, else the people. */
 export function byline(task: Pick<TaskView, "kind" | "agents" | "people">): string {
   if (task.kind === "suggestion") return "Chief of Staff";
+  if (task.kind === "join_request") return "Mach";
   if (task.agents.length) return task.agents.map((a) => a.name).join(", ");
   return task.people.map((p) => p.name).join(", ");
 }

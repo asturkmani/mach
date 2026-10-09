@@ -4,7 +4,7 @@ import { useActionState, useRef, useState, useTransition } from "react";
 
 import type { PersonStatus } from "@/lib/people";
 
-import { addPersonAction, inviteAction, removePersonAction, setManagerAction, type ActionResult } from "./actions";
+import { addPersonAction, inviteAction, removePersonAction, setManagerAction, setRoleAction, type ActionResult } from "./actions";
 
 const inputClass = "field";
 
@@ -89,12 +89,15 @@ export function PersonActions({
   hasEmail,
   inviteUrl,
   canManage,
+  role,
 }: {
   personId: string;
   status: PersonStatus;
   hasEmail: boolean;
   inviteUrl: string | null;
   canManage: boolean;
+  /** Their role in the company, once they've joined. */
+  role: "admin" | "member" | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<ActionResult>({});
@@ -125,6 +128,15 @@ export function PersonActions({
             }}
           >
             {copied ? "Copied" : "Copy invite link"}
+          </button>
+        )}
+        {canManage && role && (
+          <button
+            className={button}
+            disabled={pending}
+            onClick={() => run(() => setRoleAction(personId, role === "admin" ? "member" : "admin"))}
+          >
+            {role === "admin" ? "Make member" : "Make admin"}
           </button>
         )}
         {canManage && (

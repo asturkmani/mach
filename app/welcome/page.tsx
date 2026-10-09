@@ -2,11 +2,13 @@ import { getWorkOS } from "@workos-inc/authkit-nextjs";
 import { redirect } from "next/navigation";
 
 import { signOutAction } from "@/app/(app)/actions";
+import { joinRequestFor } from "@/lib/members";
 import { findOrganizationByDomain } from "@/lib/orgs";
 import { getCompanyDomain, getSessionContext } from "@/lib/session";
 import { websiteFromEmail } from "@/lib/website";
 
-import { openCompany } from "./actions";
+import { joinCompanyAction, openCompany, requestToJoinAction } from "./actions";
+import { WaitForAdmin } from "./wait-for-admin";
 import { CreateCompanyForm } from "./create-company-form";
 
 export default async function WelcomePage() {
@@ -22,6 +24,7 @@ export default async function WelcomePage() {
   const domain = await getCompanyDomain();
   const domainCompany = domain ? await findOrganizationByDomain(domain) : null;
   const isDomainMember = memberships.data.some((m) => m.organizationId === domainCompany?.id);
+  const request = domainCompany && !isDomainMember ? await joinRequestFor(domainCompany.id, context.user.id) : null;
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-4">
@@ -58,10 +61,37 @@ export default async function WelcomePage() {
         {domainCompany && !isDomainMember && (
           <div className="space-y-3 border border-line bg-raised p-4 text-sm">
             <p className="text-ink">{domainCompany.name} is already on Mach</p>
-            <p className="text-muted">
-              Everyone with an @{domain} email shares one company. Ask someone at {domainCompany.name} to invite you from
-              their Team page, and you&apos;ll get an email with a link to join.
-            </p>
+            {domainCompany.autoJoin ? (
+              <>
+                <p className="text-muted">Everyone with an @{domain} email can join.</p>
+                <form action={joinCompanyAction}>
+                  <button type="submit" className="btn btn-primary w-full justify-center py-2">
+                    Join {domainCompany.name}
+                  </button>
+                </form>
+              </>
+            ) : request?.status === "pending" ? (
+              <>
+                <p className="text-muted">
+                  You asked to join. An admin at {domainCompany.name} lets you in from their inbox, and it appears here
+                  as soon as they do.
+                </p>
+                <WaitForAdmin />
+              </>
+            ) : (
+              <>
+                <p className="text-muted">
+                  {request?.status === "declined"
+                    ? `Your last request wasn't accepted. Check with someone at ${domainCompany.name}, or ask again.`
+                    : `Everyone with an @${domain} email shares one company. Ask to join, and an admin there lets you in.`}
+                </p>
+                <form action={requestToJoinAction}>
+                  <button type="submit" className="btn btn-primary w-full justify-center py-2">
+                    Ask to join {domainCompany.name}
+                  </button>
+                </form>
+              </>
+            )}
             <form action={signOutAction}>
               <button type="submit" className="text-muted underline underline-offset-2 hover:text-ink">
                 Use a different email

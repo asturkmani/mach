@@ -1,3 +1,4 @@
+import { AutoJoinToggle } from "@/components/auto-join-toggle";
 import { DeleteCompany } from "@/components/delete-company";
 import { SettingRow, SettingsGroup } from "@/components/setting-row";
 import { requireAppContext } from "@/lib/session";
@@ -29,6 +30,17 @@ export default async function GeneralSettingsPage() {
               : "None. The company was created with a personal email address, so it doesn't claim one."
           }
         />
+        {organization.domain && (
+          <SettingRow
+            title="Colleagues join on their own"
+            description={
+              organization.autoJoin
+                ? `On: anyone who signs in with a verified @${organization.domain} email joins as a member, without asking.`
+                : `Off: colleagues with an @${organization.domain} email ask to join, and an admin lets them in from their inbox.`
+            }
+            action={isAdmin ? <AutoJoinToggle on={organization.autoJoin} domain={organization.domain} /> : undefined}
+          />
+        )}
       </SettingsGroup>
       {isAdmin && (
         <SettingsGroup>
