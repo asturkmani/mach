@@ -94,6 +94,19 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     expect(JSON.stringify(model.doGenerateCalls[0].prompt)).toContain("This message came by WhatsApp");
   });
 
+  it("answers two quick messages one after the other, keeping both in the conversation", async () => {
+    await setUp();
+    stubProviders();
+    await Promise.all([
+      handleWhatsApp({ from: "+447700900123", body: "What's open?", media: 0 }, { model: scriptedModel(["Two tasks."]), research: false }),
+      handleWhatsApp({ from: "+447700900123", body: "And who's on #1?", media: 0 }, { model: scriptedModel(["Mustapha."]), research: false }),
+    ]);
+    const chat = await getOrCreateChat(ORG, "user_ahmed");
+    expect(chat.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+    expect(JSON.stringify(chat.messages)).toContain("What's open?");
+    expect(JSON.stringify(chat.messages)).toContain("And who's on #1?");
+  });
+
   it("says something went wrong when the model fails, rather than pretending it's done", async () => {
     await setUp();
     const sent = stubProviders();

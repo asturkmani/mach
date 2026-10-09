@@ -4,7 +4,7 @@ import { after } from "next/server";
 import { forModel, MAX_CHAT_ATTACHMENTS, restoreOriginals, saveChatAttachments, type ChatUpload } from "@/lib/agents/chat-attachments";
 import { generateMessageId, loadChiefOfStaff } from "@/lib/agents/cos-turn";
 import { prepareHistory } from "@/lib/agents/history";
-import { endReply, loadChat, saveChat, startReply, stopRequested, waitForStoppedReply } from "@/lib/chats";
+import { endReply, loadChat, saveChat, stopRequested, takeTurn } from "@/lib/chats";
 import { getSessionContext } from "@/lib/session";
 
 // Long enough for a reply that searches the web, uses the Chief of Staff's
@@ -48,8 +48,9 @@ export async function POST(request: Request) {
   if (typeof body?.id !== "string" || !userMessage || !uploads) return new Response("Invalid message.", { status: 400 });
 
   if (!(await loadChat(body.id, context.organization.id, context.user.id))) return new Response("Conversation not found.", { status: 404 });
-  // Sent with Send now: the reply it stopped saves first, so this one starts from it (and doesn't overwrite it).
-  await waitForStoppedReply(body.id);
+  // One reply at a time (a WhatsApp message may be being answered, or one stopped with Send now is saving):
+  // this one starts from what that one saved, and doesn't overwrite it.
+  if (!(await takeTurn(body.id))) return new Response("Still answering your last message. Try again in a moment.", { status: 409 });
   const chat = (await loadChat(body.id, context.organization.id, context.user.id))!;
 
   let agent;
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
   try {
     ({ agent, close } = await loadChiefOfStaff({ organization: context.organization, user: context.user, person: context.person }, { viewing }));
   } catch (error) {
+    await endReply(chat.id);
     // Configuration problems (e.g. no model set) are shown to the user as-is.
     return new Response(error instanceof Error ? error.message : "Could not start the Chief of Staff.", {
       status: 500,
@@ -68,6 +70,7 @@ export async function POST(request: Request) {
     try {
       userMessage.parts.push(...(await saveChatAttachments(context.organization.id, context.person.id, uploads)));
     } catch (error) {
+      await endReply(chat.id);
       await close();
       return new Response(error instanceof Error ? error.message : "Couldn't attach those files.", { status: 400 });
     }
@@ -85,7 +88,6 @@ export async function POST(request: Request) {
 
   // The reply runs to the end even if the browser goes away (the panel closed, a reload): it isn't tied to
   // the request, the stream is read to its end after the response, and only Stop (stopChatAction) ends it early.
-  await startReply(chat.id);
   const stop = new AbortController();
   const watch = setInterval(() => {
     stopRequested(chat.id)

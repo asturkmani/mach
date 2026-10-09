@@ -60,30 +60,33 @@ export async function stopRequested(id: string): Promise<boolean> {
   return Boolean(row?.stop);
 }
 
-/** A reply starts: any earlier Stop is done with, and the chat is marked as replying until endReply. */
-export async function startReply(id: string): Promise<void> {
-  await getDb().query("update chats set stop_requested_at = null, reply_started_at = now() where id = $1", [id]);
-}
-
-export async function endReply(id: string): Promise<void> {
-  await getDb().query("update chats set reply_started_at = null where id = $1", [id]);
-}
+/** How long a reply can hold its turn: longer than any reply runs, so a turn left by one that died is taken over. */
+const TURN_LEASE = "15 minutes";
 
 /**
- * Waits (up to `timeoutMs`) for a reply that was asked to stop to save what it
- * had, so a message sent with Send now doesn't race it: each reply saves the
- * whole conversation when it ends. A reply that was never asked to stop isn't
- * waited for, nor is a mark left by a reply that died (older than a reply can run).
+ * One reply at a time per conversation, whichever way the message came (the
+ * chat panel, WhatsApp, email): each reply saves the whole conversation when
+ * it ends, so two at once would lose one's messages. Waits (up to
+ * `timeoutMs`) for the reply in progress to finish (a stopped one saves what
+ * it had first), then takes the turn, clearing any earlier Stop. False if the
+ * other reply is still going.
  */
-export async function waitForStoppedReply(id: string, { timeoutMs = 20_000, everyMs = 500 } = {}): Promise<void> {
+export async function takeTurn(id: string, { timeoutMs = 300_000, everyMs = 1000 } = {}): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const [row] = await getDb().query<{ stopping: boolean }>(
-      `select reply_started_at > now() - interval '6 minutes' and stop_requested_at is not null as stopping
-       from chats where id = $1`,
+  for (;;) {
+    const [row] = await getDb().query<{ id: string }>(
+      `update chats set reply_started_at = now(), stop_requested_at = null
+       where id = $1 and (reply_started_at is null or reply_started_at < now() - interval '${TURN_LEASE}')
+       returning id`,
       [id],
     );
-    if (!row?.stopping) return;
+    if (row) return true;
+    if (Date.now() + everyMs > deadline) return false;
     await new Promise((resolve) => setTimeout(resolve, everyMs));
   }
+}
+
+/** The reply is over: the next one may start. */
+export async function endReply(id: string): Promise<void> {
+  await getDb().query("update chats set reply_started_at = null where id = $1", [id]);
 }

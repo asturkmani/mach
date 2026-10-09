@@ -9,7 +9,7 @@ import { describeViewing } from "@/lib/agents/viewing";
 import { closeSandbox } from "@/lib/agents/sandbox-steps";
 import { listAgents } from "@/lib/agents/store";
 import type { SandboxSession } from "@/lib/agents/toolkit";
-import { getOrCreateChat, saveChat } from "@/lib/chats";
+import { endReply, getOrCreateChat, saveChat, takeTurn, type Chat } from "@/lib/chats";
 import { getGitHubConnection } from "@/lib/github";
 import { listLibrary } from "@/lib/files";
 import { listIntegrations } from "@/lib/integrations";
@@ -88,7 +88,25 @@ export async function chiefOfStaffTurn(
   channel: Channel,
   options: { model?: LanguageModel; research?: boolean } = {},
 ): Promise<string> {
-  const chat = await getOrCreateChat<UIMessage>(context.organization.id, context.user.id);
+  const { id } = await getOrCreateChat<UIMessage>(context.organization.id, context.user.id);
+  // One reply at a time: a second message sent quickly waits for the first reply, then sees it.
+  if (!(await takeTurn(id, { timeoutMs: 12 * 60_000, everyMs: 2000 }))) {
+    throw new Error("The previous reply is still running.");
+  }
+  try {
+    return await answer(context, await getOrCreateChat<UIMessage>(context.organization.id, context.user.id), text, channel, options);
+  } finally {
+    await endReply(id);
+  }
+}
+
+async function answer(
+  context: ChiefOfStaffContext,
+  chat: Chat<UIMessage>,
+  text: string,
+  channel: Channel,
+  options: { model?: LanguageModel; research?: boolean },
+): Promise<string> {
   const { agent, close } = await loadChiefOfStaff(context, { channel, ...options });
   const history = await prepareHistory(chat.messages, agent.tools);
   const question: UIMessage = {

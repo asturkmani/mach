@@ -2,7 +2,7 @@ import "server-only";
 
 import { appUrl } from "@/lib/app-url";
 import { sendWhatsApp, twilioConfigured } from "@/lib/channels/twilio";
-import { getOrCreateChat, saveChat } from "@/lib/chats";
+import { endReply, getOrCreateChat, saveChat, takeTurn } from "@/lib/chats";
 import { getDb } from "@/lib/db";
 
 // Work asked for over WhatsApp reports back there: when the task is ready for
@@ -35,16 +35,24 @@ export async function tellOnWhatsApp(organizationId: string, task: TaskForReply)
       .join("\n\n");
     await sendWhatsApp(`+${person.whatsapp}`, text);
     if (person.workos_user_id) {
-      const chat = await getOrCreateChat(organizationId, person.workos_user_id);
-      await saveChat(chat.id, [
-        ...chat.messages,
-        {
-          id: `msg-task-${task.id}-${Date.now()}`,
-          role: "assistant",
-          parts: [{ type: "text", text: `${text}\n\n(Sent on WhatsApp about task #${task.number}.)` }],
-          metadata: { channel: "whatsapp", taskNumber: task.number },
-        },
-      ]);
+      // Into their conversation too, between replies (a reply saves the whole conversation when it ends).
+      const { id } = await getOrCreateChat(organizationId, person.workos_user_id);
+      if (await takeTurn(id, { timeoutMs: 60_000 })) {
+        try {
+          const chat = await getOrCreateChat(organizationId, person.workos_user_id);
+          await saveChat(chat.id, [
+            ...chat.messages,
+            {
+              id: `msg-task-${task.id}-${Date.now()}`,
+              role: "assistant",
+              parts: [{ type: "text", text: `${text}\n\n(Sent on WhatsApp about task #${task.number}.)` }],
+              metadata: { channel: "whatsapp", taskNumber: task.number },
+            },
+          ]);
+        } finally {
+          await endReply(id);
+        }
+      }
     }
   } catch (error) {
     // Outside WhatsApp's 24-hour window Twilio refuses free text; the push notification and Home still show it.
