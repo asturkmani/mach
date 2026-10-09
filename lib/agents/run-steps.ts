@@ -1,6 +1,6 @@
 import { getAgent } from "@/lib/agents/store";
 import { driveStats, listDrive } from "@/lib/drive";
-import { listIntegrations } from "@/lib/integrations";
+import { allowedFor, listIntegrations } from "@/lib/integrations";
 import { contentTypeFor, isText, listTaskFiles, readVersion, saveVersion } from "@/lib/files";
 import {
   agentInstructions,
@@ -132,6 +132,8 @@ export async function beginRun(
     ? await Promise.all([getPerson(organizationId, forId), getGitHubConnection(organizationId, forId)])
     : [null, null];
   if (forPerson) context.personId = forPerson.id;
+  // Only the integrations the person it works for may use (and this agent).
+  const usable = integrations.filter((i) => allowedFor(i, agent.id, forPerson?.id));
   const workingFor = forPerson && {
     name: forPerson.name,
     github: github?.status === "connected" ? { login: github.login } : null,
@@ -141,11 +143,11 @@ export async function beginRun(
     ok: true,
     context,
     model,
-    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations, workingFor }) }),
+    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations: usable, workingFor }) }),
     prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
-    sources: integrations.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
-    logins: integrations.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
+    sources: usable.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
+    logins: usable.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
     images,
     answering,
   };

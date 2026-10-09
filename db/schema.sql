@@ -502,3 +502,6 @@ alter table tasks add column if not exists visibility text not null default 'com
 alter table files add column if not exists visibility text not null default 'company' check (visibility in ('company', 'private'));
 alter table files add column if not exists owner_person_id uuid references people (id) on delete set null;
 alter table pages add column if not exists visibility text not null default 'company' check (visibility in ('company', 'private'));
+
+-- Which people may use an integration (through their assistant and the work it does for them): null is everyone.
+alter table integrations add column if not exists person_ids uuid[];

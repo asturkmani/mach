@@ -34,6 +34,8 @@ export type IntegrationView = {
   fields: CredentialField[];
   access: "read" | "write";
   agentIds: string[] | null;
+  /** The people whose work may use it; null is everyone. */
+  personIds: string[] | null;
   guide: string;
   status: IntegrationStatus;
   statusDetail: string;
@@ -43,7 +45,20 @@ export type IntegrationView = {
   calls: { method: string; path: string; status: number | null; by: string; taskNumber: number | null; at: string }[];
 };
 
-export function Integrations({ integrations, agents }: { integrations: IntegrationView[]; agents: { id: string; name: string }[] }) {
+type Named = { id: string; name: string };
+
+export function Integrations({
+  integrations,
+  agents,
+  people,
+  canChoosePeople,
+}: {
+  integrations: IntegrationView[];
+  agents: Named[];
+  people: Named[];
+  /** Admins decide which people may use each integration. */
+  canChoosePeople: boolean;
+}) {
   if (integrations.length === 0) {
     return (
       <div className="max-w-xl space-y-2 border border-dashed border-line px-5 py-6">
@@ -58,13 +73,23 @@ export function Integrations({ integrations, agents }: { integrations: Integrati
   return (
     <div className="space-y-5">
       {integrations.map((integration) => (
-        <IntegrationCard key={integration.id} integration={integration} agents={agents} />
+        <IntegrationCard key={integration.id} integration={integration} agents={agents} people={people} canChoosePeople={canChoosePeople} />
       ))}
     </div>
   );
 }
 
-function IntegrationCard({ integration: i, agents }: { integration: IntegrationView; agents: { id: string; name: string }[] }) {
+function IntegrationCard({
+  integration: i,
+  agents,
+  people,
+  canChoosePeople,
+}: {
+  integration: IntegrationView;
+  agents: Named[];
+  people: Named[];
+  canChoosePeople: boolean;
+}) {
   const { toast } = useShell();
   const [pending, start] = useTransition();
   const [credentials, setCredentials] = useState(!i.hasCredentials);
@@ -77,6 +102,14 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
       else if (done) toast(done);
     });
   const who = i.agentIds ? agents.filter((a) => i.agentIds!.includes(a.id)).map((a) => a.name) : null;
+  const [choosingPeople, setChoosingPeople] = useState(false);
+  const whoPeople = i.personIds ? people.filter((p) => i.personIds!.includes(p.id)).map((p) => p.name) : null;
+  const togglePerson = (id: string) => {
+    const current = new Set(i.personIds ?? []);
+    if (current.has(id)) current.delete(id);
+    else current.add(id);
+    act(() => updateIntegrationAction(i.id, { personIds: [...current] }));
+  };
   const toggleAgent = (id: string) => {
     const current = new Set(i.agentIds ?? []);
     if (current.has(id)) current.delete(id);
@@ -183,6 +216,37 @@ function IntegrationCard({ integration: i, agents }: { integration: IntegrationV
                   <label key={a.id} className="flex items-center gap-2 pl-5 text-sm">
                     <input type="checkbox" checked={i.agentIds!.includes(a.id)} onChange={() => toggleAgent(a.id)} />
                     {a.name}
+                  </label>
+                ))}
+            </div>
+          )}
+        </dd>
+        <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">Whose work</dt>
+        <dd>
+          {canChoosePeople ? (
+            <button onClick={() => setChoosingPeople(!choosingPeople)} className="flex items-center gap-1 text-left hover:text-ink">
+              <span>{whoPeople ? (whoPeople.length ? whoPeople.join(", ") : "No one") : "Everyone's"}</span>
+              <ChevronRight size={13} className={`text-faint transition-transform ${choosingPeople ? "rotate-90" : ""}`} />
+            </button>
+          ) : (
+            <span>{whoPeople ? (whoPeople.length ? whoPeople.join(", ") : "No one") : "Everyone's"}</span>
+          )}
+          {choosingPeople && canChoosePeople && (
+            <div className="mt-2 space-y-1.5">
+              <p className="text-xs text-faint">Whose assistant, and the work it does for them, may use it.</p>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!i.personIds}
+                  onChange={() => act(() => updateIntegrationAction(i.id, { personIds: i.personIds ? null : [] }))}
+                />
+                Everyone
+              </label>
+              {i.personIds &&
+                people.map((p) => (
+                  <label key={p.id} className="flex items-center gap-2 pl-5 text-sm">
+                    <input type="checkbox" checked={i.personIds!.includes(p.id)} onChange={() => togglePerson(p.id)} />
+                    {p.name}
                   </label>
                 ))}
             </div>

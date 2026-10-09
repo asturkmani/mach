@@ -4,7 +4,8 @@ import { getWorkOS } from "@workos-inc/authkit-nextjs";
 import { revalidatePath } from "next/cache";
 
 import { setRole, type Role } from "@/lib/members";
-import { getPerson, markInvited, PersonError, removePerson, savePerson, syncPeopleSection, updatePerson, type Person, type PersonPatch } from "@/lib/people";
+import { getPerson, handOverShared, markInvited, PersonError, removePerson, savePerson, syncPeopleSection, updatePerson, type Person, type PersonPatch } from "@/lib/people";
+import { disconnectGitHub } from "@/lib/github";
 import { personalSandboxName, sandboxes } from "@/lib/sandbox";
 import { requireAppContext } from "@/lib/session";
 
@@ -129,6 +130,9 @@ export async function removePersonAction(personId: string): Promise<ActionResult
   } catch (error) {
     return { error: errorMessage(error, `Couldn't remove ${person.name}'s access in WorkOS.`) };
   }
+  // What they shared passes to the admin removing them; their GitHub grant to Mach1 is revoked.
+  await handOverShared(organization.id, person.id, me.id);
+  await disconnectGitHub(organization.id, person.id).catch((error) => console.error(`Couldn't disconnect ${person.name}'s GitHub`, error));
   // Their own sandbox (their assistant's computer) goes with them.
   await sandboxes()
     .remove(personalSandboxName(person.id))

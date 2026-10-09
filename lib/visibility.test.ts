@@ -4,7 +4,7 @@ import { setScheduler } from "@/lib/agents/dispatch";
 import { createAgent } from "@/lib/agents/store";
 import { MACH_SOURCES } from "@/lib/mach-data";
 import { createOrganization } from "@/lib/orgs";
-import { linkMember } from "@/lib/people";
+import { handOverShared, linkMember } from "@/lib/people";
 import {
   addMention,
   canSeeTask,
@@ -16,6 +16,7 @@ import {
   searchTasks,
   setTaskVisibility,
 } from "@/lib/tasks";
+import { callIntegration, listIntegrations, sandboxPolicy, saveCredentials, saveIntegration, updateIntegration } from "@/lib/integrations";
 import { canReadVersion, findFiles, listLibrary, saveVersion, setFileVisibility } from "@/lib/files";
 import { getPage, listPages, savePage, setPageVisibility } from "@/lib/pages";
 import { createTaskWithTeam } from "@/lib/work";
@@ -102,5 +103,36 @@ describe("private and company work", () => {
     expect(his.slug).not.toBe(page.slug);
     await setPageVisibility(ORG, page.slug, "company");
     expect((await getPage(ORG, page.slug, { viewer: omar.id }))?.title).toBe("My net worth");
+  });
+
+  it("lets only chosen people's work use an integration", async () => {
+    const sara = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
+    const omar = await linkMember(ORG, { id: "user_omar", email: "omar@cedar.example", name: "Omar" });
+    const masttro = await saveIntegration(ORG, {
+      kind: "api",
+      name: "Masttro",
+      config: { baseUrl: "https://api.masttro.example", domains: [], fields: [{ name: "apiKey", label: "API key" }], headers: { Authorization: "Bearer {{apiKey}}" } },
+    });
+    await saveCredentials(ORG, masttro.id, { apiKey: "mst_live_key_123" });
+    await updateIntegration(ORG, masttro.id, { personIds: [sara.id] });
+
+    expect((await listIntegrations(ORG, { personId: sara.id })).map((i) => i.slug)).toEqual(["masttro"]);
+    expect(await listIntegrations(ORG, { personId: omar.id })).toEqual([]);
+    await expect(callIntegration(ORG, "masttro", { path: "/positions" }, { personId: omar.id })).rejects.toThrow(/don't have access/);
+    // A sandbox working for Omar isn't connected to it; one working for Sara is.
+    expect((await sandboxPolicy(ORG, null, {}, omar.id)).sources).toEqual([]);
+    expect((await sandboxPolicy(ORG, null, {}, sara.id)).sources).toEqual(["masttro"]);
+  });
+
+  it("hands what someone shared to an admin when they leave, keeping their private things private", async () => {
+    const admin = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
+    const omar = await linkMember(ORG, { id: "user_omar", email: "omar@cedar.example", name: "Omar" });
+    const by = { name: "Omar", personId: omar.id };
+    const shared = await createTaskWithTeam(ORG, { title: "Family report", visibility: "company", by });
+    const own = await createTaskWithTeam(ORG, { title: "Omar's notes", by });
+    await handOverShared(ORG, omar.id, admin.id);
+    expect((await getTaskByNumber(ORG, shared.number))?.createdByPersonId).toBe(admin.id);
+    expect((await getTaskByNumber(ORG, own.number))?.createdByPersonId).toBe(omar.id);
+    expect(await canSeeTask(ORG, own.id, admin.id)).toBe(false);
   });
 });

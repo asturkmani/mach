@@ -1,6 +1,7 @@
 import { Integrations, type IntegrationView } from "@/components/integrations";
 import { listAgents } from "@/lib/agents/store";
 import { listIntegrations, recentCalls, type ApiConfig, type LoginConfig } from "@/lib/integrations";
+import { listPeople } from "@/lib/people";
 import { requireAppContext } from "@/lib/session";
 
 /** How requests are signed, by name only (header and query names, the token step's host): never values. */
@@ -21,8 +22,8 @@ function signing(config: ApiConfig): string {
 
 // Settings → Integrations: data sources and website logins agents can use.
 export default async function IntegrationsSettingsPage() {
-  const { organization } = await requireAppContext();
-  const [integrations, agents] = await Promise.all([listIntegrations(organization.id), listAgents(organization.id)]);
+  const { organization, isAdmin } = await requireAppContext();
+  const [integrations, agents, people] = await Promise.all([listIntegrations(organization.id), listAgents(organization.id), listPeople(organization.id)]);
   const views: IntegrationView[] = await Promise.all(
     integrations.map(async (i) => ({
       id: i.id,
@@ -36,6 +37,7 @@ export default async function IntegrationsSettingsPage() {
       fields: i.config.fields,
       access: i.access,
       agentIds: i.agentIds,
+      personIds: i.personIds,
       guide: i.guide,
       status: i.status,
       statusDetail: i.statusDetail,
@@ -63,6 +65,8 @@ export default async function IntegrationsSettingsPage() {
       <Integrations
         integrations={views}
         agents={agents.filter((a) => a.status === "active").map((a) => ({ id: a.id, name: a.name }))}
+        people={people.map((p) => ({ id: p.id, name: p.name }))}
+        canChoosePeople={isAdmin}
       />
     </section>
   );

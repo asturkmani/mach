@@ -143,6 +143,28 @@ export async function savePerson(organizationId: string, input: PersonInput): Pr
   return (await getPerson(organizationId, row.id))!;
 }
 
+/**
+ * Someone is leaving: what they shared with the company (tasks, scheduled
+ * jobs, pages, files) passes to `toId`, so it keeps an owner and keeps
+ * running. Their private things stay theirs, which no one else can see.
+ */
+export async function handOverShared(organizationId: string, fromId: string, toId: string): Promise<void> {
+  const db = getDb();
+  await db.query(
+    "update tasks set created_by_person_id = $3 where organization_id = $1 and created_by_person_id = $2 and visibility = 'company'",
+    [organizationId, fromId, toId],
+  );
+  await db.query(
+    "update pages set created_by_person_id = $3 where organization_id = $1 and created_by_person_id = $2 and visibility = 'company'",
+    [organizationId, fromId, toId],
+  );
+  await db.query("update files set owner_person_id = $3 where organization_id = $1 and owner_person_id = $2 and visibility = 'company'", [
+    organizationId,
+    fromId,
+    toId,
+  ]);
+}
+
 export async function removePerson(organizationId: string, id: string): Promise<void> {
   await getDb().query("delete from people where organization_id = $1 and id = $2", [organizationId, id]);
 }

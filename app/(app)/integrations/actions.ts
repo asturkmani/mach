@@ -14,6 +14,7 @@ import {
 } from "@/lib/integrations";
 import { sendLoginCode } from "@/lib/agents/browser-steps";
 import { listAgents } from "@/lib/agents/store";
+import { listPeople } from "@/lib/people";
 import { requireAppContext } from "@/lib/session";
 
 // Integrations from the Chief of Staff's card and the Integrations page.
@@ -53,8 +54,10 @@ export async function testIntegrationAction(id: string): Promise<IntegrationResu
 
 export async function updateIntegrationAction(
   id: string,
-  patch: { access?: "read" | "write"; agentIds?: string[] | null; disabled?: boolean },
+  patch: { access?: "read" | "write"; agentIds?: string[] | null; personIds?: string[] | null; disabled?: boolean },
 ): Promise<IntegrationResult> {
+  const { isAdmin } = await requireAppContext();
+  if (patch.personIds !== undefined && !isAdmin) return { error: "Only admins choose whose work may use it." };
   return attempt(async (organizationId) => {
     if (!(await getIntegration(organizationId, id))) throw new IntegrationError("That integration doesn't exist.");
     let agentIds = patch.agentIds;
@@ -62,7 +65,12 @@ export async function updateIntegrationAction(
       const own = new Set((await listAgents(organizationId)).map((a) => a.id));
       agentIds = agentIds.filter((a) => own.has(a));
     }
-    await updateIntegration(organizationId, id, { ...patch, agentIds });
+    let personIds = patch.personIds;
+    if (personIds) {
+      const own = new Set((await listPeople(organizationId)).map((p) => p.id));
+      personIds = personIds.filter((p) => own.has(p));
+    }
+    await updateIntegration(organizationId, id, { ...patch, agentIds, personIds });
   });
 }
 

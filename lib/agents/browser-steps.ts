@@ -601,7 +601,7 @@ export async function browserLogin(
 ): Promise<LoginResult> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.login);
-  if (!integration || integration.kind !== "login" || !allowedFor(integration, context.agentId)) {
+  if (!integration || integration.kind !== "login" || !allowedFor(integration, context.agentId, context.personId)) {
     return { text: `There's no website login called ${input.login} you can use.` };
   }
   if (integration.status === "disabled") return { text: `${integration.name} is turned off.` };
@@ -697,7 +697,7 @@ export async function saveLoginSessions(context: AgentContext, sandbox: JobSandb
   for (const path of listed.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) {
     const slug = path.split("/").pop()!.replace(/\.json$/, "");
     const integration = await getIntegration(context.organizationId, slug);
-    if (!integration || integration.kind !== "login" || !allowedFor(integration, context.agentId)) continue;
+    if (!integration || integration.kind !== "login" || !allowedFor(integration, context.agentId, context.personId)) continue;
     const state = await sandbox.readFile(path);
     if (state) await saveLoginSession(context.organizationId, slug, state.toString("utf8"));
   }
@@ -744,7 +744,7 @@ export async function browsePage(context: AgentContext, input: { url: string; sa
     return "Give a full URL, starting with https://.";
   }
   const sandbox = await open(context);
-  const logins = (await listIntegrations(context.organizationId, { agentId: context.agentId })).filter(
+  const logins = (await listIntegrations(context.organizationId, { agentId: context.agentId, personId: context.personId })).filter(
     (i) => i.kind === "login" && i.status !== "disabled",
   );
   const login = logins.find((i) => {

@@ -37,7 +37,7 @@ export async function callApi(
 export async function readIntegrationGuide(context: AgentContext, input: { integration: string }): Promise<string> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.integration);
-  if (!integration || !allowedFor(integration, context.agentId)) return `There's no integration called ${input.integration} you can use.`;
+  if (!integration || !allowedFor(integration, context.agentId, context.personId)) return `There's no integration called ${input.integration} you can use.`;
   const config = integration.config as ApiConfig;
   const how =
     integration.kind === "api"
@@ -58,7 +58,7 @@ export async function readIntegrationGuide(context: AgentContext, input: { integ
 export async function saveIntegrationGuide(context: AgentContext, input: { integration: string; guide: string }): Promise<string> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.integration);
-  if (!integration || !allowedFor(integration, context.agentId)) return `There's no integration called ${input.integration} you can use.`;
+  if (!integration || !allowedFor(integration, context.agentId, context.personId)) return `There's no integration called ${input.integration} you can use.`;
   await updateIntegration(context.organizationId, integration.id, { guide: input.guide.slice(0, 20_000) });
   if (context.taskId) {
     await addMessage(context.taskId, {
