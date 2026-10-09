@@ -29,15 +29,15 @@ export type RunOutcome =
 /**
  * Who an agent is and where it works, for the tools every agent shares
  * (sandbox, browser, data sources): an agent on a task works in that job's
- * sandbox; the Chief of Staff (no agent id, no task) works in the company's
- * own workspace sandbox. Plain values, so it can be passed between workflow steps.
+ * sandbox; the Chief of Staff (no agent id, no task) works in the own sandbox
+ * of the person it's talking with. Plain values, so it can be passed between workflow steps.
  */
 export type AgentContext = {
   organizationId: string;
   taskId: string | null;
   agentId: string | null;
   agentName: string;
-  /** The person the Chief of Staff is talking to. */
+  /** Who this work is for: the person the Chief of Staff is talking to, or the person a task run is for. */
   personId?: string;
 };
 

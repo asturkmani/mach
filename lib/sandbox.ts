@@ -46,13 +46,20 @@ export interface SandboxProvider {
 
 export const sandboxNameFor = (taskId: string) => `mach-task-${taskId}`;
 
-/** The Chief of Staff's own sandbox for the company: for reading sites that need a sign-in, and quick code. */
+/** The company's workspace: only for a Chief of Staff with no one in particular to work for (tests, scripts). */
 export const workspaceSandboxName = (organizationId: string) =>
   `mach-workspace-${organizationId.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`;
 
-/** Where an agent works: its task's job sandbox, or the company workspace. */
-export const sandboxNameOf = (where: { organizationId: string; taskId: string | null }) =>
-  where.taskId ? sandboxNameFor(where.taskId) : workspaceSandboxName(where.organizationId);
+/**
+ * A person's own sandbox: their assistant's computer, which the Chief of Staff
+ * uses while it talks with them. Only their turns run there (one at a time),
+ * so their own accounts (GitHub) can be attached to it safely.
+ */
+export const personalSandboxName = (personId: string) => `mach-person-${personId}`;
+
+/** Where an agent works: its task's job sandbox, else the sandbox of the person it's talking with. */
+export const sandboxNameOf = (where: { organizationId: string; taskId: string | null; personId?: string }) =>
+  where.taskId ? sandboxNameFor(where.taskId) : where.personId ? personalSandboxName(where.personId) : workspaceSandboxName(where.organizationId);
 
 /** How long a sandbox may sit running before Vercel stops it (it is also stopped at the end of every run). */
 const SESSION_TIMEOUT_MS = 30 * 60_000;

@@ -20,7 +20,7 @@ import {
 } from "@/lib/pages";
 import { linkMember, savePerson } from "@/lib/people";
 import { pageDataStatus } from "@/lib/pages";
-import { setSandboxProvider, workspaceSandboxName } from "@/lib/sandbox";
+import { personalSandboxName, setSandboxProvider } from "@/lib/sandbox";
 import { getSchedule } from "@/lib/schedules";
 import { createTask, getTask, listInbox, listMessages } from "@/lib/tasks";
 import { useTestDb } from "@/test/db";
@@ -131,8 +131,8 @@ describe("pages", () => {
     const page = (await getPage(ORG, "net-worth"))!;
     expect(page).toMatchObject({ title: "Net worth", data: [DATA], pinned: true, version: 1 });
 
-    // It was checked in the workspace sandbox's browser, with the data put in front of it, and the model saw the result.
-    expect(sandboxes.log).toContain(`create ${workspaceSandboxName(ORG)}`);
+    // It was checked in the browser of Ahmed's own sandbox, with the data put in front of it, and the model saw the result.
+    expect(sandboxes.log).toContain(`create ${personalSandboxName(person.id)}`);
     expect(seen.checked).toContain('"total":41200000');
     expect(seen.checked).toContain("<style data-mach-kit>");
     const saved = result.steps[3].toolResults[0]!.output as { page: { slug: string }; check: string };

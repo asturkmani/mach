@@ -12,7 +12,7 @@ import {
   updateIntegration,
   type IntegrationStatus,
 } from "@/lib/integrations";
-import { sendWorkspaceLoginCode } from "@/lib/agents/browser-steps";
+import { sendLoginCode } from "@/lib/agents/browser-steps";
 import { listAgents } from "@/lib/agents/store";
 import { requireAppContext } from "@/lib/session";
 
@@ -81,9 +81,9 @@ export async function forgetSessionAction(id: string): Promise<IntegrationResult
 
 /** Hands a sign-in code from the chat's code card to the Chief of Staff's waiting browser. */
 export async function sendSignInCodeAction(slug: string, code: string): Promise<{ error?: string }> {
-  const { organization } = await requireAppContext();
+  const { organization, person } = await requireAppContext();
   try {
-    return await sendWorkspaceLoginCode(organization.id, slug, code);
+    return await sendLoginCode(organization.id, person.id, slug, code);
   } catch (error) {
     console.error(error);
     return { error: "Couldn't hand over the code. Ask the Chief of Staff to sign in again." };

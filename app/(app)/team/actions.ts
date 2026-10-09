@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { setRole, type Role } from "@/lib/members";
 import { getPerson, markInvited, PersonError, removePerson, savePerson, syncPeopleSection, updatePerson, type Person, type PersonPatch } from "@/lib/people";
+import { personalSandboxName, sandboxes } from "@/lib/sandbox";
 import { requireAppContext } from "@/lib/session";
 
 export type ActionResult = { error?: string; message?: string };
@@ -128,6 +129,10 @@ export async function removePersonAction(personId: string): Promise<ActionResult
   } catch (error) {
     return { error: errorMessage(error, `Couldn't remove ${person.name}'s access in WorkOS.`) };
   }
+  // Their own sandbox (their assistant's computer) goes with them.
+  await sandboxes()
+    .remove(personalSandboxName(person.id))
+    .catch((error) => console.error(`Couldn't delete ${person.name}'s sandbox`, error));
 
   await removePerson(organization.id, person.id);
   await syncPeopleSection(organization.id);

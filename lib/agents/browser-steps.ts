@@ -1,5 +1,5 @@
 import type { AgentContext, RunContext } from "@/lib/agents/prompts";
-import { JOB_DIR, openCompanySandbox, sandboxes, sandboxNameOf, workspaceSandboxName, type JobSandbox } from "@/lib/sandbox";
+import { JOB_DIR, openCompanySandbox, sandboxes, sandboxNameOf, type JobSandbox } from "@/lib/sandbox";
 import {
   allowedFor,
   getIntegration,
@@ -710,13 +710,14 @@ export async function waitingForCode(sandbox: JobSandbox): Promise<boolean> {
 }
 
 /**
- * Hands a sign-in code from the chat's code card to the Chief of Staff's
- * waiting browser, without it passing through the model or the chat.
+ * Hands a sign-in code from the chat's code card to the browser waiting in
+ * this person's own sandbox (their Chief of Staff's), without it passing
+ * through the model or the chat.
  */
-export async function sendWorkspaceLoginCode(organizationId: string, slug: string, code: string): Promise<{ error?: string }> {
+export async function sendLoginCode(organizationId: string, personId: string, slug: string, code: string): Promise<{ error?: string }> {
   const clean = loginCodeFrom(code);
   if (!clean) return { error: "That doesn't look like a sign-in code." };
-  const sandbox = await sandboxes().find(workspaceSandboxName(organizationId));
+  const sandbox = await sandboxes().find(sandboxNameOf({ organizationId, taskId: null, personId }));
   const current = sandbox ? (await sandbox.readFile(`${LOGIN_DIR}/${slug}.status`))?.toString("utf8").trim() : null;
   if (!sandbox || current !== "needs_code") return { error: "That sign-in isn't waiting for a code any more. Ask the Chief of Staff to sign in again." };
   await sandbox.writeFiles([

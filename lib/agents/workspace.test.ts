@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { sendWorkspaceLoginCode } from "@/lib/agents/browser-steps";
+import { sendLoginCode } from "@/lib/agents/browser-steps";
 import { createChiefOfStaff, workspaceOf } from "@/lib/agents/chief-of-staff";
 import { setScheduler } from "@/lib/agents/dispatch";
 import { closeSandbox } from "@/lib/agents/sandbox-steps";
@@ -9,7 +9,7 @@ import type { SandboxSession } from "@/lib/agents/toolkit";
 import { readLogin, saveCredentials, saveIntegration } from "@/lib/integrations";
 import { createOrganization, getOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
-import { setSandboxProvider, workspaceSandboxName } from "@/lib/sandbox";
+import { personalSandboxName, setSandboxProvider } from "@/lib/sandbox";
 import { listTasks } from "@/lib/tasks";
 import { useTestDb } from "@/test/db";
 import { fakeSandboxes } from "@/test/fake-sandbox";
@@ -91,7 +91,8 @@ describe("the Chief of Staff's workspace", () => {
     await saveCredentials(ORG, docs.id, { username: "ahmed@cedar.example", password: PASSWORD });
     const { sandboxes, seen } = masttroDocs();
     setSandboxProvider(sandboxes.provider);
-    const name = workspaceSandboxName(ORG);
+    // It works in Ahmed's own sandbox.
+    const name = personalSandboxName(person.id);
 
     // A chat turn, as the chat route runs it: the sandbox is closed when the turn ends.
     const turn = async (steps: Step[], prompt: string) => {
@@ -113,7 +114,7 @@ describe("the Chief of Staff's workspace", () => {
     expect(JSON.stringify(first.model.doGenerateCalls)).not.toContain(PASSWORD);
 
     // The code goes from the card straight to the browser; then the Chief of Staff finishes signing in and reads the docs.
-    expect(await sendWorkspaceLoginCode(ORG, "masttro-docs", "123 456")).toEqual({});
+    expect(await sendLoginCode(ORG, person.id, "masttro-docs", "123 456")).toEqual({});
     const second = await turn(
       [
         [["browser_login", { login: "masttro-docs" }]],
@@ -138,10 +139,11 @@ describe("the Chief of Staff's workspace", () => {
 
   it("refuses a code when no sign-in is waiting for one", async () => {
     await createOrganization({ id: ORG, name: "Cedar Legacy" });
+    const person = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
     setSandboxProvider(fakeSandboxes().provider);
-    expect(await sendWorkspaceLoginCode(ORG, "masttro-docs", "123456")).toEqual({
+    expect(await sendLoginCode(ORG, person.id, "masttro-docs", "123456")).toEqual({
       error: "That sign-in isn't waiting for a code any more. Ask the Chief of Staff to sign in again.",
     });
-    expect(await sendWorkspaceLoginCode(ORG, "masttro-docs", "not a code!")).toEqual({ error: "That doesn't look like a sign-in code." });
+    expect(await sendLoginCode(ORG, person.id, "masttro-docs", "not a code!")).toEqual({ error: "That doesn't look like a sign-in code." });
   });
 });

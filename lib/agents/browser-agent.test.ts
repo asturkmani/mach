@@ -10,8 +10,8 @@ import { getBrowserSession } from "@/lib/browser-sessions";
 import { listTaskFiles } from "@/lib/files";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
-import { setSandboxProvider, workspaceSandboxName } from "@/lib/sandbox";
-import { sendWorkspaceLoginCode } from "@/lib/agents/browser-steps";
+import { personalSandboxName, setSandboxProvider } from "@/lib/sandbox";
+import { sendLoginCode } from "@/lib/agents/browser-steps";
 import { saveCredentials, saveIntegration } from "@/lib/integrations";
 import { createTask, getTask, listMessages } from "@/lib/tasks";
 import { replyToTask } from "@/lib/work";
@@ -236,7 +236,7 @@ describe("the browser agent", () => {
   });
 
   it("for the Chief of Staff, takes the code from the chat's code card and signs in, in the same session", async () => {
-    const { clerk } = await setUp();
+    const { clerk, ahmed } = await setUp();
     const login = await saveIntegration(ORG, {
       kind: "login",
       name: "Masttro (web)",
@@ -248,7 +248,8 @@ describe("the browser agent", () => {
     await saveCredentials(ORG, login.id, { username: "ahmed@cedar.example", password: "pw" });
     const { sandboxes, site } = await ledgerSandboxes();
     setSandboxProvider(sandboxes.provider);
-    const workspace = { organizationId: ORG, taskId: null, agentId: null, agentName: "Chief of Staff" };
+    // The Chief of Staff talking with Ahmed works in Ahmed's own sandbox.
+    const workspace = { organizationId: ORG, taskId: null, agentId: null, agentName: "Chief of Staff", personId: ahmed.id };
     const using = sandboxUser(workspace, {});
 
     setBrowserAgentModel(
@@ -260,9 +261,9 @@ describe("the browser agent", () => {
     const first = await runBrowserAgent(workspace, using, { task: "Check the cash balance in Masttro", login: "masttro-web" }, { durable: false, logins: null });
     expect(first).toMatchObject({ status: "needs_input", needsCode: { slug: "masttro-web", name: "Masttro (web)" } });
 
-    // The person types the code into the card: it goes straight to the waiting sign-in in the workspace sandbox.
-    expect(await sendWorkspaceLoginCode(ORG, "masttro-web", "123 456")).toEqual({});
-    expect(sandboxes.machines.get(workspaceSandboxName(ORG))).toBeDefined();
+    // Ahmed types the code into the card: it goes straight to the sign-in waiting in his own sandbox.
+    expect(await sendLoginCode(ORG, ahmed.id, "masttro-web", "123 456")).toEqual({});
+    expect(sandboxes.machines.get(personalSandboxName(ahmed.id))).toBeDefined();
 
     setBrowserAgentModel(
       scriptedModel([

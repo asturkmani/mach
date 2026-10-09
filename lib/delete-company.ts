@@ -2,7 +2,7 @@ import "server-only";
 
 import { agentmailConfigured, deleteInbox } from "@/lib/channels/agentmail";
 import { getDb } from "@/lib/db";
-import { sandboxes, sandboxNameFor, workspaceSandboxName } from "@/lib/sandbox";
+import { personalSandboxName, sandboxes, sandboxNameFor, workspaceSandboxName } from "@/lib/sandbox";
 import { removePrefix } from "@/lib/storage";
 
 // Deleting a company deletes everything it has in Mach1: its job sandboxes and
@@ -19,7 +19,7 @@ export const companyPrefix = (organizationId: string) => `orgs/${organizationId}
 export type DeletedCompany = { sandboxes: number; files: number; problems: string[] };
 
 /**
- * The company's sandboxes: every job's that has one, and the workspace. `live`
+ * The company's sandboxes: every job's that has one, each person's own, and the old workspace. `live`
  * are the ones an agent run going (or about to start) might still create.
  */
 async function sandboxNames(organizationId: string): Promise<{ all: string[]; live: string[] }> {
@@ -28,8 +28,10 @@ async function sandboxNames(organizationId: string): Promise<{ all: string[]; li
      from tasks where organization_id = $1 and (sandbox_name is not null or run_started_at is not null or status = 'ready')`,
     [organizationId],
   );
-  const workspace = workspaceSandboxName(organizationId);
-  const live = [...rows.filter((r) => r.live).map((r) => sandboxNameFor(r.id)), workspace];
+  const people = await getDb().query<{ id: string }>("select id from people where organization_id = $1", [organizationId]);
+  // Each person's own sandbox, and the old shared workspace.
+  const own = [...people.map((p) => personalSandboxName(p.id)), workspaceSandboxName(organizationId)];
+  const live = [...rows.filter((r) => r.live).map((r) => sandboxNameFor(r.id)), ...own];
   return { all: [...new Set([...rows.flatMap((r) => (r.sandbox_name ? [r.sandbox_name] : [])), ...live])], live };
 }
 

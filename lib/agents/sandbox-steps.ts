@@ -257,12 +257,12 @@ async function connectSources(context: AgentContext, sandbox: JobSandbox): Promi
 }
 
 /**
- * The GitHub of the person a task run is for, if they connected it. Only on a
- * task: its sandbox runs one run at a time, while the Chief of Staff's
- * workspace sandbox is shared by everyone in the company.
+ * The GitHub of the person this work is for, if they connected it: a task
+ * run's person (its sandbox runs one run at a time), or the person whose own
+ * sandbox this is (only their turns run there). Never the shared workspace.
  */
 async function runGitHub(context: AgentContext) {
-  if (!context.taskId || !context.personId) return null;
+  if (!context.personId) return null;
   return githubToken(context.organizationId, context.personId);
 }
 

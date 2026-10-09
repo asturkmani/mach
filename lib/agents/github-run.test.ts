@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setScheduler } from "@/lib/agents/dispatch";
 import { runAgentOnTask } from "@/lib/agents/runner";
+import { startSandbox } from "@/lib/agents/sandbox-steps";
 import { createAgent } from "@/lib/agents/store";
 import { saveGitHubConnection } from "@/lib/github";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
-import { setSandboxProvider } from "@/lib/sandbox";
+import { personalSandboxName, setSandboxProvider } from "@/lib/sandbox";
 import { addMessage, createTask } from "@/lib/tasks";
 import { useTestDb } from "@/test/db";
 import { fakeSandboxes } from "@/test/fake-sandbox";
@@ -57,5 +58,22 @@ describe("task runs and people's GitHub", () => {
     expect(policies[1]).toMatchObject({ allow: { "github.com": [{ transform: [{ headers: { Authorization: sign("ghu_omar_token") } }] }] } });
     expect(JSON.stringify(policies[1])).not.toContain(Buffer.from("x-access-token:ghu_sara_token").toString("base64"));
     expect(machine().policies.at(-1)).toBe("allow-all");
+  });
+
+  it("gives each person's Chief of Staff their own sandbox, with only their GitHub", async () => {
+    await createOrganization({ id: ORG, name: "Cedar Legacy" });
+    const sara = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
+    const omar = await linkMember(ORG, { id: "user_omar", email: "omar@cedar.example", name: "Omar" });
+    await saveGitHubConnection(ORG, sara.id, tokens("ghu_sara_token"), { id: "1", login: "sara-h", name: "Sara" });
+    const sandboxes = fakeSandboxes();
+    setSandboxProvider(sandboxes.provider);
+    const chief = (personId?: string) => ({ organizationId: ORG, taskId: null, agentId: null, agentName: "Chief of Staff", personId });
+
+    await startSandbox(chief(sara.id));
+    await startSandbox(chief(omar.id));
+    const sign = Buffer.from("x-access-token:ghu_sara_token").toString("base64");
+    expect(JSON.stringify(sandboxes.machines.get(personalSandboxName(sara.id))!.policies)).toContain(sign);
+    // Omar hasn't connected GitHub: his sandbox gets none, certainly not Sara's.
+    expect(sandboxes.machines.get(personalSandboxName(omar.id))!.policies).toEqual(["allow-all"]);
   });
 });

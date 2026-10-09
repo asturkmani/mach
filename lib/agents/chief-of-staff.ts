@@ -721,14 +721,14 @@ function workTools(context: Context) {
 const ONBOARDING_ONLY = ["set_company_name", "update_section", "complete_onboarding"] as const;
 const AFTER_ONBOARDING_ONLY = ["suggest_profile_update"] as const;
 
-/** Where the Chief of Staff works: no task, no agent record; its own workspace sandbox for the company. */
+/** Where the Chief of Staff works: no task, no agent record; the own sandbox of the person it's talking with. */
 export function workspaceOf(context: Pick<Context, "organization" | "person">): AgentContext {
   return { organizationId: context.organization.id, taskId: null, agentId: null, agentName: "Chief of Staff", personId: context.person?.id };
 }
 
 /**
  * The Chief of Staff: the same agent toolkit as every agent (research, data
- * sources, a sandbox and its browser), working in the company's workspace,
+ * sources, a sandbox and its browser), working in the person's own sandbox,
  * plus its own tools for the company: the profile, people, tasks, agents and
  * integrations. Pass a sandbox session to close its sandbox when the turn ends.
  */
