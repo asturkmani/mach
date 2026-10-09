@@ -40,6 +40,49 @@ export function isStandalone(): boolean {
   );
 }
 
+/**
+ * An iPhone home-screen app keeps the smaller height it had while the keyboard
+ * was open (a WebKit bug): the bottom bar floats up over a dead band until the
+ * app is restarted. When the keyboard closes and the window is still shorter
+ * than it has been at this width, hiding and showing the full-height frame for
+ * a moment makes WebKit measure the screen again. Scroll positions are kept.
+ */
+export function useKeyboardViewportFix(frame: React.RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    if (!isStandalone() || !isAppleMobile()) return;
+    const tallest = new Map<number, number>();
+    const measure = () => tallest.set(window.innerWidth, Math.max(tallest.get(window.innerWidth) ?? 0, window.innerHeight));
+    measure();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const restore = () => {
+      const view = frame.current;
+      if (!view || (tallest.get(window.innerWidth) ?? 0) - window.innerHeight <= 4) return;
+      const scrolled = [...view.querySelectorAll<HTMLElement>("*")].filter((el) => el.scrollTop > 0).map((el) => [el, el.scrollTop] as const);
+      view.style.display = "none";
+      void view.offsetHeight; // a synchronous reflow is what makes WebKit recompute the viewport
+      view.style.display = "";
+      for (const [el, top] of scrolled) el.scrollTop = top;
+    };
+    const onBlur = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.matches?.("input, textarea, select, [contenteditable=true]")) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        // Still typing somewhere else (focus moved to another field): the keyboard is open.
+        if ((document.activeElement as HTMLElement | null)?.matches?.("input, textarea, select, [contenteditable=true]")) return;
+        restore();
+      }, 150);
+    };
+    window.addEventListener("resize", measure);
+    document.addEventListener("focusout", onBlur);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", measure);
+      document.removeEventListener("focusout", onBlur);
+    };
+  }, [frame]);
+}
+
 /** iPhones and iPads install from Safari's share menu; there's no prompt to show. */
 export function isAppleMobile(): boolean {
   if (typeof navigator === "undefined") return false;

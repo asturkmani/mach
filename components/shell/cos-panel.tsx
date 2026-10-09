@@ -223,15 +223,10 @@ export function CosPanel({
           <h2 className="label text-ink">Chief of Staff</h2>
           <span className="label text-faint">{onboarded ? "" : "· Onboarding"}</span>
         </div>
-        <div className="flex items-center gap-4">
-          <Link href="/company" className="label text-faint hover:text-ink" title="The company profile the Chief of Staff keeps">
-            What I know
-          </Link>
-          <button onClick={() => setCosOpen(false)} aria-label="Close" className="flex items-center gap-2 text-faint hover:text-ink">
-            <kbd className="kbd">C</kbd>
-            <X size={16} />
-          </button>
-        </div>
+        <button onClick={() => setCosOpen(false)} aria-label="Close" title="Close (Esc)" className="flex items-center gap-2 text-faint hover:text-ink">
+          <kbd className="kbd hidden md:inline-flex">C</kbd>
+          <X size={16} />
+        </button>
       </header>
 
       <div ref={scrollRef} className="scroll-quiet min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">

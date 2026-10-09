@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { rememberTimezoneAction } from "@/app/(app)/actions";
 
 import { CosPanel } from "./cos-panel";
-import { DeviceSetup, OfflineBanner } from "./device";
+import { DeviceSetup, OfflineBanner, useKeyboardViewportFix } from "./device";
 import { Flyby } from "./flyby";
 import { InboxNotifier } from "./inbox-notifier";
 import { MobileNav } from "./mobile-nav";
@@ -23,10 +23,13 @@ function Layout({ children, cos }: { children: React.ReactNode; cos: CosProps })
   const phone = useIsPhone();
   const [opened, setOpened] = useState(cosOpen);
   if (cosOpen && !opened) setOpened(true);
+  const frame = useRef<HTMLDivElement>(null);
+  useKeyboardViewportFix(frame);
   return (
-    <div className="flex h-dvh">
+    <div ref={frame} className="flex h-dvh">
       <Rail />
-      <main className="flex min-w-0 flex-1 flex-col pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[calc(3.5rem+env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] md:py-3 md:pr-3 md:pl-0">
+      {/* On a phone the strip under the status bar takes the page's own colour. */}
+      <main className="flex min-w-0 flex-1 flex-col bg-panel pt-[env(safe-area-inset-top)] md:bg-transparent pr-[env(safe-area-inset-right)] pb-[calc(3.5rem+env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] md:py-3 md:pr-3 md:pl-0">
         <div className="frame flex min-h-0 flex-1 flex-col">{children}</div>
       </main>
       {/* Once opened, the panel stays mounted and is only hidden when closed, so a reply keeps streaming. */}
@@ -36,7 +39,7 @@ function Layout({ children, cos }: { children: React.ReactNode; cos: CosProps })
             !cosOpen
               ? "hidden"
               : phone
-                ? "fixed inset-x-0 top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 bg-bg pt-[env(safe-area-inset-top)]"
+                ? "fixed inset-x-0 top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 bg-panel pt-[env(safe-area-inset-top)]"
                 : // Hidden by CSS on a phone until hydrated, so the panel never flashes there.
                   "fixed inset-y-0 right-0 z-20 hidden w-full max-w-[420px] py-3 pr-3 pl-3 md:block lg:static lg:w-[400px] lg:shrink-0 lg:pl-0 xl:w-[440px] xl:max-w-none"
           }
