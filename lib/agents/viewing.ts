@@ -16,7 +16,7 @@ const SETTINGS: Record<string, string> = {
 };
 
 /** A short description of the screen at this path, or null when it's not one worth naming. */
-export async function describeViewing(organizationId: string, path: string): Promise<string | null> {
+export async function describeViewing(organizationId: string, path: string, viewer?: string): Promise<string | null> {
   let url: URL;
   try {
     url = new URL(path, "https://mach.local");
@@ -28,7 +28,7 @@ export async function describeViewing(organizationId: string, path: string): Pro
 
   if (!section) return "Home: what needs them, then the company's work as a board or list";
   if (section === "tasks" && /^\d+$/.test(id ?? "")) {
-    const task = await getTaskByNumber(organizationId, Number(id));
+    const task = await getTaskByNumber(organizationId, Number(id), { viewer });
     if (!task) return null;
     const people = task.members.filter((m) => m.type === "person").map((m) => m.name);
     const agents = task.members.filter((m) => m.type === "agent").map((m) => m.name);

@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     listSuggestionStatuses(organization.id, person.id),
     anyRunning(organization.id),
     listIntegrations(organization.id),
-    listWorking(organization.id),
+    listWorking(organization.id, { viewer: person.id }),
     listPages(organization.id),
   ]);
 

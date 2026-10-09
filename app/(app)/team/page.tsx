@@ -38,8 +38,8 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   const [people, agents, tasks, jobs, roles] = await Promise.all([
     listPeople(organization.id),
     listAgents(organization.id),
-    listTasks(organization.id, { closedLimit: 0 }),
-    listScheduledJobs(organization.id),
+    listTasks(organization.id, { closedLimit: 0, viewer: me.id }),
+    listScheduledJobs(organization.id, { viewer: me.id }),
     memberRoles(organization.id).catch(() => new Map<string, { membershipId: string; role: "admin" | "member" }>()),
   ]);
   const roleOf = (workosUserId: string | null) => (workosUserId ? (roles.get(workosUserId)?.role ?? null) : null);

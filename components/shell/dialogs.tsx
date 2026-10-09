@@ -41,6 +41,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const [agents, setAgents] = useState<string[]>([]);
   const [worker, setWorker] = useState(false);
   const [workerRole, setWorkerRole] = useState("");
+  const [shared, setShared] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, start] = useTransition();
 
@@ -56,6 +57,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
         personIds: people,
         agentIds: agents,
         workerRole: worker ? workerRole : null,
+        shared,
       });
       if (result.error) return setError(result.error);
       onClose();
@@ -131,6 +133,12 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             <p className="text-xs text-faint">No agent: it goes straight to the people on it.</p>
           )}
         </div>
+
+        <label className="flex w-fit items-center gap-2 text-sm">
+          <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} />
+          Share with the company
+          <span className="text-faint">{shared ? "(everyone can see it)" : "(only you and the people on it)"}</span>
+        </label>
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
           <div className="flex items-center gap-1">

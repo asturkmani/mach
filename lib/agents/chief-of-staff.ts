@@ -49,7 +49,7 @@ import { getGitHubConnection } from "@/lib/github";
 import { updateProfile } from "@/lib/profile/store";
 import { describeSchedule, getSchedule } from "@/lib/schedules";
 import type { SessionUser } from "@/lib/session";
-import { findTasks, getTaskByNumber, isRunning, listMessages, PRIORITIES, TASK_STATUSES, type Task } from "@/lib/tasks";
+import { findTasks, getTaskByNumber, isRunning, listMessages, PRIORITIES, setTaskVisibility, TASK_STATUSES, type Task } from "@/lib/tasks";
 import { createTaskWithTeam, replyToTask, resolveTeam, suggestProfileUpdate, WorkError } from "@/lib/work";
 import { elapsed, taskState } from "@/lib/work-overview";
 
@@ -145,6 +145,7 @@ function workInstructions(context: Context): string {
   return `Tasks and agents:
 - When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
 - Answer quick questions yourself. Create a task only for real work.
+- Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company") with share_task.
 - If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
 - For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on create_task. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the agent builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
 - Jobs share a company data drive: datasets one job saves there are available to every other job.
@@ -354,6 +355,10 @@ function workTools(context: Context) {
           .optional()
           .describe("Add a new worker agent with this role, e.g. 'Financial analysis', when no defined agent fits."),
         files: z.array(z.string()).optional().describe("Exact names of company files the job should start from."),
+        shareWithCompany: z
+          .boolean()
+          .optional()
+          .describe("Share it with the whole company: work meant for everyone, or company work they want visible. Otherwise only they and the people on it see it."),
         repeat: z
           .object({
             cron: z.string().describe("Five-field cron in the timezone, e.g. '0 16 * * 1-5' for weekdays at 16:00."),
@@ -363,7 +368,7 @@ function workTools(context: Context) {
           .optional()
           .describe("Makes it a recurring job. The first run starts now."),
       }),
-      execute: async ({ title, description, priority, people, agents, workerRole, files, repeat }) => {
+      execute: async ({ title, description, priority, people, agents, workerRole, files, repeat, shareWithCompany }) => {
         try {
           const found = await findFiles(orgId, files ?? []);
           const missing = (files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
@@ -378,6 +383,7 @@ function workTools(context: Context) {
             workerRole,
             inputFileIds: found.map((f) => f.id),
             schedule: repeat,
+            visibility: shareWithCompany ? "company" : "private",
             by,
           });
           return {
@@ -440,6 +446,18 @@ function workTools(context: Context) {
             : `Started task #${output.task.number}: ${output.agent} is on it as @${output.github}. It reports back with a pull request${context.channel === "whatsapp" ? ", here on WhatsApp too" : ""}.`,
       }),
     }),
+    share_task: tool({
+      description:
+        "Share a task with the whole company, or make it private again (only whoever created it and the people on it see it). Only for tasks the person you're talking to created.",
+      inputSchema: z.object({ number: z.number().int().positive(), withCompany: z.boolean() }),
+      execute: async ({ number, withCompany }) => {
+        const task = await getTaskByNumber(orgId, number, { viewer: context.person?.id });
+        if (!task) return `There's no task #${number}.`;
+        if (!context.person || task.createdByPersonId !== context.person.id) return `Only whoever created #${number}, or an admin in the app, can change who sees it.`;
+        await setTaskVisibility(orgId, task.id, withCompany ? "company" : "private");
+        return withCompany ? `#${number} is shared with the company.` : `#${number} is private to ${context.person.name} and the people on it.`;
+      },
+    }),
     find_tasks: tool({
       description:
         "Search all of the company's work: open and (with include_closed) finished tasks, by words in the title, description, summary or thread, a task number, a status, or someone on it.",
@@ -451,7 +469,7 @@ function workTools(context: Context) {
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async ({ include_closed, ...filters }) => {
-        const tasks = await findTasks(orgId, { ...filters, includeClosed: include_closed });
+        const tasks = await findTasks(orgId, { ...filters, includeClosed: include_closed, viewer: context.person?.id });
         const now = Date.now();
         return tasks.length
           ? tasks
@@ -467,7 +485,7 @@ function workTools(context: Context) {
       description: "Read one task in full: what it's for, its status and what's happening on it now, its summary and progress, schedule, files, and the latest of its thread (questions, updates, results).",
       inputSchema: z.object({ number: z.number().int().positive(), messages: z.number().int().min(1).max(40).optional().describe("How many of the latest thread messages (default 12).") }),
       execute: async ({ number, messages: count = 12 }) => {
-        const task = await getTaskByNumber(orgId, number);
+        const task = await getTaskByNumber(orgId, number, { viewer: context.person?.id });
         if (!task) return `There's no task #${number}.`;
         const [thread, schedule, files] = await Promise.all([listMessages(task.id), getSchedule(task.id), listTaskFiles(orgId, task.id)]);
         const now = Date.now();
@@ -494,7 +512,7 @@ function workTools(context: Context) {
         "Post a message on a task's thread as the person you're talking to, e.g. to tell its agent to change course, answer its question or add a detail. It wakes the task's agent, or queues for it if it's working. Only post what they asked you to say; @Name mentions work as in the thread.",
       inputSchema: z.object({ number: z.number().int().positive(), message: z.string().min(1).max(4000) }),
       execute: async ({ number, message }) => {
-        const task = await getTaskByNumber(orgId, number);
+        const task = await getTaskByNumber(orgId, number, { viewer: context.person?.id });
         if (!task) return { error: `There's no task #${number}.` };
         const working = isRunning(task);
         try {

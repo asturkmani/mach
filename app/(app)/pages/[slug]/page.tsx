@@ -12,14 +12,14 @@ import { getTask } from "@/lib/tasks";
 // its versions) over the page itself, in a sandboxed frame. ?v= shows an
 // older version.
 export default async function PagePage({ params, searchParams }: PageProps<"/pages/[slug]">) {
-  const { organization } = await requireAppContext();
+  const { organization, person } = await requireAppContext();
   const [{ slug }, query] = await Promise.all([params, searchParams]);
   const page = await getPage(organization.id, slug);
   if (!page || page.version === 0) notFound();
   const [files, versions, task, schedule, ideas] = await Promise.all([
     pageDataStatus(organization.id, page),
     listPageVersions(organization.id, slug),
-    page.taskId ? getTask(organization.id, page.taskId) : null,
+    page.taskId ? getTask(organization.id, page.taskId, { viewer: person.id }) : null,
     page.taskId ? getSchedule(page.taskId) : null,
     // Cached; when out of date the old ones show and new ones are written after the response.
     pageIdeas(organization.id, { later: (work) => after(work), neverWait: true }).catch(() => []),

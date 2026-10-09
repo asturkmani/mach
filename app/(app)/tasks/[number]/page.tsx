@@ -24,9 +24,9 @@ const versionView = (v: FileVersion) => ({
 });
 
 export default async function TaskPage({ params, searchParams }: PageProps<"/tasks/[number]">) {
-  const { organization, person } = await requireAppContext();
+  const { organization, person, isAdmin } = await requireAppContext();
   const { number } = await params;
-  const task = await getTaskByNumber(organization.id, Number(number));
+  const task = await getTaskByNumber(organization.id, Number(number), { viewer: person.id });
   if (!task) notFound();
   // Opening the task answers any @-mention of this person on it.
   await markMentionsSeen(task.id, person.id);
@@ -65,6 +65,8 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
         memory: task.memory,
         archived: Boolean(task.archivedAt),
         hasSandbox: Boolean(task.sandboxName),
+        visibility: task.visibility,
+        canShare: task.createdByPersonId === person.id || isAdmin,
         schedule: schedule && {
           cron: schedule.cron,
           timezone: schedule.timezone,

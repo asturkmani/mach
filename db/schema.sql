@@ -492,3 +492,7 @@ alter table people add column if not exists memory text not null default '';
 -- Long conversations: the model sees the latest messages in full and a summary of everything before.
 alter table chats add column if not exists summary text not null default '';
 alter table chats add column if not exists summarized_through text; -- the id of the last message the summary covers
+
+-- Who can see a task: everyone in the company, or (private) only whoever created it, the people on it
+-- and anyone @-mentioned on it. Tasks from before this are company tasks.
+alter table tasks add column if not exists visibility text not null default 'company' check (visibility in ('company', 'private'));

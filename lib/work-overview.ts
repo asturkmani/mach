@@ -17,8 +17,8 @@ export type ScheduledJob = {
 };
 
 /** Every job that repeats on a schedule, with its schedule and the page it refreshes. */
-export async function listScheduledJobs(organizationId: string): Promise<ScheduledJob[]> {
-  const tasks = await listScheduledTasks(organizationId);
+export async function listScheduledJobs(organizationId: string, { viewer }: { viewer?: string } = {}): Promise<ScheduledJob[]> {
+  const tasks = await listScheduledTasks(organizationId, { viewer });
   if (tasks.length === 0) return [];
   const [schedules, pages] = await Promise.all([
     schedulesFor(tasks.map((t) => t.id)),

@@ -19,6 +19,19 @@ export const CLOSED_STATUSES: TaskStatus[] = ["done", "cancelled"];
 export type TaskKind = "task" | "suggestion" | "join_request";
 export type TaskOption = { label: string; recommended?: boolean };
 
+export type TaskVisibility = "company" | "private";
+
+/**
+ * Whether the person in parameter `param` (e.g. "$2") may see task t: every
+ * company task, and a private one they created, are on, or were mentioned on.
+ */
+export const visibleTo = (param: string) => `(t.visibility = 'company' or t.created_by_person_id = ${param}
+  or exists (select 1 from task_members vm where vm.task_id = t.id and vm.person_id = ${param})
+  or exists (select 1 from task_mentions vt where vt.task_id = t.id and vt.person_id = ${param}))`;
+
+/** Only what this person may see (a person's id), or everything (internal work: runs, schedules). */
+type Viewer = { viewer?: string };
+
 export type TaskMember =
   | { type: "person"; id: string; name: string; role: string }
   | { type: "agent"; id: string; name: string; role: string; kind: AgentKind; status: AgentStatus };
@@ -55,6 +68,8 @@ export type Task = {
   pendingLogin: string | null;
   /** Asked for over WhatsApp: whoever asked hears there when it's ready or needs them. */
   replyByWhatsApp: boolean;
+  /** Everyone in the company sees it, or (private) only whoever created it, the people on it and anyone mentioned. */
+  visibility: TaskVisibility;
   /** Who @-mentioned the person this list is for, when that's why it needs them. */
   mentionedBy?: string | null;
   createdAt: Date;
@@ -114,6 +129,7 @@ type TaskRow = {
   repeats: boolean;
   pending_login: string | null;
   reply_by_whatsapp: boolean;
+  visibility: TaskVisibility;
   mentioned_by?: string | null;
   created_at: Date;
   updated_at: Date;
@@ -136,7 +152,7 @@ const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary,
   t.priority, t.options, t.payload, t.later_until, t.created_by_person_id, t.created_by_agent_id, t.run_agent_id,
   t.run_started_at, t.run_began_at, t.run_activity, t.agent_turns, t.memory, t.sandbox_name, t.archived_at,
   exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats, t.pending_login,
-  t.reply_by_whatsapp, t.created_at, t.updated_at, t.closed_at`;
+  t.reply_by_whatsapp, t.visibility, t.created_at, t.updated_at, t.closed_at`;
 
 /** Sorts urgent first, then high, medium, low. */
 export const PRIORITY_ORDER = `case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`;
@@ -172,6 +188,7 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     repeats: row.repeats,
     pendingLogin: row.pending_login,
     replyByWhatsApp: row.reply_by_whatsapp,
+    visibility: row.visibility,
     mentionedBy: row.mentioned_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -236,37 +253,51 @@ export function isRunning(task: Pick<Task, "runStartedAt">, now = Date.now()): b
 // ---------------------------------------------------------------------------
 // Reading
 
-export async function getTask(organizationId: string, id: string): Promise<Task | null> {
+export async function getTask(organizationId: string, id: string, { viewer }: Viewer = {}): Promise<Task | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const rows = await getDb().query<TaskRow>(
-    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.id = $2`,
-    [organizationId, id],
+    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.id = $2 and ($3::uuid is null or ${visibleTo("$3")})`,
+    [organizationId, id, viewer ?? null],
   );
   return (await withMembers(rows))[0] ?? null;
 }
 
-export async function getTaskByNumber(organizationId: string, number: number): Promise<Task | null> {
+export async function getTaskByNumber(organizationId: string, number: number, { viewer }: Viewer = {}): Promise<Task | null> {
   if (!Number.isSafeInteger(number)) return null;
   const rows = await getDb().query<TaskRow>(
-    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.number = $2`,
-    [organizationId, number],
+    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.number = $2 and ($3::uuid is null or ${visibleTo("$3")})`,
+    [organizationId, number, viewer ?? null],
   );
   return (await withMembers(rows))[0] ?? null;
 }
 
-/** Every task in the organization, open ones first. Closed tasks are limited to the most recent. */
-export async function listTasks(organizationId: string, { closedLimit = 30 } = {}): Promise<Task[]> {
+/** Whether this person may see the task (and so act on it). */
+export async function canSeeTask(organizationId: string, taskId: string, personId: string): Promise<boolean> {
+  return Boolean(await getTask(organizationId, taskId, { viewer: personId }));
+}
+
+/** Every task in the organization (that the viewer may see), open ones first. Closed tasks are limited to the most recent. */
+export async function listTasks(organizationId: string, { closedLimit = 30, viewer }: { closedLimit?: number } & Viewer = {}): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
     `(select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
-        and t.status not in ('done', 'cancelled')
+        and t.status not in ('done', 'cancelled') and ($3::uuid is null or ${visibleTo("$3")})
       order by ${PRIORITY_ORDER}, t.updated_at desc)
      union all
      (select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
-        and t.status in ('done', 'cancelled')
+        and t.status in ('done', 'cancelled') and ($3::uuid is null or ${visibleTo("$3")})
       order by t.closed_at desc nulls last limit $2)`,
-    [organizationId, closedLimit],
+    [organizationId, closedLimit, viewer ?? null],
   );
   return withMembers(rows);
+}
+
+/** Shares a task with the whole company, or makes it private to whoever created it and the people on it. */
+export async function setTaskVisibility(organizationId: string, taskId: string, visibility: TaskVisibility): Promise<void> {
+  await getDb().query("update tasks set visibility = $3, updated_at = now() where organization_id = $1 and id = $2", [
+    organizationId,
+    taskId,
+    visibility,
+  ]);
 }
 
 const NEEDS_PERSON = `
@@ -343,25 +374,27 @@ export async function listInProgress(organizationId: string, personId: string): 
   return withMembers(rows);
 }
 
-export async function searchTasks(organizationId: string, query: string, limit = 20): Promise<Task[]> {
+export async function searchTasks(organizationId: string, query: string, limit = 20, { viewer }: Viewer = {}): Promise<Task[]> {
   const q = query.trim();
   const number = Number(q.replace(/^#/, ""));
   const rows = await getDb().query<TaskRow>(
     `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1
        and ($2 = '' or t.title ilike '%' || $2 || '%' or t.summary ilike '%' || $2 || '%' or t.number = $3)
+       and ($5::uuid is null or ${visibleTo("$5")})
      order by (t.status in ('done', 'cancelled')), t.updated_at desc limit $4`,
-    [organizationId, q, Number.isSafeInteger(number) ? number : -1, limit],
+    [organizationId, q, Number.isSafeInteger(number) ? number : -1, limit, viewer ?? null],
   );
   return withMembers(rows);
 }
 
 /** Tasks that repeat on a schedule (archived ones aside), by number. */
-export async function listScheduledTasks(organizationId: string): Promise<Task[]> {
+export async function listScheduledTasks(organizationId: string, { viewer }: Viewer = {}): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
     `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
        and exists (select 1 from task_schedules s where s.task_id = t.id)
+       and ($2::uuid is null or ${visibleTo("$2")})
      order by t.number`,
-    [organizationId],
+    [organizationId, viewer ?? null],
   );
   return withMembers(rows);
 }
@@ -374,6 +407,8 @@ export type TaskFilters = {
   member?: string;
   includeClosed?: boolean;
   limit?: number;
+  /** Only tasks this person may see. */
+  viewer?: string;
 };
 
 /** Every matching task, open ones first, newest activity first. */
@@ -390,6 +425,7 @@ export async function findTasks(organizationId: string, filters: TaskFilters): P
        and ($6::text is null or exists (
              select 1 from task_members tm left join people p on p.id = tm.person_id left join agents a on a.id = tm.agent_id
              where tm.task_id = t.id and lower(coalesce(p.name, a.name)) = lower($6)))
+       and ($8::uuid is null or ${visibleTo("$8")})
      order by (t.status in ('done', 'cancelled')), t.updated_at desc limit $7`,
     [
       organizationId,
@@ -399,17 +435,19 @@ export async function findTasks(organizationId: string, filters: TaskFilters): P
       filters.includeClosed ?? false,
       filters.member?.trim() || null,
       Math.min(Math.max(filters.limit ?? 20, 1), 50),
+      filters.viewer ?? null,
     ],
   );
   return withMembers(rows);
 }
 
-export async function listAgentTasks(organizationId: string, agentId: string): Promise<Task[]> {
+export async function listAgentTasks(organizationId: string, agentId: string, { viewer }: Viewer = {}): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
     `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1
        and exists (select 1 from task_members m where m.task_id = t.id and m.agent_id = $2)
+       and ($3::uuid is null or ${visibleTo("$3")})
      order by (t.status in ('done', 'cancelled')), t.updated_at desc limit 50`,
-    [organizationId, agentId],
+    [organizationId, agentId, viewer ?? null],
   );
   return withMembers(rows);
 }
@@ -493,6 +531,8 @@ export type NewTask = {
   agents?: string[];
   /** Asked for over WhatsApp: tell whoever asked there when it's ready or needs them. */
   replyByWhatsApp?: boolean;
+  /** Company tasks (the default here, for Mach1's own) or private to whoever created it and the people on it. */
+  visibility?: TaskVisibility;
 };
 
 export async function createTask(organizationId: string, input: NewTask): Promise<Task> {
@@ -505,9 +545,9 @@ export async function createTask(organizationId: string, input: NewTask): Promis
     try {
       const [row] = await db.query<{ id: string }>(
         `insert into tasks (organization_id, number, kind, title, description, summary, status, priority, options,
-                            payload, created_by_person_id, created_by_agent_id, reply_by_whatsapp)
+                            payload, created_by_person_id, created_by_agent_id, reply_by_whatsapp, visibility)
          values ($1, (select coalesce(max(number), 0) + 1 from tasks where organization_id = $1), $2, $3, $4, $5, $6,
-                 $7, $8::jsonb, $9::jsonb, $10, $11, $12)
+                 $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
          returning id`,
         [
           organizationId,
@@ -522,6 +562,7 @@ export async function createTask(organizationId: string, input: NewTask): Promis
           input.createdBy?.personId ?? null,
           input.createdBy?.agentId ?? null,
           input.replyByWhatsApp ?? false,
+          input.visibility ?? "company",
         ],
       );
       id = row.id;
@@ -785,13 +826,14 @@ export async function listSuggestionStatuses(organizationId: string, personId: s
 /** The company's agent runs going now: which task, which agent, and what it's doing. */
 export async function listWorking(
   organizationId: string,
+  { viewer }: Viewer = {},
 ): Promise<{ number: number; title: string; agent: string; activity: string; since: Date | null }[]> {
   const rows = await getDb().query<{ number: number; title: string; agent: string; run_activity: string; run_began_at: Date | null }>(
     `select t.number, t.title, a.name as agent, t.run_activity, t.run_began_at
      from tasks t join agents a on a.id = t.run_agent_id
-     where t.organization_id = $1 and t.run_started_at > now() - interval '${LEASE}'
+     where t.organization_id = $1 and t.run_started_at > now() - interval '${LEASE}' and ($2::uuid is null or ${visibleTo("$2")})
      order by t.run_began_at nulls last`,
-    [organizationId],
+    [organizationId, viewer ?? null],
   );
   return rows.map((r) => ({ number: r.number, title: r.title, agent: r.agent, activity: r.run_activity, since: r.run_began_at }));
 }

@@ -48,15 +48,15 @@ export async function loadChiefOfStaff(
   const [profile, agents, tasks, jobs, files, integrations, pages, github, memory] = await Promise.all([
     loadProfile(organizationId),
     listAgents(organizationId),
-    listTasks(organizationId, { closedLimit: 0 }),
-    listScheduledJobs(organizationId),
+    listTasks(organizationId, { closedLimit: 0, viewer: context.person?.id }),
+    listScheduledJobs(organizationId, { viewer: context.person?.id }),
     listLibrary(organizationId, { limit: 30 }),
     listIntegrations(organizationId),
     listPages(organizationId),
     context.person ? getGitHubConnection(organizationId, context.person.id) : null,
     context.person ? getPersonalMemory(organizationId, context.person.id) : "",
   ]);
-  const viewing = options.viewing ? await describeViewing(organizationId, options.viewing).catch(() => null) : null;
+  const viewing = options.viewing ? await describeViewing(organizationId, options.viewing, context.person?.id).catch(() => null) : null;
   const sandbox: SandboxSession = {};
   const agent = createChiefOfStaff(
     {

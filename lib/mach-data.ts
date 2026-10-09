@@ -17,7 +17,8 @@ export const MACH_SOURCES: Record<MachSource, { load: (organizationId: string) =
   "mach:tasks": {
     load: async (organizationId: string) =>
       (await listTasks(organizationId, { closedLimit: CLOSED_TASKS }))
-        .filter((t) => t.kind === "task")
+        // Company work only: a page can be shared with everyone, so it never shows anyone's private tasks.
+        .filter((t) => t.kind === "task" && t.visibility === "company")
         .map((t) => ({
           number: t.number,
           title: t.title,

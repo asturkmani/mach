@@ -41,6 +41,7 @@ import {
   type Priority,
   type Task,
   type TaskStatus,
+  type TaskVisibility,
 } from "@/lib/tasks";
 
 // What people and the Chief of Staff do to tasks. Each operation records what
@@ -100,6 +101,8 @@ export async function createTaskWithTeam(
     schedule?: ScheduleInput;
     /** Asked for over WhatsApp: whoever asked hears there when it's ready or needs them. */
     replyByWhatsApp?: boolean;
+    /** Work someone asks for is theirs (and the people on it's) unless they share it with the company. */
+    visibility?: TaskVisibility;
     by: Actor;
   },
 ): Promise<Task> {
@@ -116,6 +119,7 @@ export async function createTaskWithTeam(
     people: [...(input.by.personId ? [input.by.personId] : []), ...own.personIds],
     agents: agentIds,
     replyByWhatsApp: input.replyByWhatsApp,
+    visibility: input.visibility ?? (input.by.personId ? "private" : "company"),
   });
   for (const fileId of input.inputFileIds ?? []) await attachToTask(organizationId, task.id, fileId, "input");
   await addMessage(task.id, { author: input.by.name, personId: input.by.personId, kind: "event", body: "Created this task." });

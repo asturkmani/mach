@@ -12,11 +12,11 @@ import { STATUS_WORDS } from "@/lib/task-words";
 import { listAgentTasks } from "@/lib/tasks";
 
 export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
-  const { organization } = await requireAppContext();
+  const { organization, person } = await requireAppContext();
   const { id } = await params;
   const agent = /^[0-9a-f-]{36}$/i.test(id) ? await getAgent(organization.id, id) : null;
   if (!agent) notFound();
-  const tasks = await listAgentTasks(organization.id, agent.id);
+  const tasks = await listAgentTasks(organization.id, agent.id, { viewer: person.id });
 
   return (
     <>

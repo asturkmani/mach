@@ -19,7 +19,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
 
   const [inbox, tasks] = await Promise.all([
     listInbox(organization.id, person.id),
-    listTasks(organization.id, { closedLimit: 25 }),
+    listTasks(organization.id, { closedLimit: 25, viewer: person.id }),
   ]);
   // Profile suggestions are approvals, not work: they only show under Needs you.
   const work = tasks.filter((t) => t.kind === "task" && t.status !== "cancelled");
