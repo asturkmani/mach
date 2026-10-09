@@ -1,3 +1,4 @@
+import { BadgeCheck } from "lucide-react";
 import Link from "next/link";
 
 import { AgentForm } from "@/components/agent-form";
@@ -8,6 +9,8 @@ import { listAgents } from "@/lib/agents/store";
 import { AGENT_TEMPLATES } from "@/lib/agents/templates";
 import { memberRoles } from "@/lib/members";
 import { listPeople } from "@/lib/people";
+import { phoneDigits } from "@/lib/channels/senders";
+import { formatPhone } from "@/lib/phone-format";
 import { requireAppContext } from "@/lib/session";
 import { listTasks } from "@/lib/tasks";
 
@@ -94,8 +97,17 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                                   {person.id === me.id && <span className="text-muted"> (you)</span>}
                                   {roleOf(person.workosUserId) === "admin" && <span className="label ml-2 text-accent-ink">Admin</span>}
                                 </div>
-                                <div className="text-xs text-faint">
-                                  {[person.email, person.phone].filter(Boolean).join(" · ") || "No contact details"}
+                                <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint">
+                                  {[person.email, person.phone && phoneDigits(person.phone) !== person.whatsapp ? person.phone : null]
+                                    .filter(Boolean)
+                                    .join(" · ") || (person.whatsapp ? "" : "No contact details")}
+                                  {person.whatsapp && (
+                                    <span className="inline-flex items-center gap-1" title="WhatsApp linked: they proved the number is theirs, so it reaches the Chief of Staff as them">
+                                      {(person.email || (person.phone && phoneDigits(person.phone) !== person.whatsapp)) && <span>·</span>}
+                                      {formatPhone(person.whatsapp)}
+                                      <BadgeCheck size={12} className="text-ok" aria-label="Verified WhatsApp" />
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>

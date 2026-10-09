@@ -26,8 +26,10 @@ async function contextFor(organizationId: string, personId: string): Promise<Chi
 }
 
 /**
- * The person (and company) a WhatsApp number belongs to. Someone in more than
- * one company reaches the one they talked to the Chief of Staff in last.
+ * The person (and company) a WhatsApp number is linked to: only a number its
+ * owner linked by sending a code from it (see whatsapp-links.ts), never the
+ * contact number anyone can type into a profile. Someone in more than one
+ * company reaches the one they talked to the Chief of Staff in last.
  */
 export async function findByPhone(phone: string): Promise<ChiefOfStaffContext | null> {
   const digits = phoneDigits(phone);
@@ -35,8 +37,7 @@ export async function findByPhone(phone: string): Promise<ChiefOfStaffContext | 
   const [row] = await getDb().query<{ organization_id: string; id: string }>(
     `select p.organization_id, p.id from people p
      left join chats c on c.organization_id = p.organization_id and c.user_id = p.workos_user_id
-     where p.status = 'active' and p.workos_user_id is not null and p.phone is not null
-       and regexp_replace(regexp_replace(p.phone, '[^0-9]', '', 'g'), '^00', '') = $1
+     where p.status = 'active' and p.workos_user_id is not null and p.whatsapp = $1
      order by c.updated_at desc nulls last, p.created_at desc limit 1`,
     [digits],
   );

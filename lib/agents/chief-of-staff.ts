@@ -235,7 +235,7 @@ function profileTools(context: Context) {
         reportsTo: z.string().optional().describe("Exact name of the person they report to, or empty."),
         responsibilities: z.string().optional().describe("What they own, in a short phrase."),
         email: z.string().optional(),
-        phone: z.string().optional().describe("Phone or WhatsApp number."),
+        phone: z.string().optional().describe("Phone number, as contact details. It never lets anyone message you as them: people link their own WhatsApp in Settings → Account."),
       }),
       execute: async ({ reportsTo, newName, ...person }) => {
         let name = person.name;
