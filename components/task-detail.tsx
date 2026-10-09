@@ -166,7 +166,9 @@ export function TaskDetail({
   };
 
   const canSend = !pending && !attachments.uploading && !attachments.failed && Boolean(reply.trim() || attachments.uploads.length);
-  const sendReply = () => {
+  // While an agent works, a reply waits for it to finish what it's doing (queued); Send now stops it
+  // at its next step and starts it again with the reply.
+  const sendReply = (now = false) => {
     if (!canSend) {
       if (attachments.uploading) toast("Still uploading…");
       else if (attachments.failed) toast("Remove the attachment that failed, then send.");
@@ -175,10 +177,11 @@ export function TaskDetail({
     const text = reply.trim();
     const uploads = attachments.uploads;
     act(
-      () => replyAction(task.id, text, uploads),
+      () => replyAction(task.id, text, uploads, { now }),
       () => {
         setReply("");
         attachments.clear();
+        if (task.running) toast(now ? `Stopping ${working ?? "the agent"} to read it` : `Queued for when ${working ?? "the agent"} is done`);
       },
     );
   };
@@ -384,7 +387,7 @@ export function TaskDetail({
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                         e.preventDefault();
-                        sendReply();
+                        sendReply(e.shiftKey && task.running);
                       }
                     }}
                     onPaste={(e) => {
@@ -396,9 +399,11 @@ export function TaskDetail({
                     }}
                     rows={3}
                     placeholder={
-                      agentMembers.length
-                        ? `Reply to ${agentMembers.map((a) => a.name).join(", ")}… (@ to mention someone)`
-                        : "Write a comment… (@ to mention someone)"
+                      task.running
+                        ? `${working ?? "An agent"} is working. Queue a message for when it's done, or send it now to stop it.`
+                        : agentMembers.length
+                          ? `Reply to ${agentMembers.map((a) => a.name).join(", ")}… (@ to mention someone)`
+                          : "Write a comment… (@ to mention someone)"
                     }
                     className="block w-full resize-none bg-transparent px-4 py-3 text-[15px] outline-none placeholder:text-faint"
                   />
@@ -432,12 +437,42 @@ export function TaskDetail({
                         className="text-muted hover:text-ink"
                       />
                       <span className="hidden text-xs text-faint md:inline">
-                        <kbd className="kbd">R</kbd> to reply · <kbd className="kbd">⌘↵</kbd> to send
+                        {task.running ? (
+                          <>
+                            <kbd className="kbd">⌘↵</kbd> to queue · <kbd className="kbd">⌘⇧↵</kbd> to send now
+                          </>
+                        ) : (
+                          <>
+                            <kbd className="kbd">R</kbd> to reply · <kbd className="kbd">⌘↵</kbd> to send
+                          </>
+                        )}
                       </span>
                     </div>
-                    <button type="submit" disabled={!canSend} className="btn btn-primary">
-                      Send
-                    </button>
+                    {task.running ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => sendReply(true)}
+                          disabled={!canSend}
+                          className="btn"
+                          title={`Stop ${working ?? "the agent"} at its next step and start again with this (⌘⇧↵)`}
+                        >
+                          Send now
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={!canSend}
+                          className="btn btn-primary"
+                          title={`${working ?? "The agent"} reads it when it finishes what it's doing (⌘↵)`}
+                        >
+                          Queue
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="submit" disabled={!canSend} className="btn btn-primary">
+                        Send
+                      </button>
+                    )}
                   </div>
                 </div>
               </form>

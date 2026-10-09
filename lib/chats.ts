@@ -44,13 +44,9 @@ export async function saveChat(id: string, messages: UIMessage[]): Promise<void>
 
 /**
  * Replies run to the end even if the browser goes away, so Stop asks through
- * the database: a reply clears the request when it starts and checks for one
- * while it runs.
+ * the database: a reply clears the request when it starts (startReply) and
+ * checks for one while it runs.
  */
-export async function clearStop(id: string): Promise<void> {
-  await getDb().query("update chats set stop_requested_at = null where id = $1", [id]);
-}
-
 export async function requestStop(id: string, organizationId: string, userId: string): Promise<void> {
   await getDb().query("update chats set stop_requested_at = now() where id = $1 and organization_id = $2 and user_id = $3", [
     id,
@@ -62,4 +58,32 @@ export async function requestStop(id: string, organizationId: string, userId: st
 export async function stopRequested(id: string): Promise<boolean> {
   const [row] = await getDb().query<{ stop: boolean }>("select stop_requested_at is not null as stop from chats where id = $1", [id]);
   return Boolean(row?.stop);
+}
+
+/** A reply starts: any earlier Stop is done with, and the chat is marked as replying until endReply. */
+export async function startReply(id: string): Promise<void> {
+  await getDb().query("update chats set stop_requested_at = null, reply_started_at = now() where id = $1", [id]);
+}
+
+export async function endReply(id: string): Promise<void> {
+  await getDb().query("update chats set reply_started_at = null where id = $1", [id]);
+}
+
+/**
+ * Waits (up to `timeoutMs`) for a reply that was asked to stop to save what it
+ * had, so a message sent with Send now doesn't race it: each reply saves the
+ * whole conversation when it ends. A reply that was never asked to stop isn't
+ * waited for, nor is a mark left by a reply that died (older than a reply can run).
+ */
+export async function waitForStoppedReply(id: string, { timeoutMs = 20_000, everyMs = 500 } = {}): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const [row] = await getDb().query<{ stopping: boolean }>(
+      `select reply_started_at > now() - interval '6 minutes' and stop_requested_at is not null as stopping
+       from chats where id = $1`,
+      [id],
+    );
+    if (!row?.stopping) return;
+    await new Promise((resolve) => setTimeout(resolve, everyMs));
+  }
 }

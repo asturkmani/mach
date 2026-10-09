@@ -646,7 +646,7 @@ export async function claimRun(
 ): Promise<boolean> {
   const rows = await getDb().query(
     `update tasks set run_agent_id = $3, run_started_at = now(), run_began_at = now(), run_activity = $4,
-       status = 'in_progress', agent_turns = agent_turns + 1, updated_at = now()
+       interrupt_requested_at = null, status = 'in_progress', agent_turns = agent_turns + 1, updated_at = now()
      where organization_id = $1 and id = $2 and status not in ('done', 'cancelled')
        and (run_started_at is null or run_started_at < now() - interval '${LEASE}')
      returning id`,
@@ -655,17 +655,35 @@ export async function claimRun(
   return rows.length > 0;
 }
 
-/** Keeps a long run's lease fresh, so it isn't mistaken for a dead one, and says what the agent is doing now. */
-export async function renewRun(taskId: string, agentId: string, activity?: string): Promise<void> {
-  await getDb().query(
-    "update tasks set run_started_at = now(), run_activity = coalesce($3, run_activity) where id = $1 and run_agent_id = $2",
+/**
+ * Keeps a long run's lease fresh, so it isn't mistaken for a dead one, and says what the agent is doing now.
+ * True when someone has asked the run to stop (Send now), so it ends at this step.
+ */
+export async function renewRun(taskId: string, agentId: string, activity?: string): Promise<boolean> {
+  const [row] = await getDb().query<{ interrupted: boolean }>(
+    `update tasks set run_started_at = now(), run_activity = coalesce($3, run_activity) where id = $1 and run_agent_id = $2
+     returning interrupt_requested_at is not null as interrupted`,
     [taskId, agentId, activity ?? null],
   );
+  return row?.interrupted ?? false;
+}
+
+/** An agent's reaction to a message a person queued while it worked: it reads it when it finishes what it's doing. */
+export const QUEUED = "⏳";
+
+/** Asks the run holding the task to stop at its next step. False if no run holds it. */
+export async function requestInterrupt(taskId: string): Promise<boolean> {
+  const rows = await getDb().query(
+    "update tasks set interrupt_requested_at = now() where id = $1 and run_agent_id is not null returning id",
+    [taskId],
+  );
+  return rows.length > 0;
 }
 
 export async function releaseRun(taskId: string, agentId: string): Promise<void> {
   await getDb().query(
-    `update tasks set run_agent_id = null, run_started_at = null, run_began_at = null, run_activity = ''
+    `update tasks set run_agent_id = null, run_started_at = null, run_began_at = null, run_activity = '',
+       interrupt_requested_at = null
      where id = $1 and run_agent_id = $2`,
     [taskId, agentId],
   );

@@ -29,6 +29,8 @@ import {
   createTask,
   getTask,
   isRunning,
+  QUEUED,
+  requestInterrupt,
   listMessages,
   reactToMessages,
   resetAgentTurns,
@@ -131,6 +133,7 @@ export async function replyToTask(
   by: Actor,
   text: string,
   attachments: ReplyAttachment[] = [],
+  { now = false }: { now?: boolean } = {},
 ): Promise<Task> {
   const task = await mustGet(organizationId, taskId);
   const body = text.trim();
@@ -173,9 +176,13 @@ export async function replyToTask(
   const forPeopleOnly = mentioned.people.length > 0 && mentioned.agents.length === 0;
   const agentId = forPeopleOnly ? undefined : agentToWake(current, await listMessages(task.id), body);
   if (agentId && !task.archivedAt && task.kind === "task") {
-    await updateTask(organizationId, task.id, { status: "ready", laterUntil: null, options: [] });
-    // 👀 straight away: the agent has it.
-    if (messageId) await reactToMessages(agentId, [messageId], "👀");
+    const working = isRunning(current);
+    // While an agent works, the message is queued (⏳) for when it finishes what it's doing, or, with
+    // Send now, the run stops at its next step and starts again with it. Otherwise 👀: the agent has it.
+    if (working && now) await requestInterrupt(task.id);
+    else if (!working) await updateTask(organizationId, task.id, { status: "ready", laterUntil: null, options: [] });
+    if (messageId) await reactToMessages(agentId, [messageId], working && !now ? QUEUED : "👀");
+    // If no run takes it after all (the one working just ended), this one does.
     await dispatchRun(organizationId, task.id, agentId);
   }
   return (await getTask(organizationId, task.id))!;

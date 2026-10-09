@@ -91,7 +91,7 @@ describe("an agent's live status on a task", () => {
     expect(await reactionsOn(task.id, "Value the portfolio")).toEqual(["💬 Analyst"]);
   });
 
-  it("leaves 👀 on a reply that came mid-run until the run that reads it is done", async () => {
+  it("marks a reply that came mid-run as queued (⏳) until the run that reads it is done", async () => {
     const { task, by } = await setUp();
     const runs: Promise<void>[] = [];
     const seenMidRun: string[][] = [];
@@ -112,7 +112,7 @@ describe("an agent's live status on a task", () => {
     // The chain goes again for the mid-run reply; wait for everything it started.
     for (let settled = 0; settled < runs.length; settled = runs.length) await Promise.all(runs);
 
-    expect(seenMidRun).toEqual([["👀 Analyst"]]);
+    expect(seenMidRun).toEqual([["⏳ Analyst"]]);
     expect(await reactionsOn(task.id, "Summarise the positions")).toEqual(["✅ Analyst"]);
     expect(await reactionsOn(task.id, "Also include cash, please.")).toEqual(["✅ Analyst"]);
   });

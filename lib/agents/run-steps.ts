@@ -23,7 +23,9 @@ import { imageForModel, MODEL_IMAGE_TYPES } from "@/lib/agents/images";
 import {
   addMessage,
   agentsOn,
+  agentToWake,
   claimRun,
+  QUEUED,
   countPersonComments,
   getTask,
   listMessages,
@@ -108,13 +110,15 @@ export async function beginRun(
   ]);
   const others = agentsOn(task).filter((m) => m.id !== agent.id);
   const images = await newImages(organizationId, messages, agent.id);
-  // The people's messages since this agent last wrote, and any still showing its 👀 (one that
-  // came in while it was finishing its last run, or that a run never got to).
+  // The people's messages since this agent last wrote, and any still showing its 👀 or ⏳ (one
+  // queued while it was working, or that a run never got to).
   const since = messages.findLastIndex((m) => m.agentId === agent.id);
   const answering = messages
     .filter(
       (m, i) =>
-        m.personId && m.kind === "comment" && (i > since || m.reactions.some((r) => r.agentId === agent.id && r.emoji === "👀")),
+        m.personId &&
+        m.kind === "comment" &&
+        (i > since || m.reactions.some((r) => r.agentId === agent.id && (r.emoji === "👀" || r.emoji === QUEUED))),
     )
     .map((m) => m.id);
   await reactToMessages(agent.id, answering, "👀");
@@ -307,9 +311,10 @@ export async function recordFailure(context: RunContext, message: string): Promi
 }
 
 /** Keeps the run's lease fresh and says what the agent is doing now, for the live status on the task. */
-export async function keepLease(context: RunContext, activity?: string): Promise<void> {
+/** Renews the run's lease. True when a person pressed Send now, so the run stops here. */
+export async function keepLease(context: RunContext, activity?: string): Promise<boolean> {
   "use step";
-  await renewRun(context.taskId, context.agentId, activity);
+  return renewRun(context.taskId, context.agentId, activity);
 }
 
 /** How a run ended, as the reaction on the messages it answered. */
@@ -319,7 +324,27 @@ export async function endRun(context: RunContext, answering: string[] = [], outc
   "use step";
   const emoji = outcome && ENDED[outcome.type];
   if (emoji) await reactToMessages(context.agentId, answering, emoji);
+  // Stopped by Send now: say so in the thread (the next run reads it), and leave the 👀 on what it was
+  // answering, so the next run answers that too.
+  if (outcome?.type === "interrupted") {
+    await addMessage(context.taskId, {
+      author: context.agentName,
+      agentId: context.agentId,
+      kind: "event",
+      body: "stopped what it was doing to read the new message",
+    });
+  }
   await releaseRun(context.taskId, context.agentId);
+}
+
+/** Who picks up after a run stopped for a person's message: the agent that message is for. */
+export async function agentForLatestMessage(organizationId: string, taskId: string): Promise<string | undefined> {
+  "use step";
+  const task = await getTask(organizationId, taskId);
+  if (!task) return undefined;
+  const messages = await listMessages(taskId);
+  const latest = messages.findLast((m) => m.personId && m.kind === "comment");
+  return agentToWake(task, messages, latest?.body ?? "");
 }
 
 export async function personCommentCount(taskId: string): Promise<number> {

@@ -15,6 +15,7 @@ const REACTION_WORDS: Record<string, string> = {
   "💬": "replied with a question",
   "🤝": "handed off",
   "⚠️": "hit a problem",
+  "⏳": "reads this when it finishes what it's doing",
 };
 
 /** Seconds since a time, ticking; null until mounted, so the server render matches. */
@@ -101,7 +102,7 @@ export function Reactions({ reactions }: { reactions: ReactionView[] }) {
             }`}
           >
             <span className="text-[13px] leading-none">{r.emoji}</span>
-            <span className="text-muted">{r.agentName}</span>
+            <span className="text-muted">{r.emoji === "⏳" ? `Queued for ${r.agentName}` : r.agentName}</span>
           </span>
         );
       })}

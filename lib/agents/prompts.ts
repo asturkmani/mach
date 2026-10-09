@@ -20,6 +20,8 @@ export type RunOutcome =
   | { type: "asked" }
   | { type: "finished" }
   | { type: "handed_off"; agentId: string }
+  /** A person sent a message with Send now: the run stopped so it can start again with it. */
+  | { type: "interrupted" }
   | { type: "busy" }
   | { type: "skipped"; reason: string }
   | { type: "failed"; error: string };

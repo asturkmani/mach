@@ -417,3 +417,9 @@ create table if not exists service_webhooks (
   secret bytea not null,
   created_at timestamptz not null default now()
 );
+
+-- A person's "Send now" while an agent works: the run stops at its next step and starts again with their message.
+alter table tasks add column if not exists interrupt_requested_at timestamptz;
+-- While a Chief of Staff reply is running for a chat (cleared when it's saved), so a message sent with
+-- Send now waits for the reply it stopped to save first.
+alter table chats add column if not exists reply_started_at timestamptz;

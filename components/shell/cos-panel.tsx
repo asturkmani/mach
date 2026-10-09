@@ -57,6 +57,16 @@ const REFRESHING_TOOLS = new Set([
   "refresh_page",
 ]);
 
+/** A message on its way: text, the files shown in it, and the uploads the server saves. */
+type Outgoing = { text: string; files: FileUIPart[]; uploads: { name: string; blobPathname: string }[] };
+
+/** Two queued messages become one, sent together. */
+const joinOutgoing = (a: Outgoing, b: Outgoing): Outgoing => ({
+  text: [a.text, b.text].filter(Boolean).join("\n\n"),
+  files: [...a.files, ...b.files],
+  uploads: [...a.uploads, ...b.uploads],
+});
+
 export type IntegrationState = Record<string, { status: IntegrationStatus; detail: string; hasCredentials: boolean }>;
 
 export function CosPanel({
@@ -150,16 +160,53 @@ export function CosPanel({
   const fileInput = useRef<HTMLInputElement>(null);
   const canSend = (input.trim() !== "" || attachments.uploads.length > 0) && !attachments.uploading;
 
+  // A message written while a reply is still coming waits here and goes when the reply finishes; Send now
+  // stops the reply first.
+  const [queued, setQueued] = useState<Outgoing | null>(null);
+  const sendingNow = useRef(false);
+  const deliver = (message: Outgoing) =>
+    sendMessage(
+      message.text.trim() ? { text: message.text, files: message.files } : { files: message.files },
+      message.uploads.length ? { body: { uploads: message.uploads } } : undefined,
+    );
+
   const send = (text: string) => {
     const uploads = attachments.uploads;
-    if ((!text.trim() && uploads.length === 0) || busy || attachments.uploading) return;
+    if ((!text.trim() && uploads.length === 0) || attachments.uploading) return;
     // Shown in the message straight away; the server keeps links to the saved files.
     const files: FileUIPart[] = attachments.pending
       .filter((p) => p.blobPathname)
       .map((p) => ({ type: "file", mediaType: p.contentType || "application/octet-stream", filename: p.name, url: p.preview ?? "" }));
-    sendMessage(text.trim() ? { text, files } : { files }, uploads.length ? { body: { uploads } } : undefined);
+    const message = { text: text.trim(), files, uploads };
+    if (busy || waiting || queued) setQueued((q) => (q ? joinOutgoing(q, message) : message));
+    else deliver(message);
     setInput("");
     attachments.clear({ keepPreviews: true });
+  };
+
+  useEffect(() => {
+    if (!queued || busy || (waiting && !sendingNow.current)) return;
+    sendingNow.current = false;
+    setQueued(null);
+    deliver(queued);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliver only wraps sendMessage
+  }, [queued, busy, waiting]);
+
+  const stopReply = async () => {
+    // The reply runs on the server whether or not this page is listening: ask it to stop there too.
+    await stopChatAction(chatId).catch(() => {});
+    stop();
+  };
+  const sendQueuedNow = () => {
+    sendingNow.current = true;
+    void stopReply();
+  };
+  const unqueue = () => {
+    if (!queued) return;
+    setInput((current) => [queued.text, current].filter(Boolean).join("\n\n"));
+    if (queued.files.length) toast("Removed the queued attachments. Attach them again to send them.");
+    setQueued(null);
+    inputRef.current?.focus();
   };
 
   const started = checklist.some((item) => item.done);
@@ -260,6 +307,22 @@ export function CosPanel({
         }}
         className="border-t border-line p-3"
       >
+        {queued && (
+          <div className="mb-2 flex items-start gap-2 border border-line bg-raised px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <p className="label text-faint">Queued · sends when this reply finishes</p>
+              <p className="mt-1 line-clamp-3 text-sm whitespace-pre-wrap">
+                {queued.text || `${queued.files.length} ${queued.files.length === 1 ? "file" : "files"}`}
+              </p>
+            </div>
+            <button type="button" onClick={sendQueuedNow} className="btn shrink-0 px-2 text-xs" title="Stop the reply and send this now">
+              Send now
+            </button>
+            <button type="button" onClick={unqueue} aria-label="Take the queued message back" title="Take it back to edit" className="btn btn-ghost shrink-0 px-1.5">
+              <X size={14} />
+            </button>
+          </div>
+        )}
         <div className="border border-line bg-raised focus-within:border-muted">
           {attachments.pending.length > 0 && (
             <div className="pt-2">
@@ -284,7 +347,13 @@ export function CosPanel({
                 attachments.add(pasted);
               }}
               rows={2}
-              placeholder={onboarded ? "Ask, or say what needs doing…" : "Tell me about your company…"}
+              placeholder={
+                busy || waiting
+                  ? "Write the next message: it goes when this reply finishes…"
+                  : onboarded
+                    ? "Ask, or say what needs doing…"
+                    : "Tell me about your company…"
+              }
               className="min-w-0 flex-1 resize-none bg-transparent text-[15px] outline-none placeholder:text-faint"
             />
             {canAttach && (
@@ -311,21 +380,19 @@ export function CosPanel({
               }}
               className="btn btn-ghost px-2"
             />
-            {busy ? (
-              <button
-                type="button"
-                onClick={() => {
-                  // The reply runs on the server whether or not this page is listening: ask it to stop there too.
-                  void stopChatAction(chatId).catch(() => {});
-                  stop();
-                }}
-                aria-label="Stop"
-                className="btn px-2"
-              >
+            {busy && (
+              <button type="button" onClick={() => void stopReply()} aria-label="Stop" title="Stop the reply" className="btn px-2">
                 <Square size={14} />
               </button>
-            ) : (
-              <button type="submit" disabled={!canSend} aria-label="Send" className="btn btn-primary px-2">
+            )}
+            {(!busy || canSend) && (
+              <button
+                type="submit"
+                disabled={!canSend}
+                aria-label={busy || waiting ? "Queue" : "Send"}
+                title={busy || waiting ? "Queue: sends when this reply finishes" : "Send"}
+                className="btn btn-primary px-2"
+              >
                 <ArrowUp size={15} />
               </button>
             )}

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { SUMMARY_MAX, type RunContext, type RunOutcome } from "@/lib/agents/prompts";
 import {
+  agentForLatestMessage,
   askPeople,
   beginRun,
   endRun,
@@ -225,8 +226,18 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
   }
 }
 
-/** Tools that first say what the agent is doing, so the task shows it live. */
-function narrated(context: RunContext, tools: ToolSet): ToolSet {
+/** Thrown before a model call when a person pressed Send now; the run ends as interrupted. */
+class Interrupted extends Error {
+  constructor() {
+    super("Interrupted by a new message.");
+  }
+}
+
+/**
+ * Tools that first say what the agent is doing, so the task shows it live. A
+ * person's Send now stops the run before the next tool does anything.
+ */
+function narrated(context: RunContext, tools: ToolSet, interrupt: () => void): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, t]) => {
       const execute = t.execute;
@@ -236,7 +247,10 @@ function narrated(context: RunContext, tools: ToolSet): ToolSet {
         {
           ...t,
           execute: async (input: Record<string, unknown>, options: Parameters<typeof execute>[1]) => {
-            await keepLease(context, activityFor(name, input ?? {}));
+            if (await keepLease(context, activityFor(name, input ?? {}))) {
+              interrupt();
+              return "Not done: a person sent a new message and asked you to stop. Your run ends here and starts again with their message.";
+            }
             return execute(input, options);
           },
         },
@@ -273,6 +287,7 @@ export async function runAgentOnTask(
   const state: RunState = {};
   const using = sandboxUser(context, state);
   const end = (ended: RunOutcome) => (state.outcome = ended);
+  const interrupt = () => end({ type: "interrupted" });
   let outcome: RunOutcome | undefined;
 
   try {
@@ -291,12 +306,16 @@ export async function runAgentOnTask(
         }),
         ...(options.research === false ? {} : researchTools()),
         use_skill: skillTool(),
-      }),
+      }, interrupt),
       // A run also ends when a tool ended it (e.g. a sign-in that asked for a code).
       stopWhen: [isStepCount(40), hasToolCall("ask", "finish", "hand_off"), () => state.outcome !== undefined],
-      // Long runs keep their lease fresh before each model call (and say they're thinking).
+      // Long runs keep their lease fresh before each model call (and say they're thinking), and stop
+      // there if a person pressed Send now.
       prepareStep: async () => {
-        await keepLease(context, "Thinking");
+        if (await keepLease(context, "Thinking")) {
+          interrupt();
+          throw new Interrupted();
+        }
         return undefined;
       },
     });
@@ -304,6 +323,10 @@ export async function runAgentOnTask(
     outcome = state.outcome ?? (await reportText(context, result.text));
     return outcome;
   } catch (error) {
+    if (state.outcome?.type === "interrupted") {
+      outcome = state.outcome;
+      return outcome;
+    }
     outcome = await recordFailure(context, error instanceof Error ? error.message : String(error));
     return outcome;
   } finally {
@@ -320,7 +343,9 @@ export async function runAgentOnTask(
 
 /**
  * Runs an agent, then whoever it hands off to. If a person replied while an
- * agent was working, that agent didn't see it, so it goes again.
+ * agent was working (a queued message), that agent didn't see it, so it goes
+ * again. If they pressed Send now, the run stopped early and the agent their
+ * message is for starts straight away.
  */
 export async function runAgentChain(
   organizationId: string,
@@ -335,6 +360,8 @@ export async function runAgentChain(
     const outcome = await runAgentOnTask(organizationId, taskId, current, options);
     if (outcome.type === "handed_off") {
       next = outcome.agentId;
+    } else if (outcome.type === "interrupted") {
+      next = await agentForLatestMessage(organizationId, taskId);
     } else if ((outcome.type === "asked" || outcome.type === "finished") && (await personCommentCount(taskId)) > commentsBefore) {
       next = current;
     } else {

@@ -4,7 +4,7 @@ import { after } from "next/server";
 import { forModel, MAX_CHAT_ATTACHMENTS, restoreOriginals, saveChatAttachments, type ChatUpload } from "@/lib/agents/chat-attachments";
 import { generateMessageId, loadChiefOfStaff } from "@/lib/agents/cos-turn";
 import { prepareHistory } from "@/lib/agents/history";
-import { clearStop, loadChat, saveChat, stopRequested } from "@/lib/chats";
+import { endReply, loadChat, saveChat, startReply, stopRequested, waitForStoppedReply } from "@/lib/chats";
 import { getSessionContext } from "@/lib/session";
 
 // Long enough for a reply that searches the web or uses the Chief of Staff's
@@ -46,8 +46,10 @@ export async function POST(request: Request) {
   const userMessage = parseUserMessage(body?.message, Boolean(uploads?.length));
   if (typeof body?.id !== "string" || !userMessage || !uploads) return new Response("Invalid message.", { status: 400 });
 
-  const chat = await loadChat(body.id, context.organization.id, context.user.id);
-  if (!chat) return new Response("Conversation not found.", { status: 404 });
+  if (!(await loadChat(body.id, context.organization.id, context.user.id))) return new Response("Conversation not found.", { status: 404 });
+  // Sent with Send now: the reply it stopped saves first, so this one starts from it (and doesn't overwrite it).
+  await waitForStoppedReply(body.id);
+  const chat = (await loadChat(body.id, context.organization.id, context.user.id))!;
 
   let agent;
   let close: () => Promise<void>;
@@ -82,7 +84,7 @@ export async function POST(request: Request) {
 
   // The reply runs to the end even if the browser goes away (the panel closed, a reload): it isn't tied to
   // the request, the stream is read to its end after the response, and only Stop (stopChatAction) ends it early.
-  await clearStop(chat.id);
+  await startReply(chat.id);
   const stop = new AbortController();
   const watch = setInterval(() => {
     stopRequested(chat.id)
@@ -102,6 +104,7 @@ export async function POST(request: Request) {
       clearTimeout(unwatch);
       // What the model was shown (attached images as data) is never stored; the conversation keeps its file links.
       await saveChat(chat.id, await prepareHistory(restoreOriginals(finished, messages), agent.tools));
+      await endReply(chat.id);
       // Stop the workspace sandbox if this turn used it (it keeps running while a sign-in waits for a code).
       await close();
     },

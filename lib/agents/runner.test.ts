@@ -2,7 +2,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { agentToWake, dispatchRun, setScheduler } from "@/lib/agents/dispatch";
-import { MAX_AGENT_TURNS, normalizeOptions, runAgentOnTask, taskBrief } from "@/lib/agents/runner";
+import { MAX_AGENT_TURNS, normalizeOptions, runAgentChain, runAgentOnTask, taskBrief } from "@/lib/agents/runner";
 import { createAgent, createWorker } from "@/lib/agents/store";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
@@ -157,6 +157,83 @@ describe("agent runs", () => {
       type: "skipped",
     });
     expect((await getTask(ORG, task.id))!.summary).toMatch(/turns in a row/);
+  });
+
+  /** A scripted model that runs `during` just before call number `at`, as if a person wrote while the agent worked. */
+  function interruptedModel(steps: Step[], during: () => Promise<void>, at = 2) {
+    const model = scriptedModel(steps);
+    const generate = model.doGenerate.bind(model);
+    let calls = 0;
+    model.doGenerate = async (options) => {
+      if (++calls === at) await during();
+      return generate(options);
+    };
+    return model;
+  }
+
+  const emojis = async (taskId: string, body: string) =>
+    (await listMessages(taskId)).find((m) => m.body === body)!.reactions.map((r) => r.emoji);
+
+  it("queues a message sent while the agent works, and goes again for it when it's done", async () => {
+    const { ahmed, analyst, task } = await setUp();
+    setScheduler(() => {}); // the reply's own dispatch finds the run busy; the chain picks it up
+    let whileWorking: string[] = [];
+    const model = interruptedModel(
+      [
+        [["post_update", { message: "Pulled the release." }]],
+        [["finish", { summary: "Revenue up 46%.", report: "Revenue grew 46%." }]],
+      ],
+      async () => {
+        await replyToTask(ORG, task.id, { name: ahmed.name, personId: ahmed.id }, "Also check the margins");
+        whileWorking = await emojis(task.id, "Also check the margins");
+      },
+    );
+    await runAgentChain(ORG, task.id, analyst.id, { model, research: false });
+
+    expect(whileWorking).toEqual(["⏳"]);
+    const thread = await listMessages(task.id);
+    // The first run carried on, then the agent went again for the queued message.
+    expect(thread.map((m) => m.body)).toEqual([
+      "Pulled the release.",
+      "Also check the margins",
+      "Revenue grew 46%.",
+      "Revenue grew 46%.",
+    ]);
+    expect(await emojis(task.id, "Also check the margins")).toEqual(["✅"]);
+    expect(JSON.stringify(model.doGenerateCalls.at(-1)!.prompt)).toContain("Also check the margins");
+  });
+
+  it.each([
+    ["before its next tool call", 1],
+    ["before its next model call", 2],
+  ])("stops %s for Send now and starts again with the message", async (_, at) => {
+    const { ahmed, analyst, task } = await setUp();
+    setScheduler(() => {});
+    let whileWorking: string[] = [];
+    const model = interruptedModel(
+      [
+        [["save_output", { filename: "draft.md", content: "Old plan" }]],
+        [["finish", { summary: "Margins done.", report: "Gross margin 38%." }]],
+      ],
+      async () => {
+        await replyToTask(ORG, task.id, { name: ahmed.name, personId: ahmed.id }, "Stop, look at margins instead", [], { now: true });
+        whileWorking = await emojis(task.id, "Stop, look at margins instead");
+      },
+      at,
+    );
+    await runAgentChain(ORG, task.id, analyst.id, { model, research: false });
+
+    expect(whileWorking).toEqual(["👀"]);
+    // Interrupted while the model was choosing its first tool call, that call never runs.
+    expect((await listTaskFiles(ORG, task.id)).map((f) => f.name)).toEqual(at === 1 ? [] : ["draft.md"]);
+    const thread = await listMessages(task.id);
+    expect(thread.map((m) => [m.kind, m.body])).toEqual([
+      ["comment", "Stop, look at margins instead"],
+      ["event", "stopped what it was doing to read the new message"],
+      ["result", "Gross margin 38%."],
+    ]);
+    expect(await emojis(task.id, "Stop, look at margins instead")).toEqual(["✅"]);
+    expect((await getTask(ORG, task.id))!).toMatchObject({ runStartedAt: null, status: "review" });
   });
 
   it("picks who to wake after a person replies", async () => {
