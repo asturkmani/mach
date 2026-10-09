@@ -2,7 +2,7 @@
 
 A command center for running a small or medium-sized business, where people and AI agents work together in one place: a shared company profile and brain, a Chief of Staff agent coordinating worker agents, a Kanban board with automatic dispatch to agents, and agents reachable over WhatsApp and email.
 
-Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres for data and WorkOS AuthKit for sign-in, companies and invitations.
+Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres for data and WorkOS for accounts, companies and invitations (behind Mach's own sign-in page).
 
 - [Product specification (draft)](docs/spec.md)
 
@@ -48,7 +48,7 @@ Each person's conversation with the Chief of Staff is stored in Postgres too, so
 ### 1. WorkOS
 
 1. Create a free account at [workos.com](https://workos.com) and open the **Staging** environment.
-2. **Authentication**: enable the sign-in methods you want (e.g. Google OAuth, Magic Auth).
+2. **Authentication**: turn on **Magic Auth** (a code by email: the main way in on Mach's sign-in page; without it the page asks for a password), and **Google OAuth** and **Microsoft OAuth** with your own client credentials in Production (Staging has WorkOS's test ones). The sign-in page shows only the providers that are turned on. For a client with single sign-on, add their connection and domain to their organization: their work emails go straight to it. See [docs/sign-in.md](docs/sign-in.md).
 3. **Redirects**:
    - Redirect URI: `http://localhost:3000/callback` (add your Vercel URL + `/callback` later)
    - Initiate login URI: `http://localhost:3000/sign-in`
@@ -108,7 +108,8 @@ pnpm build
 
 | Path | What it is |
 |---|---|
-| `proxy.ts` | Requires sign-in on every route except `/callback`, `/sign-in`, the workflow runtime and the cron tick |
+| `proxy.ts` | Requires sign-in on every route except signing in (`/sign-in`, `/callback`), the webhooks and the cron tick; signed out, pages go to `/sign-in` |
+| `app/sign-in/`, `app/callback/`, `lib/sign-in.ts` | Mach's sign-in page: Google, Microsoft, a code by email or a password, single sign-on, choosing a company |
 | `app/welcome/` | Create-your-company step |
 | `components/shell/` | App shell: left rail, Chief of Staff panel, shortcuts, ⌘K palette, dialogs, undo |
 | `app/(app)/page.tsx`, `components/home.tsx` | Home: what needs you, then the work as a board or a list |
