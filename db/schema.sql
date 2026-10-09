@@ -423,3 +423,19 @@ alter table tasks add column if not exists interrupt_requested_at timestamptz;
 -- While a Chief of Staff reply is running for a chat (cleared when it's saved), so a message sent with
 -- Send now waits for the reply it stopped to save first.
 alter table chats add column if not exists reply_started_at timestamptz;
+
+-- Conversations with the browser agent: a worker or the Chief of Staff gives it a browser job and can
+-- come back to the same session (same browser, same history) with follow-ups or answers it asked for.
+create table if not exists browser_sessions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  task_id uuid references tasks (id) on delete cascade,
+  goal text not null,
+  messages jsonb not null default '[]',
+  status text not null default 'working' check (status in ('working', 'done', 'needs_input', 'blocked', 'failed')),
+  login text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists browser_sessions_org on browser_sessions (organization_id, updated_at desc);

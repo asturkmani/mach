@@ -7,7 +7,7 @@ import { twilioConfigured, validTwilioSignature } from "@/lib/channels/twilio";
 // Twilio posts each WhatsApp message here. The Chief of Staff can take longer
 // than Twilio waits for an answer, so it replies through Twilio's API after
 // this request has returned.
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 /** The URL Twilio signed: what it was configured with, behind Vercel's proxy. */
 function signedUrl(request: Request): string {

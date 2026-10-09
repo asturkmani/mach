@@ -7,10 +7,11 @@ import { prepareHistory } from "@/lib/agents/history";
 import { endReply, loadChat, saveChat, startReply, stopRequested, waitForStoppedReply } from "@/lib/chats";
 import { getSessionContext } from "@/lib/session";
 
-// Long enough for a reply that searches the web or uses the Chief of Staff's
-// sandbox (signing in to a site, reading pages). Agent runs it starts are
-// separate workflows (see lib/agents/dispatch.ts).
-export const maxDuration = 300;
+// Long enough for a reply that searches the web, uses the Chief of Staff's
+// sandbox or hands a job to the browser agent (the most a function may run on
+// Vercel Pro). Agent runs it starts are separate workflows (see
+// lib/agents/dispatch.ts).
+export const maxDuration = 800;
 
 /** Accepts only a plain user text message from the browser; history comes from the database. */
 function parseUserMessage(value: unknown, hasFiles: boolean): UIMessage | null {

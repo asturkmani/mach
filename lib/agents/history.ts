@@ -68,6 +68,14 @@ async function repairPart(tools: ToolSet, part: UIMessage["parts"][number]) {
     }
   }
   const toolName = part.type.startsWith("tool-") ? part.type.slice("tool-".length) : null;
+  // The browser agent's screenshots are shown to the Chief of Staff in the turn they're taken; after
+  // that the conversation keeps links to the saved files, not the images.
+  if (toolName === "use_browser" && "state" in part && part.state === "output-available") {
+    const output = (part as { output?: { evidence?: { image?: string | null }[] } }).output;
+    if (output?.evidence?.some((e) => e.image)) {
+      return { ...part, output: { ...output, evidence: output.evidence.map((e) => ({ ...e, image: null })) } } as typeof part;
+    }
+  }
   const repair = toolName ? REPAIRS[toolName] : undefined;
   if (!toolName || !repair || !("state" in part) || part.state !== "output-available") return part;
 

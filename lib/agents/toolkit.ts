@@ -1,6 +1,7 @@
 import { gateway, tool, type ToolSet } from "ai";
 import { z } from "zod";
 
+import { runBrowserAgent, type BrowserReport } from "@/lib/agents/browser-agent";
 import { browserLogin, browsePage } from "@/lib/agents/browser-steps";
 import { callApi, readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
@@ -140,8 +141,51 @@ export function browserTools(
   /** The website logins this agent may use, or null for all of them (the Chief of Staff). */
   logins: string[] | null,
   onCode: (login: { slug: string; name: string }) => Promise<LoginOutput> | LoginOutput,
+  /** durable: the caller is a task's agent run (a workflow); heartbeat keeps its lease and says when to stop. */
+  options: { durable: boolean; heartbeat?: () => Promise<boolean> } = { durable: false },
 ): ToolSet {
   return {
+    use_browser: tool({
+      description: `Hand a job in a web browser to the browser agent, which sees the page in screenshots and clicks, types and reads like a person: anything interactive on a website (working in a web app, filling forms, signed-in work, checking what a page shows). Give one bounded job with the start URL, the company login to use, everything it needs to know, and any change people have explicitly approved; it won't submit, delete or send anything the job doesn't clearly ask for. It reports back with a status, what it saw, and screenshots (also saved with the files). It keeps its browser and memory per session: pass session and message to answer its question, ask what it saw, or give the next step.${
+        context.taskId
+          ? " If the site wants a sign-in code, the people on the task are asked for it and your run ends; continue the session on your next run."
+          : " If the site wants a sign-in code, they get a card to enter it; when they say it's entered, continue the session."
+      } For reading a page, browse is quicker.`,
+      inputSchema: z.object({
+        task: z.string().optional().describe("A new job: what to do and what to report, with all the context it needs (it can't see your conversation)."),
+        start_url: z.string().optional(),
+        login: logins ? z.enum(["", ...logins] as [string, ...string[]]).optional() : z.string().optional(),
+        session: z.string().optional().describe("Continue this session (from an earlier result) instead of starting a new job."),
+        message: z.string().optional().describe("With session: your answer, question or next instruction."),
+      }),
+      execute: (input) =>
+        using(async (): Promise<BrowserReport & { codeText?: string }> => {
+          const report = await runBrowserAgent(context, using, { ...input, login: input.login || undefined }, { ...options, logins });
+          if (!report.needsCode) return report;
+          const asked = await onCode(report.needsCode);
+          return { ...report, codeText: asked.text };
+        }),
+      toModelOutput: ({ output }) => ({
+        type: "content" as const,
+        value: [
+          {
+            type: "text" as const,
+            text: [
+              `Browser agent (session ${output.session}): ${output.status}.`,
+              output.message,
+              output.question ? `Question: ${output.question}` : "",
+              output.codeText ?? "",
+              ...output.evidence.map((e) => `Screenshot "${e.name}": ${e.caption}${e.versionId ? " (saved with the files)" : ""}`),
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          },
+          ...output.evidence
+            .filter((e) => e.image)
+            .map((e) => ({ type: "file" as const, mediaType: "image/jpeg", data: { type: "data" as const, data: e.image! } })),
+        ],
+      }),
+    }),
     ...(logins === null || logins.length
       ? {
           browser_login: tool({

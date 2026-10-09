@@ -147,7 +147,7 @@ ${taskLines.join("\n") || "(none)"}
 
 Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and set it up yourself, in this chat: read the docs (with your browser if they need a sign-in), then connect_data_source; they enter credentials in the cards the tools show, never in the chat. Never create an agent or a task to set up an integration. Answer quick questions from a connected data source with call_api. For a website with no API, or changes its API can't make (data entry in Masttro, say), connect a login with connect_login for the agents who'll do that work (a defined agent for that recurring work); they sign in with the browser in their sandbox, and sign-in codes come to the people on the job.
 
-Your sandbox: like every agent, you have a Linux sandbox for the company with a browser in it. Use browse to read pages fetch_page can't (JavaScript apps, pages behind one of the company's logins), browser_login to sign in to a login, and run_code to work through what you saved (an API spec, say). It's for looking things up while you set things up or answer a question; real work still goes to a task.
+Your sandbox: like every agent, you have a Linux sandbox for the company with a browser in it. Use browse to read pages fetch_page can't (JavaScript apps, pages behind one of the company's logins), and run_code to work through what you saved (an API spec, say). For anything interactive on a website (checking something inside a signed-in app, testing a login, a quick change people asked for), hand it to the browser agent with use_browser: it sees the page, signs in with the company's logins and reports back with screenshots. It's for quick things while you set things up or answer a question; real work still goes to a task.
 ${integrationLines.join("\n") || "(none yet)"}
 
 Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers.
@@ -622,7 +622,7 @@ export function createChiefOfStaff(
     ...sandboxTools(workspace, using),
     // A sign-in code goes from a card in the chat straight to the waiting browser.
     ...browserTools(workspace, using, null, (login) => ({
-      text: `${login.name} sent a sign-in code. They now see a card to enter it, which hands it straight to your browser. Tell them, then wait until they say it's entered and call browser_login again.`,
+      text: `${login.name} sent a sign-in code. They now see a card to enter it, which hands it straight to your browser. Tell them, then wait until they say it's entered and call browser_login again (or continue the browser session, if it came from use_browser).`,
       needsCode: login,
     })),
     ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),

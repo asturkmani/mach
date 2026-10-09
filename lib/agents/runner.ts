@@ -207,6 +207,8 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
       return `Updating the ${input.integration} guide`;
     case "browser_login":
       return `Signing in to ${input.login}`;
+    case "use_browser":
+      return `Using the browser: ${clipped(input.task ?? input.message, 40)}`;
     case "post_update":
       return "Posting an update";
     case "set_schedule":
@@ -303,7 +305,7 @@ export async function runAgentOnTask(
           const asked = await askForLoginCode(context, login);
           end({ type: "asked" });
           return { text: asked, needsCode: login };
-        }),
+        }, { durable: true, heartbeat: () => keepLease(context, "Using the browser") }),
         ...(options.research === false ? {} : researchTools()),
         use_skill: skillTool(),
       }, interrupt),

@@ -6,7 +6,7 @@ import { firstTime } from "@/lib/channels/senders";
 
 // AgentMail posts each email to a company's Chief of Staff inbox here, signed
 // with Svix. The reply goes back in the thread after this request returns.
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 export async function POST(request: Request) {
   if (!agentmailConfigured()) return new Response("Email isn't set up.", { status: 404 });
