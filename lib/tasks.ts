@@ -80,6 +80,8 @@ export type TaskMessage = {
   durationMs: number | null;
   attachments: MessageAttachment[];
   reactions: MessageReaction[];
+  /** An integration whose credentials card shows with the message. */
+  integrationId: string | null;
 };
 
 type TaskRow = {
@@ -368,8 +370,9 @@ export async function listMessages(taskId: string): Promise<TaskMessage[]> {
     body: string;
     created_at: Date;
     duration_ms: number | null;
+    integration_id: string | null;
   }>(
-    "select id, author, person_id, agent_id, kind, body, created_at, duration_ms from task_messages where task_id = $1 order by created_at, id",
+    "select id, author, person_id, agent_id, kind, body, created_at, duration_ms, integration_id from task_messages where task_id = $1 order by created_at, id",
     [taskId],
   );
   const attached = await getDb().query<{
@@ -415,6 +418,7 @@ export async function listMessages(taskId: string): Promise<TaskMessage[]> {
     durationMs: r.duration_ms,
     attachments: byMessage.get(r.id) ?? [],
     reactions: reactions.get(r.id) ?? [],
+    integrationId: r.integration_id,
   }));
 }
 
@@ -567,17 +571,25 @@ export async function removeMember(taskId: string, member: { personId?: string; 
  */
 export async function addMessage(
   taskId: string,
-  message: { author: string; kind?: TaskMessageKind; body: string; personId?: string; agentId?: string; attachments?: string[] },
+  message: {
+    author: string;
+    kind?: TaskMessageKind;
+    body: string;
+    personId?: string;
+    agentId?: string;
+    attachments?: string[];
+    integrationId?: string;
+  },
 ): Promise<string | null> {
   const body = message.body.trim();
   if (!body && !message.attachments?.length) return null;
   // An agent's result during its run records how long the run took.
   const [row] = await getDb().query<{ id: string }>(
-    `insert into task_messages (task_id, author, kind, body, person_id, agent_id, duration_ms)
-     values ($1, $2, $3, $4, $5, $6, case when $3 = 'result' then
+    `insert into task_messages (task_id, author, kind, body, person_id, agent_id, integration_id, duration_ms)
+     values ($1, $2, $3, $4, $5, $6, $7, case when $3 = 'result' then
        (select (extract(epoch from now() - run_began_at) * 1000)::integer from tasks where id = $1 and run_agent_id = $6)
      end) returning id`,
-    [taskId, message.author, message.kind ?? "comment", body, message.personId ?? null, message.agentId ?? null],
+    [taskId, message.author, message.kind ?? "comment", body, message.personId ?? null, message.agentId ?? null, message.integrationId ?? null],
   );
   if (message.attachments?.length) await attachToMessage(row.id, message.attachments);
   await getDb().query("update tasks set updated_at = now() where id = $1", [taskId]);

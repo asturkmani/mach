@@ -423,3 +423,10 @@ alter table tasks add column if not exists interrupt_requested_at timestamptz;
 -- While a Chief of Staff reply is running for a chat (cleared when it's saved), so a message sent with
 -- Send now waits for the reply it stopped to save first.
 alter table chats add column if not exists reply_started_at timestamptz;
+
+-- The Integrations agent: one built-in agent per company that connects its systems, each on its own task.
+alter table agents add column if not exists builtin text;
+-- The task whose agent set an integration up: it isn't finished until the integration works.
+alter table integrations add column if not exists setup_task_id uuid references tasks (id) on delete set null;
+-- A thread message that carries an integration's credentials card.
+alter table task_messages add column if not exists integration_id uuid references integrations (id) on delete set null;

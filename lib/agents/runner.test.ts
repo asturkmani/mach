@@ -372,6 +372,7 @@ describe("taskBrief", () => {
       durationMs: null,
       attachments: [],
       reactions: [],
+      integrationId: null,
     }));
     const brief = taskBrief({ task, messages, files: [], agent });
     expect(brief).toContain("message 0\n");

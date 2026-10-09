@@ -18,6 +18,8 @@ export type Agent = {
   instructions: string;
   status: AgentStatus;
   createdAt: Date;
+  /** A built-in agent Mach1 runs itself ("integrations"), or null for the company's own. */
+  builtin: string | null;
 };
 
 type AgentRow = {
@@ -29,9 +31,10 @@ type AgentRow = {
   instructions: string;
   status: AgentStatus;
   created_at: Date;
+  builtin: string | null;
 };
 
-const COLUMNS = "id, kind, name, role, description, instructions, status, created_at";
+const COLUMNS = "id, kind, name, role, description, instructions, status, created_at, builtin";
 
 const toAgent = (r: AgentRow): Agent => ({
   id: r.id,
@@ -42,6 +45,7 @@ const toAgent = (r: AgentRow): Agent => ({
   instructions: r.instructions,
   status: r.status,
   createdAt: r.created_at,
+  builtin: r.builtin,
 });
 
 export async function listAgents(
@@ -91,6 +95,34 @@ export async function createAgent(organizationId: string, input: AgentInput & { 
     ],
   );
   return toAgent(row);
+}
+
+export const INTEGRATIONS_AGENT = "integrations";
+
+/**
+ * The company's Integrations agent, made the first time it's needed: it
+ * connects the company's systems, each on its own task. People can rename it
+ * or add instructions; its playbook comes with Mach1.
+ */
+export async function integrationsAgent(organizationId: string): Promise<Agent> {
+  const [row] = await getDb().query<AgentRow>(
+    `select ${COLUMNS} from agents where organization_id = $1 and builtin = $2 and status <> 'archived' order by created_at limit 1`,
+    [organizationId, INTEGRATIONS_AGENT],
+  );
+  if (row) {
+    if (row.status !== "active") await getDb().query("update agents set status = 'active', updated_at = now() where id = $1", [row.id]);
+    return toAgent({ ...row, status: "active" });
+  }
+  let name = "Integrations";
+  for (let n = 2; await findAgentByName(organizationId, name); n++) name = `Integrations ${n}`;
+  const agent = await createAgent(organizationId, {
+    name,
+    role: "Connecting the company's systems",
+    description:
+      "Connects the company's other systems (banking, portfolio, accounting and other platforms) so every agent can use them: works out what's possible, does the research, sets up the connection and doesn't stop until it works.",
+  });
+  await getDb().query("update agents set builtin = $2 where id = $1", [agent.id, INTEGRATIONS_AGENT]);
+  return { ...agent, builtin: INTEGRATIONS_AGENT };
 }
 
 /** A throwaway agent for one task, named after its role ("Research worker", then "Research worker 2"). */
