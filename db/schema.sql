@@ -457,3 +457,10 @@ create table if not exists whatsapp_links (
   expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
+
+-- The Integrations agent: one built-in agent per company that connects its systems, each on its own task.
+alter table agents add column if not exists builtin text;
+-- The task whose agent set an integration up: it isn't finished until the integration works.
+alter table integrations add column if not exists setup_task_id uuid references tasks (id) on delete set null;
+-- A thread message that carries an integration's credentials card.
+alter table task_messages add column if not exists integration_id uuid references integrations (id) on delete set null;
