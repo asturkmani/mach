@@ -71,7 +71,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
               count={people.length}
               addLabel="Add person"
               startOpen={params.new === "person"}
-              form={<AddPersonForm managers={people.map((p) => p.name)} />}
+              form={<AddPersonForm managers={people.map((p) => p.name)} canInvite={isAdmin} />}
             >
               <div className="overflow-x-auto border border-line bg-raised">
                 <table className="w-full min-w-[620px] text-sm">

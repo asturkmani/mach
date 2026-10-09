@@ -14,7 +14,7 @@ function Feedback({ result }: { result: ActionResult }) {
   return null;
 }
 
-export function AddPersonForm({ managers }: { managers: string[] }) {
+export function AddPersonForm({ managers, canInvite }: { managers: string[]; canInvite: boolean }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState<ActionResult, FormData>(async (previous, form) => {
     const result = await addPersonAction(previous, form);
@@ -43,6 +43,12 @@ export function AddPersonForm({ managers }: { managers: string[] }) {
         <input name="email" type="email" placeholder="Email (needed to invite)" className={inputClass} />
         <input name="phone" placeholder="Phone / WhatsApp (optional)" className={inputClass} />
       </div>
+      {canInvite && (
+        <label className="flex w-fit items-center gap-2 text-sm">
+          <input name="invite" type="checkbox" defaultChecked />
+          Invite them to Mach1 by email
+        </label>
+      )}
       <div className="flex items-center gap-3">
         <button
           type="submit"

@@ -83,6 +83,28 @@ describe("team actions", () => {
     expect(workos.userManagement.resendInvitation).toHaveBeenCalledWith("inv_1");
   });
 
+  it("adds and invites in one step when invite is ticked", async () => {
+    workos.userManagement.sendInvitation.mockResolvedValue({ id: "inv_1", acceptInvitationUrl: "https://accept/1" });
+    expect(await addPersonAction({}, form({ name: "Mustapha", email: "mustapha@cedar.example", invite: "on" }))).toEqual({
+      message: "Added Mustapha and sent an invitation to mustapha@cedar.example.",
+    });
+    expect(await byName("Mustapha")).toMatchObject({ status: "invited", invitationId: "inv_1" });
+
+    expect(await addPersonAction({}, form({ name: "Lina", invite: "on" }))).toEqual({ message: "Added Lina. Add their email to invite them." });
+    expect(await addPersonAction({}, form({ name: "Sami", email: "sami@cedar.example" }))).toEqual({ message: "Added Sami." });
+    expect(workos.userManagement.sendInvitation).toHaveBeenCalledTimes(1);
+
+    workos.userManagement.sendInvitation.mockRejectedValue(new Error("Rate limited."));
+    expect((await addPersonAction({}, form({ name: "Omar", email: "omar@cedar.example", invite: "on" }))).error).toMatch(
+      /Added Omar, but the invitation didn't send.*Rate limited/,
+    );
+    expect(await byName("Omar")).toMatchObject({ status: "not_invited" });
+
+    session.isAdmin = false;
+    expect(await addPersonAction({}, form({ name: "Rana", email: "rana@cedar.example", invite: "on" }))).toEqual({ message: "Added Rana." });
+    expect(workos.userManagement.sendInvitation).toHaveBeenCalledTimes(2);
+  });
+
   it("only lets admins invite and remove", async () => {
     await addPersonAction({}, form({ name: "Mustapha", email: "mustapha@cedar.example" }));
     session.isAdmin = false;
