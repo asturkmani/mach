@@ -9,7 +9,7 @@ import { linkMember } from "@/lib/people";
 import { listTaskFiles } from "@/lib/files";
 import { setSandboxProvider } from "@/lib/sandbox";
 import { addMessage, createTask, getTask, listMessages } from "@/lib/tasks";
-import { replyToTask } from "@/lib/work";
+import { replyToTask, sendQueuedNow } from "@/lib/work";
 import { fakeSandboxes } from "@/test/fake-sandbox";
 import { scriptedModel, type Step } from "@/test/scripted-model";
 import { useTestDb } from "@/test/db";
@@ -216,7 +216,9 @@ describe("agent runs", () => {
         [["finish", { summary: "Margins done.", report: "Gross margin 38%." }]],
       ],
       async () => {
-        await replyToTask(ORG, task.id, { name: ahmed.name, personId: ahmed.id }, "Stop, look at margins instead", [], { now: true });
+        await replyToTask(ORG, task.id, { name: ahmed.name, personId: ahmed.id }, "Stop, look at margins instead");
+        const queued = (await listMessages(task.id)).find((m) => m.body === "Stop, look at margins instead")!;
+        expect(await sendQueuedNow(ORG, task.id, queued.id)).toBe(true);
         whileWorking = await emojis(task.id, "Stop, look at margins instead");
       },
       at,

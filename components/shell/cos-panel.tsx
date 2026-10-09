@@ -310,7 +310,7 @@ export function CosPanel({
         {queued && (
           <div className="mb-2 flex items-start gap-2 border border-line bg-raised px-3 py-2">
             <div className="min-w-0 flex-1">
-              <p className="label text-faint">Queued · sends when this reply finishes</p>
+              <p className="label text-faint">Queued</p>
               <p className="mt-1 line-clamp-3 text-sm whitespace-pre-wrap">
                 {queued.text || `${queued.files.length} ${queued.files.length === 1 ? "file" : "files"}`}
               </p>
@@ -347,13 +347,7 @@ export function CosPanel({
                 attachments.add(pasted);
               }}
               rows={2}
-              placeholder={
-                busy || waiting
-                  ? "Write the next message: it goes when this reply finishes…"
-                  : onboarded
-                    ? "Ask, or say what needs doing…"
-                    : "Tell me about your company…"
-              }
+              placeholder={onboarded ? "Ask, or say what needs doing…" : "Tell me about your company…"}
               className="min-w-0 flex-1 resize-none bg-transparent text-[15px] outline-none placeholder:text-faint"
             />
             {canAttach && (

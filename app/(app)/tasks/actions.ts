@@ -18,6 +18,7 @@ import {
   rerunScript,
   runNow,
   scheduleTask,
+  sendQueuedNow,
   setStatus,
   unscheduleTask,
   MAX_REPLY_ATTACHMENTS,
@@ -96,7 +97,6 @@ export async function replyAction(
   taskId: string,
   text: string,
   uploads: { name: string; blobPathname: string }[] = [],
-  { now = false }: { now?: boolean } = {},
 ): Promise<TaskActionResult> {
   const { organizationId, by } = await actor();
   if (uploads.length > MAX_REPLY_ATTACHMENTS) return { error: `Attach at most ${MAX_REPLY_ATTACHMENTS} files at a time.` };
@@ -109,8 +109,15 @@ export async function replyAction(
         throw new WorkError(`Couldn't read ${upload.name}. Remove it and attach it again.`);
       }
     }
-    await replyToTask(organizationId, taskId, by, text, attachments, { now: now === true });
+    await replyToTask(organizationId, taskId, by, text, attachments);
     await discardUploads(organizationId, uploads.map((u) => u.blobPathname));
+  });
+}
+
+export async function sendQueuedNowAction(taskId: string, messageId: string): Promise<TaskActionResult> {
+  const { organizationId } = await actor();
+  return attempt(async () => {
+    await sendQueuedNow(organizationId, taskId, messageId);
   });
 }
 

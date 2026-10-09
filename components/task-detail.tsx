@@ -14,6 +14,7 @@ import {
   pickOptionAction,
   removeMemberAction,
   replyAction,
+  sendQueuedNowAction,
   restoreAction,
   runAgentAction,
   setPriorityAction,
@@ -166,9 +167,9 @@ export function TaskDetail({
   };
 
   const canSend = !pending && !attachments.uploading && !attachments.failed && Boolean(reply.trim() || attachments.uploads.length);
-  // While an agent works, a reply waits for it to finish what it's doing (queued); Send now stops it
-  // at its next step and starts it again with the reply.
-  const sendReply = (now = false) => {
+  // While an agent works, a reply waits for it to finish what it's doing (queued, ⏳); Send now on the
+  // queued reply stops it at its next step and starts it again with the reply.
+  const sendReply = () => {
     if (!canSend) {
       if (attachments.uploading) toast("Still uploading…");
       else if (attachments.failed) toast("Remove the attachment that failed, then send.");
@@ -177,11 +178,10 @@ export function TaskDetail({
     const text = reply.trim();
     const uploads = attachments.uploads;
     act(
-      () => replyAction(task.id, text, uploads, { now }),
+      () => replyAction(task.id, text, uploads),
       () => {
         setReply("");
         attachments.clear();
-        if (task.running) toast(now ? `Stopping ${working ?? "the agent"} to read it` : `Queued for when ${working ?? "the agent"} is done`);
       },
     );
   };
@@ -347,7 +347,12 @@ export function TaskDetail({
               <p className="label mb-4">Thread</p>
               <ol className="space-y-5">
                 {messages.map((message) => (
-                  <ThreadMessage key={message.id} message={message} names={mentionNames} />
+                  <ThreadMessage
+                    key={message.id}
+                    message={message}
+                    names={mentionNames}
+                    onSendNow={task.running ? () => act(() => sendQueuedNowAction(task.id, message.id)) : undefined}
+                  />
                 ))}
                 {(task.running || starting) && (
                   <ThreadStatus agent={working ?? "An agent"} activity={task.activity} since={task.runSince} starting={!task.running} />
@@ -387,7 +392,7 @@ export function TaskDetail({
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                         e.preventDefault();
-                        sendReply(e.shiftKey && task.running);
+                        sendReply();
                       }
                     }}
                     onPaste={(e) => {
@@ -399,9 +404,7 @@ export function TaskDetail({
                     }}
                     rows={3}
                     placeholder={
-                      task.running
-                        ? `${working ?? "An agent"} is working. Queue a message for when it's done, or send it now to stop it.`
-                        : agentMembers.length
+                      agentMembers.length
                           ? `Reply to ${agentMembers.map((a) => a.name).join(", ")}… (@ to mention someone)`
                           : "Write a comment… (@ to mention someone)"
                     }
@@ -437,42 +440,12 @@ export function TaskDetail({
                         className="text-muted hover:text-ink"
                       />
                       <span className="hidden text-xs text-faint md:inline">
-                        {task.running ? (
-                          <>
-                            <kbd className="kbd">⌘↵</kbd> to queue · <kbd className="kbd">⌘⇧↵</kbd> to send now
-                          </>
-                        ) : (
-                          <>
-                            <kbd className="kbd">R</kbd> to reply · <kbd className="kbd">⌘↵</kbd> to send
-                          </>
-                        )}
+                        <kbd className="kbd">R</kbd> to reply · <kbd className="kbd">⌘↵</kbd> to send
                       </span>
                     </div>
-                    {task.running ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => sendReply(true)}
-                          disabled={!canSend}
-                          className="btn"
-                          title={`Stop ${working ?? "the agent"} at its next step and start again with this (⌘⇧↵)`}
-                        >
-                          Send now
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={!canSend}
-                          className="btn btn-primary"
-                          title={`${working ?? "The agent"} reads it when it finishes what it's doing (⌘↵)`}
-                        >
-                          Queue
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="submit" disabled={!canSend} className="btn btn-primary">
-                        Send
-                      </button>
-                    )}
+                    <button type="submit" disabled={!canSend} className="btn btn-primary">
+                      Send
+                    </button>
                   </div>
                 </div>
               </form>
@@ -780,7 +753,7 @@ const markdownComponents = {
     ),
 };
 
-function ThreadMessage({ message, names }: { message: Message; names: string[] }) {
+function ThreadMessage({ message, names, onSendNow }: { message: Message; names: string[]; onSendNow?: () => void }) {
   if (message.kind === "event") {
     return (
       <li className="flex items-center gap-2 pl-9 text-xs text-faint">
@@ -818,7 +791,14 @@ function ThreadMessage({ message, names }: { message: Message; names: string[] }
           </ReactMarkdown>
         </div>
         <MessageAttachments attachments={message.attachments} />
-        <Reactions reactions={message.reactions} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Reactions reactions={message.reactions} />
+          {onSendNow && message.reactions.some((r) => r.emoji === "⏳") && (
+            <button onClick={onSendNow} className="mt-1.5 text-xs text-muted underline hover:text-ink" title="Stop what the agent is doing and have it read this now">
+              Send now
+            </button>
+          )}
+        </div>
       </div>
     </li>
   );

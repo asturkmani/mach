@@ -133,7 +133,6 @@ export async function replyToTask(
   by: Actor,
   text: string,
   attachments: ReplyAttachment[] = [],
-  { now = false }: { now?: boolean } = {},
 ): Promise<Task> {
   const task = await mustGet(organizationId, taskId);
   const body = text.trim();
@@ -177,15 +176,28 @@ export async function replyToTask(
   const agentId = forPeopleOnly ? undefined : agentToWake(current, await listMessages(task.id), body);
   if (agentId && !task.archivedAt && task.kind === "task") {
     const working = isRunning(current);
-    // While an agent works, the message is queued (⏳) for when it finishes what it's doing, or, with
-    // Send now, the run stops at its next step and starts again with it. Otherwise 👀: the agent has it.
-    if (working && now) await requestInterrupt(task.id);
-    else if (!working) await updateTask(organizationId, task.id, { status: "ready", laterUntil: null, options: [] });
-    if (messageId) await reactToMessages(agentId, [messageId], working && !now ? QUEUED : "👀");
+    // While an agent works, the message is queued (⏳) for when it finishes what it's doing (sendQueuedNow
+    // stops it sooner). Otherwise 👀: the agent has it.
+    if (!working) await updateTask(organizationId, task.id, { status: "ready", laterUntil: null, options: [] });
+    if (messageId) await reactToMessages(agentId, [messageId], working ? QUEUED : "👀");
     // If no run takes it after all (the one working just ended), this one does.
     await dispatchRun(organizationId, task.id, agentId);
   }
   return (await getTask(organizationId, task.id))!;
+}
+
+/**
+ * Send now for a reply that is queued (⏳) for a working agent: the run stops at
+ * its next step and starts again with it. False if nothing was waiting.
+ */
+export async function sendQueuedNow(organizationId: string, taskId: string, messageId: string): Promise<boolean> {
+  const task = await mustGet(organizationId, taskId);
+  const message = (await listMessages(task.id)).find((m) => m.id === messageId);
+  const queued = message?.reactions.filter((r) => r.emoji === QUEUED) ?? [];
+  if (!message || queued.length === 0) return false;
+  for (const r of queued) await reactToMessages(r.agentId, [message.id], "👀");
+  if (!(await requestInterrupt(task.id))) await startIfReady(organizationId, task.id);
+  return true;
 }
 
 /** Picks one of the options on the task's current ask. */
