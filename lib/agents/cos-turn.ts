@@ -18,6 +18,7 @@ import type { Person } from "@/lib/people";
 import { loadProfile } from "@/lib/profile/store";
 import type { SessionUser } from "@/lib/session";
 import { listTasks } from "@/lib/tasks";
+import { listScheduledJobs } from "@/lib/work-overview";
 import type { LanguageModel } from "ai";
 
 // One Chief of Staff, reached from the app's chat panel, WhatsApp or email.
@@ -40,10 +41,11 @@ export async function loadChiefOfStaff(
   } = {},
 ) {
   const organizationId = context.organization.id;
-  const [profile, agents, tasks, files, integrations, pages] = await Promise.all([
+  const [profile, agents, tasks, jobs, files, integrations, pages] = await Promise.all([
     loadProfile(organizationId),
     listAgents(organizationId),
     listTasks(organizationId, { closedLimit: 0 }),
+    listScheduledJobs(organizationId),
     listLibrary(organizationId, { limit: 30 }),
     listIntegrations(organizationId),
     listPages(organizationId),
@@ -51,7 +53,7 @@ export async function loadChiefOfStaff(
   const viewing = options.viewing ? await describeViewing(organizationId, options.viewing).catch(() => null) : null;
   const sandbox: SandboxSession = {};
   const agent = createChiefOfStaff(
-    { ...context, profile, agents, openTasks: tasks, files, integrations, pages, channel: options.channel, viewing },
+    { ...context, profile, agents, openTasks: tasks, jobs, files, integrations, pages, channel: options.channel, viewing },
     { sandbox, model: options.model, research: options.research },
   );
   return {

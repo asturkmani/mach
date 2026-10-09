@@ -23,7 +23,7 @@ import {
   type SandboxSession,
 } from "@/lib/agents/toolkit";
 import { createAgent, type Agent } from "@/lib/agents/store";
-import { findFiles, type LibraryFile } from "@/lib/files";
+import { findFiles, listTaskFiles, type LibraryFile } from "@/lib/files";
 import {
   IntegrationError,
   saveIntegration,
@@ -32,6 +32,7 @@ import {
   type LoginConfig,
 } from "@/lib/integrations";
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
+import { workOverview, type ScheduledJob } from "@/lib/work-overview";
 import type { Page } from "@/lib/pages";
 import { removePersonByName, renamePerson, savePerson, syncPeopleSection, type Person } from "@/lib/people";
 import {
@@ -43,10 +44,11 @@ import {
   setSection,
 } from "@/lib/profile/markdown";
 import { updateProfile } from "@/lib/profile/store";
-import { describeSchedule } from "@/lib/schedules";
+import { describeSchedule, getSchedule } from "@/lib/schedules";
 import type { SessionUser } from "@/lib/session";
-import { PRIORITIES, type Task } from "@/lib/tasks";
-import { createTaskWithTeam, resolveTeam, suggestProfileUpdate, WorkError } from "@/lib/work";
+import { findTasks, getTaskByNumber, isRunning, listMessages, PRIORITIES, TASK_STATUSES, type Task } from "@/lib/tasks";
+import { createTaskWithTeam, replyToTask, resolveTeam, suggestProfileUpdate, WorkError } from "@/lib/work";
+import { elapsed, taskState } from "@/lib/work-overview";
 
 /** Where a message to the Chief of Staff came from, besides the app's chat panel. */
 export type Channel = "whatsapp" | "email";
@@ -59,6 +61,8 @@ type Context = {
   person?: Person;
   agents?: Agent[];
   openTasks?: Task[];
+  /** Jobs that repeat on a schedule. */
+  jobs?: ScheduledJob[];
   /** Recent files in the company library, which new jobs can start from. */
   files?: LibraryFile[];
   /** The company's data sources and logins. */
@@ -109,7 +113,7 @@ Keeping the profile current:
 }
 
 function workInstructions(context: Context): string {
-  const { agents = [], openTasks = [], files = [], integrations = [], pages = [] } = context;
+  const { agents = [], openTasks = [], jobs = [], files = [], integrations = [], pages = [] } = context;
   const pageLines = pages
     .filter((p) => p.version > 0)
     .map((p) => `- ${p.slug}: ${p.title}, reads ${p.data.join(", ") || "no files"}${p.taskNumber ? `, refreshed by #${p.taskNumber}` : ", not refreshed on a schedule"}`);
@@ -122,9 +126,6 @@ function workInstructions(context: Context): string {
   const agentLines = agents
     .filter((a) => a.kind === "defined" && a.status === "active")
     .map((a) => `- ${a.name}${a.role ? ` (${a.role})` : ""}${a.description ? `: ${a.description}` : ""}`);
-  const taskLines = openTasks
-    .slice(0, 30)
-    .map((t) => `- #${t.number} ${t.title} [${t.status}] · ${t.members.map((m) => m.name).join(", ") || "no one"}`);
   const fileLines = files
     .filter((f) => f.kind === "deliverable" && f.versions.length)
     .slice(0, 30)
@@ -139,11 +140,11 @@ function workInstructions(context: Context): string {
 - For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on create_task. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the agent builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
 - Jobs share a company data drive: datasets one job saves there are available to every other job.
 
-Defined agents:
+Defined agents (who they are):
 ${agentLines.join("\n") || "(none yet)"}
 
-Open tasks:
-${taskLines.join("\n") || "(none)"}
+The company's work right now (live, as of this message). You see all of it: everyone's tasks, every agent and every scheduled job. When someone asks what's going on, how something is going, or what an agent found, answer from here, and use read_task for the detail (its summary, progress, thread and results) rather than guessing. find_tasks searches all work, finished included. To steer work (tell an agent to change course, answer its question, add a detail), use reply_on_task: it posts on the task as the person you're talking to, which wakes or queues its agent. Only post what they asked you to.
+${workOverview({ openTasks, agents, jobs })}
 
 Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and set it up yourself, in this chat: read the docs (with your browser if they need a sign-in), then connect_data_source; they enter credentials in the cards the tools show, never in the chat. Never create an agent or a task to set up an integration. Answer quick questions from a connected data source with call_api. For a website with no API, or changes its API can't make (data entry in Masttro, say), connect a login with connect_login for the agents who'll do that work (a defined agent for that recurring work); they sign in with the browser in their sandbox, and sign-in codes come to the people on the job.
 
@@ -363,6 +364,85 @@ function workTools(context: Context) {
           "error" in output
             ? `Not created: ${output.error}`
             : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
+      }),
+    }),
+    find_tasks: tool({
+      description:
+        "Search all of the company's work: open and (with include_closed) finished tasks, by words in the title, description, summary or thread, a task number, a status, or someone on it.",
+      inputSchema: z.object({
+        query: z.string().optional(),
+        status: z.enum(TASK_STATUSES).optional(),
+        member: z.string().optional().describe("Exact name of a person or agent on it."),
+        include_closed: z.boolean().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      execute: async ({ include_closed, ...filters }) => {
+        const tasks = await findTasks(orgId, { ...filters, includeClosed: include_closed });
+        const now = Date.now();
+        return tasks.length
+          ? tasks
+              .map(
+                (t) =>
+                  `#${t.number} ${t.title} [${t.status}; ${taskState(t, now)}; updated ${elapsed(t.updatedAt, now)} ago] · ${t.members.map((m) => m.name).join(", ") || "no one"}${t.summary ? `\n  ${t.summary.slice(0, 200)}` : ""}`,
+              )
+              .join("\n")
+          : "No tasks match.";
+      },
+    }),
+    read_task: tool({
+      description: "Read one task in full: what it's for, its status and what's happening on it now, its summary and progress, schedule, files, and the latest of its thread (questions, updates, results).",
+      inputSchema: z.object({ number: z.number().int().positive(), messages: z.number().int().min(1).max(40).optional().describe("How many of the latest thread messages (default 12).") }),
+      execute: async ({ number, messages: count = 12 }) => {
+        const task = await getTaskByNumber(orgId, number);
+        if (!task) return `There's no task #${number}.`;
+        const [thread, schedule, files] = await Promise.all([listMessages(task.id), getSchedule(task.id), listTaskFiles(orgId, task.id)]);
+        const now = Date.now();
+        const latest = thread.slice(-count);
+        return [
+          `#${task.number} ${task.title} (${appUrl(`/tasks/${task.number}`)})`,
+          `Status: ${task.status}; ${taskState(task, now)}. Priority ${task.priority}. Updated ${elapsed(task.updatedAt, now)} ago.${task.archivedAt ? " Archived." : ""}`,
+          `On it: ${task.members.map((m) => `${m.name}${m.type === "agent" ? " (agent)" : ""}`).join(", ") || "no one"}`,
+          task.summary ? `Summary: ${task.summary}` : "",
+          task.options.length ? `Options offered: ${task.options.map((o) => `${o.label}${o.recommended ? " (recommended)" : ""}`).join("; ")}` : "",
+          task.progress ? `Progress:\n${task.progress}` : "",
+          schedule ? `Schedule: ${schedule.paused ? "paused" : schedule.description}, ${schedule.mode}; last ran ${schedule.lastRunAt ? `${elapsed(schedule.lastRunAt, now)} ago` : "never"}.` : "",
+          `Description:\n${task.description.slice(0, 3000)}`,
+          files.length ? `Files: ${files.map((f) => `${f.name} (v${f.versions[0]?.version ?? 1}${f.role === "input" ? ", input" : ""})`).join(", ")}` : "",
+          `Thread (${latest.length} of ${thread.length}, oldest first):`,
+          ...latest.map((m) => `- ${m.author}${m.kind !== "comment" ? ` [${m.kind}]` : ""}, ${elapsed(m.createdAt, now)} ago: ${m.body.slice(0, 1500)}`),
+        ]
+          .filter(Boolean)
+          .join("\n");
+      },
+    }),
+    reply_on_task: tool({
+      description:
+        "Post a message on a task's thread as the person you're talking to, e.g. to tell its agent to change course, answer its question or add a detail. It wakes the task's agent, or queues for it if it's working. Only post what they asked you to say; @Name mentions work as in the thread.",
+      inputSchema: z.object({ number: z.number().int().positive(), message: z.string().min(1).max(4000) }),
+      execute: async ({ number, message }) => {
+        const task = await getTaskByNumber(orgId, number);
+        if (!task) return { error: `There's no task #${number}.` };
+        const working = isRunning(task);
+        try {
+          const after = await replyToTask(orgId, task.id, by, message);
+          const agent = after.members.find((m) => m.type === "agent" && m.id === (after.runAgentId ?? undefined))?.name;
+          return {
+            posted: true,
+            number,
+            note: working
+              ? "Its agent is working: it reads this when it finishes what it's doing."
+              : after.status === "ready" || isRunning(after)
+                ? `${agent ?? "Its agent"} is picking it up.`
+                : "Posted; no agent was woken (it's for people, or no agent is on it).",
+          };
+        } catch (error) {
+          if (error instanceof WorkError) return { error: error.message };
+          throw error;
+        }
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value: "error" in output ? `Not posted: ${output.error}` : `Posted on #${output.number}. ${output.note}`,
       }),
     }),
     connect_data_source: tool({

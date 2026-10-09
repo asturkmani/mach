@@ -1,4 +1,4 @@
-import { BadgeCheck } from "lucide-react";
+import { BadgeCheck, Repeat } from "lucide-react";
 import Link from "next/link";
 
 import { AgentForm } from "@/components/agent-form";
@@ -12,7 +12,9 @@ import { listPeople } from "@/lib/people";
 import { phoneDigits } from "@/lib/channels/senders";
 import { formatPhone } from "@/lib/phone-format";
 import { requireAppContext } from "@/lib/session";
-import { listTasks } from "@/lib/tasks";
+import { isRunning, listTasks } from "@/lib/tasks";
+import { timeIn } from "@/lib/agents/prompts";
+import { listScheduledJobs } from "@/lib/work-overview";
 
 import { AddPersonForm, PersonActions, ManagerSelect } from "./team-controls";
 
@@ -34,15 +36,15 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   const { organization, person: me, isAdmin } = await requireAppContext();
   const params = await searchParams;
   const show = params.show === "people" || params.show === "agents" ? params.show : "all";
-  const [people, agents, tasks, roles] = await Promise.all([
+  const [people, agents, tasks, jobs, roles] = await Promise.all([
     listPeople(organization.id),
     listAgents(organization.id),
     listTasks(organization.id, { closedLimit: 0 }),
+    listScheduledJobs(organization.id),
     memberRoles(organization.id).catch(() => new Map<string, { membershipId: string; role: "admin" | "member" }>()),
   ]);
   const roleOf = (workosUserId: string | null) => (workosUserId ? (roles.get(workosUserId)?.role ?? null) : null);
   const defined = agents.filter((a) => a.kind === "defined");
-  const workers = agents.filter((a) => a.kind === "worker");
   const openTasksFor = (id: string) => tasks.filter((t) => t.members.some((m) => m.id === id));
 
   return (
@@ -178,30 +180,60 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                     </Link>
                   </li>
                 ))}
-                {workers.map((agent) => {
-                  const task = openTasksFor(agent.id)[0];
+              </ul>
+            </TeamSection>
+          )}
+
+          {show !== "people" && jobs.length > 0 && (
+            <section>
+              <div className="mb-3">
+                <h2 className="label">
+                  Scheduled jobs <span className="text-faint">{jobs.length}</span>
+                </h2>
+                <p className="mt-1 text-sm text-muted">
+                  Work that runs by itself on a schedule. Most replay a saved script without AI; each has an agent that steps in only
+                  when a run breaks.
+                </p>
+              </div>
+              <ul className="divide-y divide-line-soft border border-line bg-raised">
+                {jobs.map(({ task, schedule, page }) => {
+                  const fixer = task.members.find((m) => m.type === "agent");
+                  const running = isRunning(task);
+                  const trouble = !running && (task.status === "waiting" || task.status === "review");
                   return (
-                    <li key={agent.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
-                      <Face name={agent.name} agent size={30} />
+                    <li key={task.id} className="flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-3">
+                      <Repeat size={16} className="mt-1 shrink-0 text-faint" aria-hidden />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[15px]">
-                          {agent.name} <span className="label ml-1 text-faint">worker</span>
-                        </p>
-                        <p className="truncate text-sm text-muted">{agent.role}</p>
-                      </div>
-                      {task && (
-                        <Link
-                          href={`/tasks/${task.number}`}
-                          className="label min-w-0 basis-full truncate pl-[42px] hover:text-ink sm:max-w-[45%] sm:basis-auto sm:pl-0"
-                        >
-                          #{task.number} {task.title}
+                        <Link href={`/tasks/${task.number}`} className="text-[15px] hover:underline">
+                          {task.title}
                         </Link>
-                      )}
+                        <p className="text-sm text-muted">
+                          {schedule.paused ? "Paused" : schedule.description}
+                          {!schedule.paused && schedule.nextRunAt && <> · next {timeIn(schedule.nextRunAt, schedule.timezone)}</>}
+                          {schedule.lastRunAt && <> · last ran {timeIn(schedule.lastRunAt, schedule.timezone)}</>}
+                        </p>
+                        <p className="text-xs text-faint">
+                          {page && (
+                            <>
+                              Keeps the{" "}
+                              <Link href={`/pages/${page.slug}`} className="underline underline-offset-2 hover:text-ink">
+                                {page.title}
+                              </Link>{" "}
+                              page fresh ·{" "}
+                            </>
+                          )}
+                          {schedule.mode === "script" ? "Replays its script" : "Its agent does it each time"}
+                          {fixer && <> · {schedule.mode === "script" ? `${fixer.name} fixes it if it breaks` : `by ${fixer.name}`}</>}
+                        </p>
+                      </div>
+                      <span className={`label shrink-0 ${trouble ? "text-danger" : running ? "text-accent-ink" : "text-ok"}`}>
+                        {running ? "Running" : trouble ? "Needs you" : schedule.paused ? "Paused" : "OK"}
+                      </span>
                     </li>
                   );
                 })}
               </ul>
-            </TeamSection>
+            </section>
           )}
         </div>
       </div>
