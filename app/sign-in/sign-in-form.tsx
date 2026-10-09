@@ -5,17 +5,17 @@ import { useState, useTransition } from "react";
 
 import type { Provider } from "@/lib/sign-in";
 
-import { codeStep, companyStep, emailStep, passwordStep, resendCode, verifyStep, type Step } from "./actions";
+import { codeStep, companyStep, emailStep, resendCode, verifyStep, type Step } from "./actions";
 
 // The steps of signing in, one screen at a time: email (or Google, Microsoft),
-// then a code by email or a password, then which company if there's more than one.
+// then the code we emailed, then which company if there's more than one.
 
 export type Start =
   | { step: "email" }
   | { step: "verify"; email: string }
   | { step: "company"; companies: { id: string; name: string }[] };
 
-type Screen = Start | { step: "code"; email: string } | { step: "password"; email: string; newUser: boolean };
+type Screen = Start | { step: "code"; email: string };
 
 export function SignInForm({
   start,
@@ -148,55 +148,6 @@ export function SignInForm({
         </form>
       )}
 
-      {screen.step === "password" && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const data = new FormData(e.currentTarget);
-            run(() =>
-              passwordStep({ password: String(data.get("password") ?? ""), name: String(data.get("name") ?? ""), newUser: screen.newUser }),
-            );
-          }}
-          className="space-y-3"
-        >
-          <p className="text-[15px]">
-            {screen.newUser ? "Create your account for " : "Signing in as "}
-            <span className="font-medium">{screen.email}</span>
-          </p>
-          {screen.newUser && (
-            <label className="block space-y-1">
-              <span className="label">Your name</span>
-              <input name="name" autoComplete="name" required autoFocus className="field py-2.5 text-[15px]" placeholder="Ahmed Khan" />
-            </label>
-          )}
-          <label className="block space-y-1">
-            <span className="label">{screen.newUser ? "Choose a password" : "Password"}</span>
-            <input
-              type="password"
-              name="password"
-              autoComplete={screen.newUser ? "new-password" : "current-password"}
-              required
-              autoFocus={!screen.newUser}
-              minLength={screen.newUser ? 10 : undefined}
-              className="field py-2.5 text-[15px]"
-            />
-          </label>
-          <button type="submit" disabled={pending} className="btn btn-primary w-full justify-center py-2.5 text-[15px]">
-            {pending ? "One moment…" : screen.newUser ? "Create account" : "Sign in"}
-          </button>
-          <div className="flex items-center justify-between text-sm">
-            <button type="button" onClick={back} className="flex items-center gap-1 text-muted hover:text-ink">
-              <ArrowLeft size={14} /> Different email
-            </button>
-            {!screen.newUser && (
-              <a href={`/sign-in/hosted?${new URLSearchParams({ email: screen.email, returnTo })}`} className="text-muted hover:text-ink">
-                Forgot your password?
-              </a>
-            )}
-          </div>
-        </form>
-      )}
-
       {screen.step === "company" && (
         <div className="space-y-3">
           <p className="text-[15px]">You&apos;re in more than one company. Which one?</p>
@@ -228,14 +179,6 @@ export function SignInForm({
         </p>
       )}
 
-      {screen.step === "email" && (
-        <p className="text-xs text-faint">
-          Trouble signing in?{" "}
-          <a href={`/sign-in/hosted?${new URLSearchParams({ ...(email ? { email } : {}), returnTo })}`} className="underline underline-offset-2 hover:text-muted">
-            Other ways to sign in
-          </a>
-        </p>
-      )}
     </div>
   );
 }

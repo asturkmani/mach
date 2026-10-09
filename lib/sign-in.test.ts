@@ -43,15 +43,17 @@ describe("signing in on Mach1's own page", () => {
     }
   });
 
-  it("sends a code by email, or asks for a password when codes aren't turned on", async () => {
+  it("sends a code by email, and says so plainly when email codes aren't switched on", async () => {
     workos.userManagement.createMagicAuth.mockResolvedValueOnce({ id: "magic_1" });
     expect(await startWithEmail("sara@cedar.example")).toEqual({ next: "code" });
 
-    workos.userManagement.createMagicAuth.mockRejectedValue(workosError({ error: "authentication_method_not_allowed" }));
-    workos.userManagement.listUsers.mockResolvedValueOnce({ data: [{ id: "user_1" }] });
-    expect(await startWithEmail("sara@cedar.example")).toEqual({ next: "password", newUser: false });
-    workos.userManagement.listUsers.mockResolvedValueOnce({ data: [] });
-    expect(await startWithEmail("new@cedar.example")).toEqual({ next: "password", newUser: true });
+    // No password to fall back to: Mach1 signs in by code only.
+    workos.userManagement.createMagicAuth.mockRejectedValueOnce(workosError({ error: "authentication_method_not_allowed" }));
+    expect(await startWithEmail("sara@cedar.example")).toEqual({
+      next: "error",
+      message: "Signing in by email isn't switched on yet. Use Google or Microsoft for now.",
+    });
+    expect(workos.userManagement.listUsers).not.toHaveBeenCalled();
   });
 
   it("sends a work email whose company has single sign-on to it, without emailing a code", async () => {
@@ -76,7 +78,6 @@ describe("signing in on Mach1's own page", () => {
     expect(await fail({ error: "sso_required", connection_ids: ["conn_1"] })).toEqual({ kind: "sso", connectionId: "conn_1" });
     expect(await fail({ code: "mfa_challenge", pending_authentication_token: "tok" })).toEqual({ kind: "hosted" });
     expect(await fail({ code: "invalid_one_time_code" })).toEqual({ kind: "error", message: "That code didn't work. Check it, or send a new one." });
-    expect(await fail({ code: "invalid_credentials" })).toEqual({ kind: "error", message: "That email and password don't match." });
 
     const auth = { user: { id: "user_1" }, accessToken: "a", refreshToken: "r" };
     workos.userManagement.authenticateWithMagicAuth.mockResolvedValueOnce(auth);

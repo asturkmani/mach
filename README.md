@@ -50,7 +50,7 @@ Each person's conversation with the Chief of Staff is stored in Postgres too, so
 ### 1. WorkOS
 
 1. Create a free account at [workos.com](https://workos.com) and open the **Staging** environment.
-2. **Authentication**: turn on **Magic Auth** (a code by email: the main way in on Mach1's sign-in page; without it the page asks for a password), and **Google OAuth** and **Microsoft OAuth** with your own client credentials in Production (Staging has WorkOS's test ones). The sign-in page shows only the providers that are turned on. For a client with single sign-on, add their connection and domain to their organization: their work emails go straight to it. See [docs/sign-in.md](docs/sign-in.md).
+2. **Authentication**: turn on **Magic Auth** (a code by email, the way in on Mach1's sign-in page; there are no passwords, so turn Password off), and **Google OAuth** and **Microsoft OAuth** with your own client credentials in Production (Staging has WorkOS's test ones). The sign-in page shows only the providers that are turned on. For a client with single sign-on, add their connection and domain to their organization: their work emails go straight to it. See [docs/sign-in.md](docs/sign-in.md).
 3. **Redirects**:
    - Redirect URI: `http://localhost:3000/callback` (add your Vercel URL + `/callback` later)
    - Initiate login URI: `http://localhost:3000/sign-in`

@@ -15,7 +15,9 @@ export async function GET(request: NextRequest, { params }: RouteContext<"/sign-
   const email = query.get("email") ?? undefined;
   const invitationToken = query.get("invitation_token") ?? undefined;
 
-  if (via === "hosted") return NextResponse.redirect(await getSignInUrl({ loginHint: email, returnTo }));
+  // WorkOS's own page always asks again (max_age=0): a session it remembers from earlier
+  // mustn't sign someone straight in, perhaps as an account other than the one they typed.
+  if (via === "hosted") return NextResponse.redirect(await getSignInUrl({ loginHint: email, returnTo, maxAge: 0 }));
 
   const connectionId = query.get("connection");
   const target = via === "sso" && connectionId ? { connectionId } : via in PROVIDERS ? { provider: via as Provider } : null;

@@ -7,11 +7,11 @@ import type { AuthenticationResponse } from "@workos-inc/node";
 
 import { companyDomainFromEmail } from "@/lib/website";
 
-// Signing in on Mach1's own page, through WorkOS's API: a code by email (Magic
-// Auth) or a password, Google or Microsoft, and the company's single sign-on
-// for a work domain that has one. WorkOS keeps the accounts; Mach1 shows the
-// screens. Anything unusual (multi-factor, a password reset) finishes on
-// WorkOS's hosted page, which can do everything.
+// Signing in on Mach1's own page, through WorkOS's API: a 6-digit code by email
+// (Magic Auth), Google or Microsoft, and the company's single sign-on for a
+// work domain that has one. No passwords. WorkOS keeps the accounts; Mach1
+// shows the screens. Anything unusual (multi-factor, a Radar challenge)
+// finishes on WorkOS's hosted page.
 
 export type Provider = "google" | "microsoft";
 
@@ -71,11 +71,6 @@ function friendly(code: string, error: unknown): string {
   if (code === "invalid_one_time_code" || code === "invalid_code" || code === "one_time_code_expired") {
     return "That code didn't work. Check it, or send a new one.";
   }
-  if (code === "invalid_credentials") return "That email and password don't match.";
-  if (code === "password_strength_error" || code === "password_too_weak") {
-    return "Choose a stronger password: at least 10 characters, not a common one.";
-  }
-  if (code === "user_creation_error" || code === "email_not_available") return "There's already an account for that email. Sign in instead.";
   if (code === "authentication_method_not_allowed") return "That way of signing in isn't turned on for Mach1.";
   console.error("Sign-in failed", code, (error as WorkOSError)?.message);
   return "Something went wrong signing in. Try again.";
@@ -95,42 +90,29 @@ export async function ssoConnectionFor(email: string): Promise<string | null> {
 }
 
 /**
- * The first step for an email: their company's single sign-on, else a code by
- * email, else (codes not turned on in WorkOS) a password, to create one if
- * they don't have an account yet.
+ * The first step for an email: their company's single sign-on, else a code
+ * by email. The first code for an address creates its account.
  */
 export async function startWithEmail(
   email: string,
   options: { invitationToken?: string; ipAddress?: string; userAgent?: string } = {},
-): Promise<{ next: "sso"; connectionId: string } | { next: "code" } | { next: "password"; newUser: boolean } | { next: "error"; message: string }> {
+): Promise<{ next: "sso"; connectionId: string } | { next: "code" } | { next: "error"; message: string }> {
   const connectionId = await ssoConnectionFor(email);
   if (connectionId) return { next: "sso", connectionId };
   try {
     await getWorkOS().userManagement.createMagicAuth({ email, ...options });
     return { next: "code" };
   } catch (error) {
-    if (errorCode(error) !== "authentication_method_not_allowed") return { next: "error", message: friendly(errorCode(error), error) };
+    if (errorCode(error) === "authentication_method_not_allowed") {
+      console.error("Magic Auth is off in this WorkOS environment: turn it on in Authentication → Magic Auth.");
+      return { next: "error", message: "Signing in by email isn't switched on yet. Use Google or Microsoft for now." };
+    }
+    return { next: "error", message: friendly(errorCode(error), error) };
   }
-  const users = await getWorkOS().userManagement.listUsers({ email });
-  return { next: "password", newUser: users.data.length === 0 };
 }
 
 export const withCode = (email: string, code: string, invitationToken?: string) =>
   attempt(() => getWorkOS().userManagement.authenticateWithMagicAuth({ clientId: clientId(), email, code, invitationToken }));
-
-export const withPassword = (email: string, password: string, invitationToken?: string) =>
-  attempt(() => getWorkOS().userManagement.authenticateWithPassword({ clientId: clientId(), email, password, invitationToken }));
-
-/** A new account with a password; WorkOS then emails a code to confirm the address. */
-export async function createAccount(email: string, password: string, name: string, invitationToken?: string): Promise<Outcome> {
-  const [firstName, ...rest] = name.trim().split(/\s+/);
-  try {
-    await getWorkOS().userManagement.createUser({ email, password, firstName: firstName || undefined, lastName: rest.join(" ") || undefined });
-  } catch (error) {
-    return { kind: "error", message: friendly(errorCode(error), error) };
-  }
-  return withPassword(email, password, invitationToken);
-}
 
 export const withEmailVerification = (pendingAuthenticationToken: string, code: string) =>
   attempt(() => getWorkOS().userManagement.authenticateWithEmailVerification({ clientId: clientId(), pendingAuthenticationToken, code }));

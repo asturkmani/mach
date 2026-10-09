@@ -4,7 +4,6 @@ import { saveSession } from "@workos-inc/authkit-nextjs";
 import { cookies, headers } from "next/headers";
 
 import {
-  createAccount,
   safeReturnTo,
   sealPending,
   SIGN_IN_COOKIE,
@@ -13,7 +12,6 @@ import {
   withCode,
   withCompany,
   withEmailVerification,
-  withPassword,
   type Outcome,
   type Pending,
 } from "@/lib/sign-in";
@@ -23,7 +21,6 @@ import {
 
 export type Step =
   | { step: "code"; email: string }
-  | { step: "password"; email: string; newUser: boolean }
   | { step: "verify"; email: string }
   | { step: "company"; companies: { id: string; name: string }[] }
   | { go: string }
@@ -90,24 +87,13 @@ export async function emailStep(input: Context & { email: string }): Promise<Ste
   await remember(pending);
   if (next.next === "sso") return settle({ kind: "sso", connectionId: next.connectionId }, pending);
   if (next.next === "error") return { error: next.message };
-  if (next.next === "code") return { step: "code", email };
-  return { step: "password", email, newUser: next.newUser };
+  return { step: "code", email };
 }
 
 export async function codeStep(input: { code: string }): Promise<Step> {
   const pending = await remembered();
   if (!pending.email) return { error: "That took too long. Start again." };
   return settle(await withCode(pending.email, input.code.replace(/\s/g, ""), pending.invitationToken), pending);
-}
-
-export async function passwordStep(input: { password: string; name?: string; newUser: boolean }): Promise<Step> {
-  const pending = await remembered();
-  if (!pending.email) return { error: "That took too long. Start again." };
-  if (!input.password) return { error: "Enter your password." };
-  const outcome = input.newUser
-    ? await createAccount(pending.email, input.password, input.name ?? "", pending.invitationToken)
-    : await withPassword(pending.email, input.password, pending.invitationToken);
-  return settle(outcome, pending);
 }
 
 export async function verifyStep(input: { code: string }): Promise<Step> {

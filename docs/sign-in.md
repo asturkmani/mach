@@ -14,7 +14,7 @@ Mach1 has its own sign-in page at `/sign-in`, on Mach1's domain. WorkOS still ke
 
 New and returning people take the same steps: the first sign-in creates the account. Signed-in people who open `/sign-in` go straight in. Signing out lands back on `/sign-in`.
 
-**Other ways to sign in** (at the bottom of the page) opens WorkOS's own page, which handles anything Mach1's doesn't: multi-factor authentication, password resets, and a Radar challenge. Mach1 sends people there automatically when WorkOS asks for one of these.
+**WorkOS's own page** handles what Mach1's doesn't (multi-factor authentication, a Radar challenge). Mach1 sends people there only when WorkOS asks for one of these, and with `max_age=0`, so it always asks again rather than signing in silently with a session it remembers from earlier.
 
 ## Finding your company
 
@@ -48,7 +48,7 @@ When someone signs in for the first time with that domain, `/welcome` shows the 
 
 In each environment (Staging, Production):
 
-1. **Authentication → Magic Auth: on.** This gives the email code.
+1. **Authentication → Magic Auth: on.** This is how people sign in by email. Turn **Password off**, so WorkOS's own pages never offer one either.
 2. **Authentication → Google OAuth and Microsoft OAuth: on.** Production needs your own credentials:
    - **Google:** a Google Cloud OAuth client.
    - **Microsoft:** an Azure app registration, set to "accounts in any organizational directory and personal accounts" so work and personal Microsoft accounts both work.
