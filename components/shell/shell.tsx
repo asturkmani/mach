@@ -279,6 +279,12 @@ export function ShellProvider({ data, children }: { data: ShellData; children: R
         return;
       }
       if (event.defaultPrevented) return;
+      // Esc in the Chief of Staff panel (even mid-message) closes it; C opens it again with the draft kept.
+      if (name === "escape" && (event.target as HTMLElement | null)?.closest?.('aside[aria-label="Chief of Staff"]')) {
+        (event.target as HTMLElement).blur();
+        setCosOpen(false);
+        return;
+      }
       if (isTyping(event.target)) {
         if (name === "escape") (event.target as HTMLElement).blur();
         return;
