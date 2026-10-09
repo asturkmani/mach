@@ -16,8 +16,11 @@ const STEP = `${JOB_DIR}/.mach/browser-step.py`;
 const PORT = 9333;
 export const VIEWPORT = { width: 1280, height: 800 };
 
-/** Where the sign-in helper finds this browser and the tab it's on, to sign in inside it. */
-export const LIVE_BROWSER = { cdp: `http://127.0.0.1:${PORT}`, tabs: `${BROWSER_DIR}/state.json` };
+/** Where the sign-in helper finds this browser. */
+export const LIVE_CDP = `http://127.0.0.1:${PORT}`;
+
+/** Each browser session has its own tab; this file remembers which (several sessions share the browser). */
+export const tabFile = (session: string) => `${BROWSER_DIR}/tab-${session.replace(/[^a-zA-Z0-9-]/g, "")}.json`;
 
 /**
  * Finding "the tab the agent is on" again from a new connection: by the tab's
@@ -34,13 +37,20 @@ export const TAB_PY = String.raw`def target_id(context, page):
         return None
 
 def current_page(context, state):
-    pages = [pg for pg in context.pages if not pg.url.startswith("devtools://")] or [context.new_page()]
+    """This session's tab, or a new one when it has none yet (or it was closed): never another session's tab."""
+    pages = [pg for pg in context.pages if not pg.url.startswith("devtools://")]
     wanted = state.get("target")
     if wanted:
         for candidate in pages:
             if target_id(context, candidate) == wanted:
                 return candidate
-    return pages[-1]
+    # Keep the browser tidy: at most eight tabs, closing the oldest.
+    for old in pages[:-7]:
+        try:
+            old.close()
+        except Exception:
+            pass
+    return context.new_page()
 `;
 
 /** Keeps the browser open until the ready file is removed. */
@@ -68,7 +78,7 @@ import base64, contextlib, io, json, os, re, signal, sys, time
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 command = json.load(open(sys.argv[1]))
-out_path, shot_path, state_path = sys.argv[2], sys.argv[3], "${BROWSER_DIR}/state.json"
+out_path, shot_path, state_path = sys.argv[2], sys.argv[3], sys.argv[4]
 result = {"actions": []}
 
 def load_state():
@@ -355,7 +365,12 @@ export async function ensureBrowser(sandbox: JobSandbox): Promise<void> {
 }
 
 /** Runs one command in the browser and returns what happened, with a screenshot unless asked not to. */
-export async function browserStep(context: AgentContext, command: BrowserCommand, { screenshot = true } = {}): Promise<StepResult> {
+export async function browserStep(
+  context: AgentContext,
+  session: string,
+  command: BrowserCommand,
+  { screenshot = true } = {},
+): Promise<StepResult> {
   "use step";
   const sandbox = await open(context);
   await ensureBrowser(sandbox);
@@ -368,7 +383,7 @@ export async function browserStep(context: AgentContext, command: BrowserCommand
     { path: STEP, content: Buffer.from(STEP_PY) },
     { path: input, content: Buffer.from(JSON.stringify(payload)) },
   ]);
-  const run = await sandbox.run("python3", [STEP, input, output, shot], { cwd: JOB_DIR, timeoutMs: 150_000 });
+  const run = await sandbox.run("python3", [STEP, input, output, shot, tabFile(session)], { cwd: JOB_DIR, timeoutMs: 150_000 });
   const raw = await sandbox.readFile(output);
   if (!raw) {
     const why = (run.stderr || run.stdout).trim().split("\n").slice(-3).join(" ").slice(0, 400);

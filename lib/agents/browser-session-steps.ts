@@ -26,12 +26,14 @@ export async function openBrowserSession(
 ): Promise<{ session: BrowserSession } | { error: string }> {
   "use step";
   if (job.session) {
-    const session = await getBrowserSession(context.organizationId, job.session, context.taskId);
+    const session = await getBrowserSession(context.organizationId, job.session, { taskId: context.taskId, personId: context.personId });
     if (!session) return { error: `There's no browser session ${job.session} here. Start a new one with task.` };
     return { session };
   }
   if (!job.task?.trim()) return { error: "Say what to do (task), or continue a session (session and message)." };
-  return { session: await createBrowserSession(context.organizationId, { taskId: context.taskId, goal: job.task.trim() }) };
+  return {
+    session: await createBrowserSession(context.organizationId, { taskId: context.taskId, personId: context.personId, goal: job.task.trim() }),
+  };
 }
 
 export async function closeBrowserSession(

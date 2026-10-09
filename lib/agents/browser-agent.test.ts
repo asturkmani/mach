@@ -49,9 +49,9 @@ async function ledgerSandboxes() {
     "browser-server.py": (files, args) => {
       files.set(args[2], Buffer.from("123"));
     },
-    "browser-step.py": (files, [input, output, shot]) => {
+    "browser-step.py": (files, [input, output, shot, tab]) => {
       const command = JSON.parse(files.get(input)!.toString()) as Record<string, unknown> & { type: string };
-      site.commands.push(command);
+      site.commands.push({ ...command, tab });
       const result: Record<string, unknown> = { url: "https://ledger.example/cash", title: "Cash", actions: [] };
       if (command.type === "act") {
         for (const a of command.actions as { do: string; text?: string }[]) {
@@ -139,7 +139,7 @@ describe("the browser agent", () => {
     expect((await listTaskFiles(ORG, task.id)).map((f) => f.name)).toEqual(["screenshot-tagged-transaction.png"]);
 
     // Its history is kept, without screenshots, for the next message in the session.
-    const saved = (await getBrowserSession(ORG, report.session, task.id))!;
+    const saved = (await getBrowserSession(ORG, report.session, { taskId: task.id }))!;
     expect(saved.status).toBe("done");
     expect(JSON.stringify(saved.messages)).not.toContain("image/jpeg");
 
@@ -230,7 +230,7 @@ describe("the browser agent", () => {
 
     expect(await getTask(ORG, task.id)).toMatchObject({ status: "review", pendingLogin: null });
     // The helper signed in inside the browser agent's own browser, in the tab it was using.
-    expect(site.signIns).toEqual([{ cdp: "http://127.0.0.1:9333", tabs: "/vercel/job/.browser/state.json" }]);
+    expect(site.signIns).toEqual([{ cdp: "http://127.0.0.1:9333", tabs: `/vercel/job/.browser/tab-${session}.json` }]);
     expect(site.tagged).toBe("Dividends");
     expect(JSON.stringify(await listMessages(task.id))).not.toContain("123456");
   });
@@ -273,5 +273,30 @@ describe("the browser agent", () => {
     const second = await runBrowserAgent(workspace, using, { session: first.session, message: "The code is entered." }, { durable: false, logins: null });
     expect(second).toMatchObject({ status: "done", session: first.session, needsCode: undefined });
     expect(site.signIns).toHaveLength(1);
+  });
+
+  it("gives each session its own tab, and only its owner's chat can continue a Chief of Staff session", async () => {
+    const { ahmed } = await setUp();
+    const lina = await linkMember(ORG, { id: "user_lina", email: "lina@cedar.example", name: "Lina" });
+    const { sandboxes, site } = await ledgerSandboxes();
+    setSandboxProvider(sandboxes.provider);
+    const as = (personId: string) => ({ organizationId: ORG, taskId: null, agentId: null, agentName: "Chief of Staff", personId });
+    const finish = (message: string) => scriptedModel([[["look", {}]], [["finish", { status: "done", message }]]]);
+
+    setBrowserAgentModel(finish("Ahmed's balance is £120."));
+    const mine = await runBrowserAgent(as(ahmed.id), sandboxUser(as(ahmed.id), {}), { task: "Check the cash balance" }, { durable: false, logins: null });
+    setBrowserAgentModel(finish("Lina's report is open."));
+    const hers = await runBrowserAgent(as(lina.id), sandboxUser(as(lina.id), {}), { task: "Open the monthly report" }, { durable: false, logins: null });
+
+    // Same browser, separate tabs.
+    const tabs = new Set(site.commands.map((c) => c.tab));
+    expect(tabs).toEqual(new Set([`/vercel/job/.browser/tab-${mine.session}.json`, `/vercel/job/.browser/tab-${hers.session}.json`]));
+
+    // Lina's chat can't pick up Ahmed's session; Ahmed's can.
+    setBrowserAgentModel(finish("Still £120."));
+    const intrusion = await runBrowserAgent(as(lina.id), sandboxUser(as(lina.id), {}), { session: mine.session, message: "What did you see?" }, { durable: false, logins: null });
+    expect(intrusion).toMatchObject({ status: "failed", message: expect.stringContaining("no browser session") });
+    const own = await runBrowserAgent(as(ahmed.id), sandboxUser(as(ahmed.id), {}), { session: mine.session, message: "And now?" }, { durable: false, logins: null });
+    expect(own).toMatchObject({ status: "done", session: mine.session });
   });
 });

@@ -439,3 +439,6 @@ create table if not exists browser_sessions (
 );
 
 create index if not exists browser_sessions_org on browser_sessions (organization_id, updated_at desc);
+
+-- Whose Chief of Staff chat a browser session belongs to (sessions on a task belong to the task).
+alter table browser_sessions add column if not exists person_id uuid references people (id) on delete cascade;

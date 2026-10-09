@@ -156,6 +156,8 @@ export type BrowserOutcome = {
 };
 
 type RunState = {
+  /** The session, whose own tab this call works in. */
+  session: string;
   finished?: BrowserOutcome;
   evidence: { name: string; caption: string }[];
   /** A sign-in waiting for a code: the caller arranges it with the people. */
@@ -167,7 +169,7 @@ type RunState = {
 function browserAgentTools(context: AgentContext, using: SandboxUser, state: RunState, logins: string[] | null): ToolSet {
   const step = (command: BrowserCommand, options?: { screenshot?: boolean }) =>
     using(async (): Promise<StepOutput> => {
-      const result = await browserStep(context, command, options);
+      const result = await browserStep(context, state.session, command, options);
       return { text: describeStep(result), screenshot: result.screenshot };
     });
   return {
@@ -197,7 +199,7 @@ function browserAgentTools(context: AgentContext, using: SandboxUser, state: Run
       inputSchema: z.object({ mode: z.enum(["elements", "outline", "text"]), query: z.string().optional() }),
       execute: async ({ mode, query }) =>
         using(async () => {
-          const result = await browserStep(context, { type: "read", mode, query }, { screenshot: false });
+          const result = await browserStep(context, state.session, { type: "read", mode, query }, { screenshot: false });
           const read = typeof result.read === "string" ? result.read : JSON.stringify(result.read ?? []);
           return `${describeStep(result)}\n\n${read}`;
         }),
@@ -208,7 +210,7 @@ function browserAgentTools(context: AgentContext, using: SandboxUser, state: Run
       inputSchema: z.object({ code: z.string().min(1) }),
       execute: ({ code }) =>
         using(async (): Promise<StepOutput> => {
-          const result = await browserStep(context, { type: "script", code });
+          const result = await browserStep(context, state.session, { type: "script", code });
           return { text: `${describeStep(result)}\n\nPrinted:\n${result.printed || "(nothing)"}`, screenshot: result.screenshot };
         }),
       toModelOutput: withScreenshot,
@@ -226,12 +228,12 @@ function browserAgentTools(context: AgentContext, using: SandboxUser, state: Run
               using(async (): Promise<StepOutput> => {
                 state.login = login;
                 // The helper signs in inside this browser, in the tab you're on.
-                const signed = await browserLogin(context, { login, again }, { live: true });
+                const signed = await browserLogin(context, { login, again }, { live: state.session });
                 if (signed.needsCode) {
                   state.needsCode = signed.needsCode;
                   return { text: `${signed.text} Finish with needs_input asking the caller for the ${signed.needsCode.name} sign-in code; call sign_in again when you're called back.` };
                 }
-                const result = await browserStep(context, { type: "look" });
+                const result = await browserStep(context, state.session, { type: "look" });
                 if (!/^(Signed in|Already signed in)/.test(signed.text)) return { text: `${signed.text}\n${describeStep(result)}`, screenshot: result.screenshot };
                 return { text: `${signed.text.split(" The session is in")[0]} You're signed in, in this tab.\n${describeStep(result)}`, screenshot: result.screenshot };
               }),
@@ -254,7 +256,7 @@ function browserAgentTools(context: AgentContext, using: SandboxUser, state: Run
       execute: ({ name, caption, full_page }) =>
         using(async () => {
           const file = evidenceName(name);
-          const result = await browserStep(context, { type: "evidence", path: `${EVIDENCE_DIR}/${file}.png`, full_page }, { screenshot: false });
+          const result = await browserStep(context, state.session, { type: "evidence", path: `${EVIDENCE_DIR}/${file}.png`, full_page }, { screenshot: false });
           if (!result.saved) return `Couldn't save it: ${result.error ?? "unknown error"}`;
           state.evidence = [...state.evidence.filter((e) => e.name !== file), { name: file, caption }];
           return `Saved ${file}.png.`;
@@ -368,7 +370,7 @@ export async function runBrowserAgent(
         .join("\n\n");
   const messages: ModelMessage[] = [...session.messages, { role: "user", content: opening }];
 
-  const state: RunState = { evidence: [], login };
+  const state: RunState = { session: session.id, evidence: [], login };
   const tools = browserAgentTools(context, using, state, options.logins);
   const settings = {
     model,

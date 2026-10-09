@@ -13,7 +13,7 @@ import {
 } from "@/lib/integrations";
 import { redact, seal, unseal } from "@/lib/secrets";
 import { addMessage, getTask, setPendingLogin, takeLoginCode, updateTask } from "@/lib/tasks";
-import { ensureBrowser, LIVE_BROWSER, TAB_PY } from "@/lib/agents/browser-live";
+import { ensureBrowser, LIVE_CDP, TAB_PY, tabFile } from "@/lib/agents/browser-live";
 
 // The browser every agent has in its sandbox. browser_login signs it in to a
 // site with the company's saved credentials: a helper in the sandbox fills the
@@ -329,6 +329,8 @@ try:
             except Exception:
                 tab_state = {}
             page = current_page(context, tab_state)
+            with open(live["tabs"], "w") as f:
+                json.dump({"target": target_id(context, page)}, f)
             if os.path.exists(state_path):
                 saved = lambda: import_saved(context, state_path)
         else:
@@ -594,7 +596,8 @@ async function readSeen(sandbox: JobSandbox, slug: string): Promise<string | nul
 export async function browserLogin(
   context: AgentContext,
   input: { login: string; again?: boolean },
-  options: { live?: boolean } = {},
+  /** live: the browser session (of the browser agent) whose tab to sign in inside. */
+  options: { live?: string } = {},
 ): Promise<LoginResult> {
   "use step";
   const integration = await getIntegration(context.organizationId, input.login);
@@ -653,7 +656,7 @@ export async function browserLogin(
           totp: login.secrets.totp ?? "",
           // Where an earlier sign-in landed: a page to check whether the saved session still works.
           landingUrl: login.landingUrl ?? "",
-          live: options.live ? LIVE_BROWSER : undefined,
+          live: options.live ? { cdp: LIVE_CDP, tabs: tabFile(options.live) } : undefined,
         }),
       ),
     },
