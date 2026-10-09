@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { BadgeCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
 
-import { createEmailInboxAction, savePhoneAction } from "@/app/(app)/company/actions";
+import { createEmailInboxAction, startWhatsAppLinkAction, unlinkWhatsAppAction } from "@/app/(app)/company/actions";
 import { SettingRow } from "@/components/setting-row";
+import { formatPhone } from "@/lib/phone-format";
 import { useShell } from "@/components/shell/shell";
 
 // Reaching the Chief of Staff outside the app. The company's email address and
@@ -85,8 +88,8 @@ export function WhatsAppChannel({ whatsapp, isAdmin }: { whatsapp: string | null
       description={
         whatsapp ? (
           <>
-            The Chief of Staff answers on <span className="font-mono text-ink">{formatPhone(whatsapp)}</span>. Each person saves
-            the number they message it from in Settings → Account.
+            The Chief of Staff answers on <span className="font-mono text-ink">{formatPhone(whatsapp)}</span>. Each person links the
+            number they message it from in Settings → Account, by sending a one-time code from it.
           </>
         ) : (
           `Not set up for Mach1 yet.${isAdmin ? " It needs a Twilio WhatsApp sender (see docs/channels.md)." : ""}`
@@ -96,77 +99,116 @@ export function WhatsAppChannel({ whatsapp, isAdmin }: { whatsapp: string | null
   );
 }
 
-/** A WhatsApp number as people write it: +44 7403 932000 for UK numbers, otherwise as given. */
-export function formatPhone(number: string): string {
-  const raw = number.replace(/^whatsapp:/, "").replace(/[^\d+]/g, "");
-  const uk = raw.match(/^\+44(\d{4})(\d{6})$/);
-  return uk ? `+44 ${uk[1]} ${uk[2]}` : raw;
-}
 
-/** Your own WhatsApp number, the one the Chief of Staff answers. */
-export function WhatsAppNumber({ whatsapp, phone }: { whatsapp: string | null; phone: string | null }) {
+/**
+ * Your WhatsApp: linked by sending a one-time code from your phone to Mach1's
+ * number, which proves the number is yours. Only a linked number reaches the
+ * Chief of Staff as you.
+ */
+export function WhatsAppNumber({ whatsapp, linked }: { whatsapp: string | null; linked: string | null }) {
   const { toast } = useShell();
-  const [saving, startSaving] = useTransition();
-  const [number, setNumber] = useState(phone ?? "");
-  const savePhone = () =>
-    startSaving(async () => {
-      const result = await savePhoneAction(number);
-      toast(result.error ?? (number.trim() ? "Saved your WhatsApp number" : "Removed your WhatsApp number"));
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [link, setLink] = useState<{ code: string; expiresAt: string } | null>(null);
+
+  // Waiting for the code to arrive from the phone: check every few seconds until it's linked or expires.
+  useEffect(() => {
+    if (!link || linked) return;
+    const timer = setInterval(() => {
+      if (Date.now() > new Date(link.expiresAt).getTime()) setLink(null);
+      else router.refresh();
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [link, linked, router]);
+  // The code arrived (the refresh brought the linked number): done waiting.
+  if (linked && link) setLink(null);
+
+  const startLink = () =>
+    start(async () => {
+      const result = await startWhatsAppLinkAction();
+      if ("error" in result) toast(result.error);
+      else setLink(result);
+    });
+  const unlink = () =>
+    start(async () => {
+      if (!confirm("Unlink this number? Messages from it won't reach the Chief of Staff until you link it again.")) return;
+      await unlinkWhatsAppAction();
+      toast("WhatsApp unlinked");
+      router.refresh();
     });
 
-  const linked = phone?.trim() ? phone : null;
-  const chat = whatsapp ? (
-    <a
-      href={`https://wa.me/${whatsapp.replace(/\D/g, "")}`}
-      target="_blank"
-      rel="noreferrer"
-      className="font-mono text-ink underline underline-offset-2"
-    >
+  if (!whatsapp) return <SettingRow title="WhatsApp" description="WhatsApp isn't set up for Mach1 yet." />;
+  const digits = whatsapp.replace(/\D/g, "");
+  const chat = (
+    <a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer" className="font-mono text-ink underline underline-offset-2">
       {formatPhone(whatsapp)}
     </a>
-  ) : null;
+  );
+
+  if (linked) {
+    return (
+      <SettingRow
+        title="WhatsApp"
+        description={
+          <>
+            Linked to{" "}
+            <span className="inline-flex items-center gap-1 font-mono text-ink">
+              {formatPhone(linked)}
+              <BadgeCheck size={13} className="text-ok" aria-label="Verified" />
+            </span>
+            . Message {chat} from it to talk to the Chief of Staff.
+          </>
+        }
+        action={
+          <button onClick={unlink} disabled={pending} className="btn">
+            Unlink
+          </button>
+        }
+      />
+    );
+  }
+
+  if (link) {
+    const message = `LINK ${link.code}`;
+    return (
+      <SettingRow
+        title="WhatsApp"
+        description={
+          <span className="block space-y-2">
+            <span className="block">
+              Send this from the phone you use WhatsApp on, to {chat}. It proves the number is yours. The code works for 10 minutes.
+            </span>
+            <span className="block font-mono text-lg tracking-wider text-ink">{message}</span>
+            <span className="block text-xs text-faint">Waiting for it to arrive…</span>
+          </span>
+        }
+        action={
+          <div className="flex gap-2">
+            <a href={`https://wa.me/${digits}?text=${encodeURIComponent(message)}`} target="_blank" rel="noreferrer" className="btn btn-primary">
+              Open WhatsApp
+            </a>
+            <button onClick={() => setLink(null)} className="btn btn-ghost">
+              Cancel
+            </button>
+          </div>
+        }
+      />
+    );
+  }
 
   return (
     <SettingRow
       title="WhatsApp"
       description={
-        !whatsapp ? (
-          "WhatsApp isn't set up for this company yet."
-        ) : linked ? (
-          <>
-            Linked to <span className="font-mono text-ink">{formatPhone(linked)}</span>. Message {chat} from it to talk to the
-            Chief of Staff.
-          </>
-        ) : (
-          <>
-            Save the number you use WhatsApp on, with its country code, so the Chief of Staff knows it&apos;s you. Then message{" "}
-            {chat} from it. Messages from numbers that aren&apos;t saved here aren&apos;t answered.
-          </>
-        )
+        <>
+          Talk to the Chief of Staff from WhatsApp. Link your number by sending a one-time code from it, so only you can reach it as you.
+          Messages from numbers that aren&apos;t linked aren&apos;t answered.
+        </>
       }
       action={
-        whatsapp ? (
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              savePhone();
-            }}
-          >
-            <input
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder="+44 7700 900123"
-              aria-label="Your WhatsApp number, with its country code"
-              className="field w-44 font-mono text-sm"
-            />
-            <button type="submit" disabled={saving || number.trim() === (phone ?? "")} className="btn">
-              Save
-            </button>
-          </form>
-        ) : undefined
+        <button onClick={startLink} disabled={pending} className="btn">
+          Link WhatsApp
+        </button>
       }
     />
   );

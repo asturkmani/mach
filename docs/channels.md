@@ -6,8 +6,10 @@ People can talk to the Chief of Staff outside the app: on WhatsApp from their ow
 
 Only people who have joined their company in Mach1 (signed in at least once) get an answer.
 
-- **WhatsApp:** the sender's number must match the WhatsApp number a person saved in Settings → Account. Spaces, `+` and a leading `00` don't matter, but the country code does.
-  - A number that isn't linked gets one reply explaining how to link it. The Chief of Staff isn't run for it.
+- **WhatsApp:** only a number its owner **linked by proof** is answered. In Settings → Account → Link WhatsApp, Mach1 shows a one-time code (`LINK K7P2-9QXM`, valid 10 minutes); the person sends it from their phone to Mach1's WhatsApp number ("Open WhatsApp" has it typed already). WhatsApp vouches for the number a message comes from, so only whoever holds the phone can link it. Linked numbers show a verified badge on the Team page and in Account.
+  - The phone number on someone's profile (typed by anyone, or saved by the Chief of Staff) is contact details only. It never routes a message, so nobody can put their own number on a colleague's profile and talk to the Chief of Staff as them.
+  - A number belongs to one person: linking it moves it from anyone else who had it. The same person can use it in each company they're in; a message goes to the company they talked to the Chief of Staff in last.
+  - A number that isn't linked gets one reply explaining how to link it. The Chief of Staff isn't run for it, and nothing else is ever sent to it. Mach1 only replies to the number that wrote in.
   - Someone in several companies reaches the company they last talked to the Chief of Staff in.
 - **Email:** the sender's address must be a team member's email in that company.
   - Mail from anyone else gets no reply, which also avoids sending mail back to spoofed senders.
@@ -41,7 +43,7 @@ Only people who have joined their company in Mach1 (signed in at least once) get
 1. **Get a WhatsApp sender in Twilio.** For testing, Twilio's WhatsApp sandbox works: each person first sends its "join …" code to the sandbox number. For real use, register a WhatsApp sender for your number.
 2. **Point Twilio at Mach1.** Set the sender's "When a message comes in" webhook to `https://<your-domain>/api/whatsapp` (HTTP POST).
 3. **Add the variables to Vercel:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` (e.g. `whatsapp:+14155238886`) and `APP_URL`.
-4. **Each person links their number.** In Settings → Account, they add their WhatsApp number.
+4. **Each person links their number.** In Settings → Account → Link WhatsApp, and they send the code it shows from their phone.
 
 The signature check uses the URL Twilio called. Behind a proxy that changes the host, set `TWILIO_WEBHOOK_URL` to the exact URL configured in Twilio.
 
@@ -65,7 +67,8 @@ Deleting a company deletes its inbox too.
 |---|---|
 | `app/api/whatsapp/route.ts`, `app/api/email/route.ts` | The webhooks: signature checks, retries, replying in the background |
 | `lib/channels/inbound.ts` | From a message to a reply: who it's from, the Chief of Staff's turn, sending it back |
-| `lib/channels/senders.ts` | Matching a number or an address to a person; handled message ids |
+| `lib/channels/senders.ts` | Matching a linked number or an address to a person; handled message ids |
+| `lib/channels/whatsapp-links.ts` | Linking a WhatsApp number by a one-time code sent from it |
 | `lib/channels/twilio.ts`, `lib/channels/agentmail.ts` | The providers: signatures, sending, inboxes, WhatsApp formatting |
 | `lib/agents/cos-turn.ts` | One Chief of Staff turn, shared by the chat panel and both channels |
 | `components/channel-settings.tsx` | The Settings rows: the company's email address and WhatsApp sender (Channels), your WhatsApp number (Account) |

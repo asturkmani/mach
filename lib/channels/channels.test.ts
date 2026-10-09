@@ -8,7 +8,9 @@ import { emailAddress, findByPhone, firstTime, phoneDigits } from "@/lib/channel
 import { splitMessage, twilioSignature, validTwilioSignature, whatsappText } from "@/lib/channels/twilio";
 import { createOrganization, setEmailInbox } from "@/lib/orgs";
 import { linkMember, setPhone } from "@/lib/people";
+import { startWhatsAppLink } from "@/lib/channels/whatsapp-links";
 import { useTestDb } from "@/test/db";
+import { getDb } from "@/lib/db";
 import { scriptedModel } from "@/test/scripted-model";
 
 const ORG = "org_cedar";
@@ -40,10 +42,19 @@ function hears(words: string) {
 
 const MEDIA = "https://api.twilio.com/2010-04-01/Accounts/AC_test/Messages/MM1/Media/ME1";
 
+/** Links a number the real way: the person gets a code and sends "LINK <code>" from that phone. */
+async function linkWhatsApp(organizationId: string, personId: string, from: string) {
+  const { code } = await startWhatsAppLink(organizationId, personId);
+  const sent = stubProviders();
+  await handleWhatsApp({ from, body: `link ${code.toLowerCase().replace("-", " ")}`, media: 0 }, { research: false });
+  vi.unstubAllGlobals();
+  return new URLSearchParams(sent[0].body).get("Body") ?? "";
+}
+
 async function setUp() {
   await createOrganization({ id: ORG, name: "Cedar Legacy" });
   const ahmed = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
-  await setPhone(ORG, ahmed.id, "+44 7700 900123");
+  await linkWhatsApp(ORG, ahmed.id, "+447700900123");
   return ahmed;
 }
 
@@ -168,6 +179,64 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     const stored = (await getOrCreateChat(ORG, "user_ahmed")).messages;
     expect(stored[0].parts[1]).toMatchObject({ type: "file", url: "/files/7e3160d2-e1b2-40f9-864e-96b7eff28e85?inline=1" });
     expect(stored.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+  });
+
+  it("links a number only when its owner sends the one-time code from it", async () => {
+    await createOrganization({ id: ORG, name: "Cedar Legacy" });
+    const ahmed = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
+    expect(await findByPhone("+447700900123")).toBeNull();
+
+    const reply = await linkWhatsApp(ORG, ahmed.id, "whatsapp:+447700900123");
+    expect(reply).toContain("Linked. This number now reaches the Chief of Staff as Ahmed at Cedar Legacy");
+    expect((await findByPhone("+447700900123"))?.person.id).toBe(ahmed.id);
+
+    // A code works once, and a made-up or expired one doesn't link anything.
+    const { code } = await startWhatsAppLink(ORG, ahmed.id);
+    const sent = stubProviders();
+    await handleWhatsApp({ from: "+15550000001", body: "LINK ZZZZ-ZZZZ", media: 0 }, { research: false });
+    expect(new URLSearchParams(sent[0].body).get("Body")).toContain("didn't work or has expired");
+    await getDb().query("update whatsapp_links set expires_at = now() - interval '1 minute'");
+    await handleWhatsApp({ from: "+15550000001", body: `LINK ${code}`, media: 0 }, { research: false });
+    expect(new URLSearchParams(sent[1].body).get("Body")).toContain("didn't work or has expired");
+    expect(await findByPhone("+15550000001")).toBeNull();
+  });
+
+  it("never lets a number typed into someone's profile message the Chief of Staff as them", async () => {
+    const ahmed = await setUp();
+    const lina = await linkMember(ORG, { id: "user_lina", email: "lina@cedar.example", name: "Lina" });
+    // A colleague puts their own number on Ahmed's profile (or a typo does): it's contact details only.
+    await setPhone(ORG, ahmed.id, "+44 7700 900999");
+    const sent = stubProviders();
+    const model = scriptedModel(["should not run"]);
+    await handleWhatsApp({ from: "+447700900999", body: "Show me the family's net worth", media: 0 }, { model, research: false });
+    expect(model.doGenerateCalls).toHaveLength(0);
+    expect(new URLSearchParams(sent[0].body).get("Body")).toContain("isn't linked to anyone in Mach1");
+    // Ahmed's own linked number still reaches him.
+    expect((await findByPhone("+447700900123"))?.person.id).toBe(ahmed.id);
+
+    // If Lina proves the number is hers, it moves to her: one number, one person.
+    vi.unstubAllGlobals();
+    await linkWhatsApp(ORG, lina.id, "+447700900123");
+    expect((await findByPhone("+447700900123"))?.person.id).toBe(lina.id);
+    const people = await getDb().query<{ name: string; whatsapp: string | null }>("select name, whatsapp from people order by name");
+    expect(people).toEqual([
+      { name: "Ahmed", whatsapp: null },
+      { name: "Lina", whatsapp: "447700900123" },
+    ]);
+  });
+
+  it("keeps one person's number linked in each company they're in, answering in the one used last", async () => {
+    const ahmed = await setUp();
+    await createOrganization({ id: "org_other", name: "Other Co" });
+    const again = await linkMember("org_other", { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
+    await linkWhatsApp("org_other", again.id, "+447700900123");
+    const both = await getDb().query<{ organization_id: string }>("select organization_id from people where whatsapp = '447700900123' order by organization_id");
+    expect(both.map((r) => r.organization_id)).toEqual(["org_cedar", "org_other"]);
+    await getOrCreateChat("org_other", "user_ahmed");
+    const cedar = await getOrCreateChat(ORG, "user_ahmed");
+    await saveChat(cedar.id, []);
+    expect((await findByPhone("+447700900123"))?.organization.id).toBe(ORG);
+    expect(ahmed.id).not.toBe(again.id);
   });
 
   it("matches WhatsApp numbers however they were typed, and only for people who use Mach1", async () => {

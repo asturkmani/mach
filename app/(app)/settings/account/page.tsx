@@ -11,7 +11,7 @@ export default async function AccountSettingsPage() {
     <SettingsGroup title="Account">
       <SettingRow title="Name" description={person.name} />
       <SettingRow title="Email" description={user.email} />
-      <WhatsAppNumber whatsapp={whatsappNumber()} phone={person.phone} />
+      <WhatsAppNumber whatsapp={whatsappNumber()} linked={person.whatsapp} />
       <AccountPreferences />
     </SettingsGroup>
   );

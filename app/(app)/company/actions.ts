@@ -4,9 +4,9 @@ import { getWorkOS, signOut } from "@workos-inc/authkit-nextjs";
 import { refresh } from "next/cache";
 
 import { agentmailConfigured, createInbox, ensureEmailWebhook } from "@/lib/channels/agentmail";
-import { phoneDigits } from "@/lib/channels/senders";
+import { whatsappNumber } from "@/lib/channels/twilio";
+import { startWhatsAppLink, unlinkWhatsApp } from "@/lib/channels/whatsapp-links";
 import { setEmailInbox } from "@/lib/orgs";
-import { setPhone } from "@/lib/people";
 import { deleteCompany } from "@/lib/delete-company";
 import { requireAppContext } from "@/lib/session";
 
@@ -34,16 +34,18 @@ export async function deleteCompanyAction(confirmName: string): Promise<{ error?
   return {};
 }
 
-/** The signed-in person's WhatsApp number, which lets them message the Chief of Staff. */
-export async function savePhoneAction(phone: string): Promise<{ error?: string }> {
+/** A one-time code the signed-in person sends from their WhatsApp to link that number (see whatsapp-links.ts). */
+export async function startWhatsAppLinkAction(): Promise<{ code: string; expiresAt: string } | { error: string }> {
   const { organization, person } = await requireAppContext();
-  const value = phone.trim();
-  if (value && (!value.startsWith("+") || phoneDigits(value).length < 8)) {
-    return { error: "Use the full number with its country code, e.g. +44 7700 900123." };
-  }
-  await setPhone(organization.id, person.id, value);
+  if (!whatsappNumber()) return { error: "WhatsApp isn't set up for Mach1 yet." };
+  const { code, expiresAt } = await startWhatsAppLink(organization.id, person.id);
+  return { code, expiresAt: expiresAt.toISOString() };
+}
+
+export async function unlinkWhatsAppAction(): Promise<void> {
+  const { organization, person } = await requireAppContext();
+  await unlinkWhatsApp(organization.id, person.id);
   refresh();
-  return {};
 }
 
 /** Gives the company an email address for its Chief of Staff (admins). */

@@ -442,3 +442,18 @@ create index if not exists browser_sessions_org on browser_sessions (organizatio
 
 -- Whose Chief of Staff chat a browser session belongs to (sessions on a task belong to the task).
 alter table browser_sessions add column if not exists person_id uuid references people (id) on delete cascade;
+
+-- WhatsApp numbers people proved are theirs: they sent a one-time LINK code from the number to Mach1's
+-- WhatsApp sender (WhatsApp vouches for who sent it). Only these numbers reach the Chief of Staff;
+-- people.phone is contact details anyone may edit, never used to decide who a message is from.
+alter table people add column if not exists whatsapp text;
+alter table people add column if not exists whatsapp_linked_at timestamptz;
+create index if not exists people_whatsapp on people (whatsapp) where whatsapp is not null;
+
+create table if not exists whatsapp_links (
+  code text primary key,
+  organization_id text not null references organizations (id) on delete cascade,
+  person_id uuid not null references people (id) on delete cascade,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);

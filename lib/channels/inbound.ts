@@ -4,6 +4,7 @@ import { chiefOfStaffTurn } from "@/lib/agents/cos-turn";
 import { appUrl } from "@/lib/app-url";
 import { replyToEmail } from "@/lib/channels/agentmail";
 import { findByEmail, findByPhone } from "@/lib/channels/senders";
+import { completeWhatsAppLink, LINK_MESSAGE } from "@/lib/channels/whatsapp-links";
 import { fetchTwilioMedia, sendWhatsApp } from "@/lib/channels/twilio";
 import { findOrganizationByInbox } from "@/lib/orgs";
 import { MAX_AUDIO_BYTES, transcribeAudio } from "@/lib/transcribe";
@@ -39,11 +40,22 @@ async function voiceNote(message: WhatsAppMessage, transcriber?: TranscriptionMo
 }
 
 export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOptions = {}): Promise<void> {
+  // "LINK <code>" from the phone proves the number is theirs (see whatsapp-links.ts).
+  if (LINK_MESSAGE.test(message.body)) {
+    const result = await completeWhatsAppLink(message.body, message.from);
+    await sendWhatsApp(
+      message.from,
+      result.linked
+        ? `Linked. This number now reaches the Chief of Staff as ${result.personName} at ${result.companyName}. Message me here any time.`
+        : `That code didn't work or has expired. Get a new one in Mach1: ${appUrl("/settings/account")} → WhatsApp → Link.`,
+    );
+    return;
+  }
   const context = await findByPhone(message.from);
   if (!context) {
     await sendWhatsApp(
       message.from,
-      `Hi, this is Mach1's Chief of Staff. This number isn't linked to anyone in Mach1 yet: sign in at ${appUrl("/settings/account")} and add it as your WhatsApp number, then message me again.`,
+      `Hi, this is Mach1's Chief of Staff. This number isn't linked to anyone in Mach1 yet. To link it, open ${appUrl("/settings/account")}, choose Link WhatsApp, and send me the code it shows, from this phone.`,
     );
     return;
   }

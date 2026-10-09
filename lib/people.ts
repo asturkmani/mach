@@ -17,6 +17,8 @@ export type Person = {
   responsibilities: string;
   email: string | null;
   phone: string | null;
+  /** The WhatsApp number they linked by sending a code from it (digits), which reaches the Chief of Staff. */
+  whatsapp: string | null;
   managerId: string | null;
   managerName: string | null;
   status: PersonStatus;
@@ -32,6 +34,7 @@ type PersonRow = {
   responsibilities: string;
   email: string | null;
   phone: string | null;
+  whatsapp: string | null;
   manager_id: string | null;
   manager_name: string | null;
   status: PersonStatus;
@@ -41,7 +44,7 @@ type PersonRow = {
 };
 
 const SELECT_PEOPLE = `
-  select p.id, p.name, p.role, p.responsibilities, p.email, p.phone, p.manager_id, m.name as manager_name,
+  select p.id, p.name, p.role, p.responsibilities, p.email, p.phone, p.whatsapp, p.manager_id, m.name as manager_name,
          p.status, p.workos_user_id, p.workos_invitation_id, p.invite_url
   from people p left join people m on m.id = p.manager_id`;
 
@@ -52,6 +55,7 @@ const toPerson = (r: PersonRow): Person => ({
   responsibilities: r.responsibilities,
   email: r.email,
   phone: r.phone,
+  whatsapp: r.whatsapp,
   managerId: r.manager_id,
   managerName: r.manager_name,
   status: r.status,
