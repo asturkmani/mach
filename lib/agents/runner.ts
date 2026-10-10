@@ -1,5 +1,6 @@
 import { WorkflowAgent } from "@ai-sdk/workflow";
 
+import { startFollowersStep } from "@/lib/agents/follower-steps";
 import { CompanyModel } from "@/lib/ai/company-model";
 import { hasToolCall, isStepCount, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
@@ -295,7 +296,7 @@ export async function runAgentOnTask(
   agentId: string,
   options: RunOptions = {},
 ): Promise<RunOutcome> {
-  const begun = await beginRun(organizationId, taskId, agentId, { modelGiven: Boolean(options.model) });
+  const begun = await beginRun(organizationId, taskId, agentId);
   if (!begun.ok) return begun.outcome;
   const { context } = begun;
   const state: RunState = {};
@@ -399,4 +400,5 @@ export async function runAgentChain(
       next = undefined;
     }
   }
+  await startFollowersStep(organizationId, taskId);
 }

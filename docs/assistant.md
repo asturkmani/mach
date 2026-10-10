@@ -29,6 +29,16 @@ them, the company's timezone and Mon–Fri 09:00–18:00, quiet 21:00–08:00 st
 (at the end of onboarding, or early on for people who join later) and saves the answer with `save_my_hours`;
 people can change them in Settings → Account → Your hours.
 
+## How it looks on WhatsApp
+
+When a message arrives, the assistant marks it read (blue ticks) and shows "typing…" until it replies
+(`showTyping` in `lib/channels/twilio.ts`, renewed every 20 seconds). Twilio can't send emoji reactions.
+
+For anything that takes more than a moment (several tools, research, browsing, a task or an agent, coding),
+it first writes one line saying it's on it, then works. On WhatsApp and email, words written before a tool
+call go out straight away as that acknowledgement (`acknowledge` in `lib/agents/cos-turn.ts`), "typing…"
+comes back while it works, and the answer follows. Quick questions get the answer, with no acknowledgement.
+
 ## WhatsApp's 24 hours
 
 WhatsApp lets a business write freely only within 24 hours of the person's last message; after that, only
@@ -64,6 +74,17 @@ it's done). Jobs still go to tasks directly (`create_task`, `start_coding`).
 | `lib/assistant/store.ts` | Hours, the WhatsApp window, and the `assistant_wakeups` queue |
 | `lib/assistant/wake.ts` | The wake-up turn, run from the cron tick (`app/api/cron/tick`) every minute |
 | `lib/agents/specialist.ts` | `ask_specialist`: a defined agent answering a question while the Chief of Staff waits |
+
+## Big jobs: the coordinator
+
+Before a big job (several steps or agents, several deliverables, days of work), the Chief of Staff calls
+`plan_job` (`lib/agents/planner.ts`): the company's planner model (Opus 5.5 at high, or GPT-6 Astra;
+`lib/ai/lineup.ts`) writes what to ask first, the steps, who does each (a defined agent or a new worker)
+and which need which, from the profile, agents, data sources, files and open tasks. The Chief of Staff asks
+the questions, or creates each step with `create_task`, later ones with `after` (the task numbers they
+need). A task that waits stays in backlog (`tasks.waits_for`) and starts by itself once everything it
+waits for is delivered, in review or done (`startFollowers` in `lib/agents/dispatch.ts`, run when a
+status changes and when an agent's run ends).
 
 ## Everything from chat
 

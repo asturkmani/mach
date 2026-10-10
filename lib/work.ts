@@ -1,7 +1,7 @@
 import "server-only";
 
 import { loginCodeFrom, sealLoginCode } from "@/lib/agents/browser-steps";
-import { agentToWake, dispatchRun, dispatchScheduled, startIfReady } from "@/lib/agents/dispatch";
+import { agentToWake, dispatchRun, dispatchScheduled, startFollowers, startIfReady } from "@/lib/agents/dispatch";
 import { createWorker, findAgentByName, listAgents, updateAgent, type Agent } from "@/lib/agents/store";
 import { attachToTask, listTaskFiles, MAX_FILE_BYTES, saveVersion } from "@/lib/files";
 import { rememberTimezone } from "@/lib/orgs";
@@ -103,10 +103,16 @@ export async function createTaskWithTeam(
     replyByWhatsApp?: boolean;
     /** Work someone asks for is theirs (and the people on it's) unless they share it with the company. */
     visibility?: TaskVisibility;
+    /** Task ids it starts after: it waits in backlog until each is in review or done. */
+    after?: string[];
     by: Actor;
   },
 ): Promise<Task> {
   if (input.schedule) checkSchedule(input.schedule);
+  const waitsFor = [...new Set(input.after ?? [])];
+  const before = await Promise.all(waitsFor.map((id) => getTask(organizationId, id)));
+  if (before.some((t) => !t)) throw new WorkError("A task it should start after doesn't exist.");
+  const waiting = before.some((t) => t!.status !== "review" && t!.status !== "done");
   const own = await ownIds(organizationId, input);
   const agentIds = [...own.agentIds];
   if (input.workerRole !== undefined) agentIds.push((await createWorker(organizationId, input.workerRole)).id);
@@ -114,15 +120,21 @@ export async function createTaskWithTeam(
     title: input.title,
     description: input.description,
     priority: input.priority,
-    status: input.status ?? "ready",
+    status: waiting ? "backlog" : (input.status ?? "ready"),
     createdBy: { personId: input.by.personId },
     people: [...(input.by.personId ? [input.by.personId] : []), ...own.personIds],
     agents: agentIds,
     replyByWhatsApp: input.replyByWhatsApp,
     visibility: input.visibility ?? (input.by.personId ? "private" : "company"),
+    waitsFor,
   });
   for (const fileId of input.inputFileIds ?? []) await attachToTask(organizationId, task.id, fileId, "input");
-  await addMessage(task.id, { author: input.by.name, personId: input.by.personId, kind: "event", body: "Created this task." });
+  await addMessage(task.id, {
+    author: input.by.name,
+    personId: input.by.personId,
+    kind: "event",
+    body: waiting ? `Created this task. It starts once ${before.map((t) => `#${t!.number}`).join(" and ")} ${before.length > 1 ? "are" : "is"} delivered.` : "Created this task.",
+  });
   if (input.schedule) await scheduleTask(organizationId, task.id, input.by, input.schedule);
   await startIfReady(organizationId, task.id);
   return (await getTask(organizationId, task.id))!;
@@ -255,6 +267,7 @@ export async function setStatus(
       body: note ?? `Moved this to ${STATUS_WORDS[status]}.`,
     });
     if (status === "ready") await startIfReady(organizationId, task.id);
+    if (status === "review" || status === "done") await startFollowers(organizationId, task.id);
   }
   return (await getTask(organizationId, task.id))!;
 }

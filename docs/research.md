@@ -37,7 +37,8 @@ learns the asker's role too.
 
 The Researcher is made the first time it's needed (like the Developer) and then appears with the other
 agents, so `create_task` and `ask_specialist` can name it too. Its model: its own (Team → Researcher), else
-the company's default for agents, else `RESEARCH_AGENT_MODEL`, else `AGENT_MODEL`.
+the company's default for agents, else Mach1's model for agents' work (`lib/ai/lineup.ts`): Claude Sonnet with
+the company's Anthropic key, else OpenAI's.
 
 ## How it works
 
@@ -115,7 +116,6 @@ and integrations don't get them.
 - `X_BEARER_TOKEN`: an app on X's developer console with pay-per-use credit (its Bearer Token). Nobody signs in.
 - `XAI_API_KEY` for X without that app (and when X's API fails), and for Reddit without a Reddit app.
   Optional: `X_SEARCH_MODEL` (default `grok-4-fast`).
-- Optional: `RESEARCH_AGENT_MODEL`, a strong reasoning model.
 - Optional: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` and `REDDIT_USER_AGENT` for an approved Reddit app.
 
 ## Code

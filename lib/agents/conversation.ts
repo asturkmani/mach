@@ -3,6 +3,7 @@ import "server-only";
 import { generateText, type LanguageModel, type UIMessage } from "ai";
 
 import { companyModel } from "@/lib/ai/company-model";
+import { roleModel } from "@/lib/ai/lineup";
 import { getDb } from "@/lib/db";
 
 // A person's conversation with their assistant never ends (the chat panel and
@@ -106,7 +107,7 @@ export async function catchUpSummary(chatId: string): Promise<void> {
 }
 
 async function summarize(organizationId: string, previous: string, messages: UIMessage[]): Promise<string | null> {
-  const model = summaryModel ?? process.env.SUMMARY_MODEL ?? process.env.CHIEF_OF_STAFF_MODEL;
+  const model = summaryModel ?? roleModel("background");
   const text = messages.map(plain).filter(Boolean).join("\n");
   if (!model || !text) return null;
   try {

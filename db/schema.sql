@@ -137,6 +137,8 @@ create index if not exists task_messages_task on task_messages (task_id, created
 alter table tasks add column if not exists memory text not null default '';
 alter table tasks add column if not exists sandbox_name text;
 alter table tasks add column if not exists archived_at timestamptz;
+-- Tasks it starts after (a planned job's later steps): it waits in backlog until each is in review or done.
+alter table tasks add column if not exists waits_for uuid[] not null default '{}';
 
 -- The company file library. Every deliverable an agent attaches and every
 -- script it runs is a file with versions, so later jobs can build on it.

@@ -48,7 +48,6 @@ describe("the assistant wakes up by itself", () => {
     vi.stubEnv("TWILIO_AUTH_TOKEN", "twilio-token");
     vi.stubEnv("TWILIO_WHATSAPP_FROM", "+14155238886");
     vi.stubEnv("APP_URL", "https://trymach1.app");
-    vi.stubEnv("CHIEF_OF_STAFF_MODEL", "test/model");
     await createOrganization({ id: ORG, name: "Cedar Legacy" });
     await getDb().query("update organizations set onboarding_completed_at = now() where id = $1", [ORG]);
     sara = (await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" })).id;

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { roleModel } from "@/lib/ai/lineup";
 import { getDb } from "@/lib/db";
 import type { CompanyModels } from "@/lib/orgs";
 
@@ -100,20 +101,10 @@ function cleanModel(model: string | undefined): string | null {
 
 /**
  * The model an agent runs on: its own, else the company's default for
- * agents, else Mach1's default for its kind (the Developer:
- * CODING_AGENT_MODEL, the Researcher: RESEARCH_AGENT_MODEL), else
- * AGENT_MODEL, else the Chief of Staff's. Empty when none is set.
+ * agents, else Mach1's for its role (the Developer codes; lib/ai/lineup.ts).
  */
 export function agentModel(agent: Pick<Agent, "model" | "builtin">, company: CompanyModels = {}): string {
-  return (
-    agent.model ||
-    company.agents ||
-    (agent.builtin === CODING_AGENT ? process.env.CODING_AGENT_MODEL : "") ||
-    (agent.builtin === RESEARCH_AGENT ? process.env.RESEARCH_AGENT_MODEL : "") ||
-    process.env.AGENT_MODEL ||
-    process.env.CHIEF_OF_STAFF_MODEL ||
-    ""
-  );
+  return agent.model || company.agents || roleModel(agent.builtin === CODING_AGENT ? "coder" : "worker");
 }
 
 export async function createAgent(organizationId: string, input: AgentInput & { kind?: AgentKind }): Promise<Agent> {

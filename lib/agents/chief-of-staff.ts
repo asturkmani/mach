@@ -10,6 +10,8 @@ import {
 import { z } from "zod";
 
 import { actionCatalog } from "@/lib/actions";
+import { planJob } from "@/lib/agents/planner";
+import { roleModel } from "@/lib/ai/lineup";
 import { actionTools } from "@/lib/agents/action-tools";
 import { pageTools } from "@/lib/agents/page-tools";
 import { appMapLines } from "@/lib/app-map";
@@ -94,6 +96,8 @@ type Context = {
   hours?: AssistantHours | null;
   /** Whether the person you're talking to is one of the company's admins. */
   isAdmin?: boolean;
+  /** Providers the company brought its own AI key for (Settings → AI). */
+  aiKeys?: string[];
   /** Everyone on the Team page: whether they've joined Mach1 or been invited, and admins. */
   team?: { name: string; status: "active" | "invited" | "not_invited"; admin: boolean }[];
 };
@@ -109,6 +113,8 @@ export function actorFor(context: Context): Actor | null {
     isAdmin: context.isAdmin ?? false,
   };
 }
+
+const ACKNOWLEDGE = `When they ask for something that takes more than a moment (several tool calls, research, browsing, building a page, starting a task or an agent, coding, anything multi-step), first write one short line saying you've got it and what you're doing ("On it: pulling Q3 from Masttro and checking it against the model."), then start the work, and finish with the answer. On WhatsApp and email that line goes out straight away, while you work. A quick question or a single quick action: just answer, no acknowledgement. Never acknowledge and then stop.`;
 
 function channelInstructions(channel: Channel): string {
   const where = channel === "whatsapp" ? "WhatsApp" : "email";
@@ -174,6 +180,7 @@ function workInstructions(context: Context): string {
 - When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
 - Answer quick questions yourself. Create a task only for real work.
 - Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company"): task.set_visibility.
+- A big job (several steps or agents, several deliverables, days of work) gets planned first with plan_job (acknowledge first: it takes a minute or two). If the plan has things to ask first, ask them in one message and wait. Otherwise create its steps as tasks with create_task, each with its agent or a workerRole, and later steps with after set to the numbers of the tasks they need: they start by themselves as those are delivered. Then tell them the plan in a few lines with the task numbers. Everyday requests: just create the task.
 - A question that needs one of the defined agents' expertise (the analyst on a number, the lawyer on a clause) goes to it with ask_specialist rather than you guessing: it answers in a few minutes on a model chosen for that work, or it becomes a task for it. Answer everyday questions yourself.
 - If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
 - For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on create_task. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the agent builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
@@ -217,11 +224,17 @@ function appInstructions(context: Context): string {
     context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
   }). Besides your own tools (create_task, reply_on_task, save_person, create_agent, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
 ${actionCatalog({ isAdmin: Boolean(context.isAdmin) })}
-Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
+${claudeLine(context)}Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
 ${appMapLines()}
 
 The team in Mach1 (who has joined):
 ${team.join("\n") || "(no one yet)"}`;
+}
+
+/** Admins of a company without an Anthropic key hear, once, that adding one runs Claude (faster for you). */
+function claudeLine({ isAdmin, aiKeys, organization }: Context): string {
+  if (!isAdmin || !aiKeys || aiKeys.includes("anthropic") || !organization.onboardingCompletedAt) return "";
+  return `Mach1 runs on OpenAI for this company. Once, when it fits (after onboarding, not mid-task), suggest they add the company's Anthropic API key in Settings → AI (${appUrl("/settings/ai")}): you and their agents then run on Claude, which replies faster, billed to their Anthropic account. The key comes from console.anthropic.com; a Claude Team or Enterprise plan doesn't include one. They add it there themselves, never in chat. Don't bring it up again once they've heard it.\n`;
 }
 
 function githubLine({ github, person }: Context): string {
@@ -262,6 +275,8 @@ ${personalInstructions(context)}
 ${organization.onboardingCompletedAt ? afterOnboardingInstructions(context) : onboardingInstructions(context)}
 
 ${workInstructions(context)}
+
+${ACKNOWLEDGE}
 ${context.channel ? `\n${channelInstructions(context.channel)}\n` : ""}${
     context.viewing
       ? `\nRight now they're looking at ${context.viewing} in Mach1, with this chat open beside it. When they say "this", "here" or "it" without saying what, they mean that.\n`
@@ -446,13 +461,20 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           })
           .optional()
           .describe("Makes it a recurring job. The first run starts now."),
+        after: z
+          .array(z.number().int().positive())
+          .optional()
+          .describe("Numbers of tasks it needs first (a planned job's later steps): it waits, then starts by itself once each is delivered."),
       }),
-      execute: async ({ title, description, priority, people, agents, workerRole, files, repeat, shareWithCompany }) => {
+      execute: async ({ title, description, priority, people, agents, workerRole, files, repeat, shareWithCompany, after }) => {
         try {
           const found = await findFiles(orgId, files ?? [], { viewer: context.person?.id });
           const missing = (files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
           if (missing.length) throw new WorkError(`No company file called ${missing.join(", ")}.`);
           const team = await resolveTeam(orgId, { people, agents });
+          const first = await Promise.all((after ?? []).map((number) => getTaskByNumber(orgId, number, { viewer: context.person?.id })));
+          const unknown = (after ?? []).filter((_, i) => !first[i]);
+          if (unknown.length) throw new WorkError(`There's no task #${unknown.join(", #")}.`);
           const task = await createTaskWithTeam(orgId, {
             title,
             description,
@@ -463,10 +485,11 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             inputFileIds: found.map((f) => f.id),
             schedule: repeat,
             visibility: shareWithCompany ? "company" : "private",
+            after: first.map((t) => t!.id),
             by,
           });
           return {
-            task: { id: task.id, number: task.number, title: task.title },
+            task: { id: task.id, number: task.number, title: task.title, waitsFor: task.status === "backlog" ? task.waitsFor : [] },
             members: task.members.map((m) => m.name),
             repeats: repeat ? describeSchedule(repeat.cron, repeat.timezone) : null,
           };
@@ -480,7 +503,9 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
         value:
           "error" in output
             ? `Not created: ${output.error}`
-            : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
+            : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}${
+                output.task.waitsFor.length ? ` It starts once #${output.task.waitsFor.join(" and #")} ${output.task.waitsFor.length > 1 ? "are" : "is"} delivered.` : ""
+              }`,
       }),
     }),
     start_coding: tool({
@@ -926,6 +951,23 @@ function specialistTools(context: Context, workspace: AgentContext, using: Sandb
   const orgId = context.organization.id;
   const names = (context.agents ?? []).filter((a) => a.kind === "defined" && a.status === "active").map((a) => a.name);
   return {
+    plan_job: tool({
+      description:
+        "Think a big job through before starting it (several steps or agents, several deliverables, days of work, or they ask you to plan): the company's planner, a stronger model, writes what to ask first, the steps, who does each and which wait for which. Takes a minute or two.",
+      inputSchema: z.object({
+        request: z.string().min(1).describe("The whole job in their words plus everything you know (deadlines, files, who's involved): the planner can't see your conversation."),
+      }),
+      execute: async ({ request }) =>
+        planJob(orgId, {
+          request,
+          askedBy: context.person?.name ?? context.user.name,
+          profile: context.profile,
+          agents: context.agents ?? [],
+          integrations: context.integrations ?? [],
+          files: context.files ?? [],
+          openTasks: context.openTasks ?? [],
+        }),
+    }),
     ask_specialist: tool({
       description:
         "Ask one of the company's defined agents a question that needs its expertise, and wait for the answer (a few minutes at most): it works on its own model, with its instructions and the data sources it may use. For questions, not jobs. If it needs longer, it becomes a task for that agent, which reports back.",
@@ -985,10 +1027,7 @@ export function createChiefOfStaff(
   context: Context,
   options: { model?: LanguageModel; research?: boolean; sandbox?: SandboxSession } = {},
 ) {
-  const model = options.model ?? (context.organization.models?.chiefOfStaff || process.env.CHIEF_OF_STAFF_MODEL);
-  if (!model) {
-    throw new Error("Set CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).");
-  }
+  const model = options.model ?? (context.organization.models?.chiefOfStaff || roleModel("chat"));
   const workspace = workspaceOf(context);
   const using = sandboxUser(workspace, options.sandbox ?? {});
   const tools = {

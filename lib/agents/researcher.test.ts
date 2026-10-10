@@ -36,14 +36,12 @@ describe("the Researcher", () => {
     vi.unstubAllEnvs();
   });
 
-  it("is made once, on its own model", async () => {
+  it("is made once, on the company's model for agents' work", async () => {
     await createOrganization({ id: ORG, name: "Cedar Legacy" });
-    vi.stubEnv("AGENT_MODEL", "solid/worker");
-    vi.stubEnv("RESEARCH_AGENT_MODEL", "deep/thinker");
     const researcher = await researchAgent(ORG);
     expect(researcher).toMatchObject({ name: "Researcher", builtin: RESEARCH_AGENT, kind: "defined" });
     expect((await researchAgent(ORG)).id).toBe(researcher.id);
-    expect(agentModel(researcher)).toBe("deep/thinker");
+    expect(agentModel(researcher)).toBe("mach1/worker");
   });
 
   it("starts from the saved sources and sends questions to sub-researchers", async () => {

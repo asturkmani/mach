@@ -1,6 +1,7 @@
 import { WorkflowAgent } from "@ai-sdk/workflow";
 import { hasToolCall, isStepCount, ToolLoopAgent, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { companyModel } from "@/lib/ai/company-model";
+import { roleModel } from "@/lib/ai/lineup";
 import { z } from "zod";
 
 import { JOB_DIR } from "@/lib/sandbox";
@@ -318,7 +319,7 @@ export function setBrowserAgentModel(model: LanguageModel | null): void {
 }
 
 export function browserAgentModel(): string {
-  return process.env.BROWSER_AGENT_MODEL || process.env.AGENT_MODEL || process.env.CHIEF_OF_STAFF_MODEL || "";
+  return roleModel("browser");
 }
 
 export type BrowserJob = {
@@ -354,9 +355,6 @@ export async function runBrowserAgent(
   const session = opened.session;
   const model = options.model ?? modelOverride ?? browserAgentModel();
   const forCompany = companyModel(context.organizationId, model);
-  if (!model) {
-    return { status: "failed", message: "Set BROWSER_AGENT_MODEL to an AI Gateway model id (see README).", session: session.id, evidence: [] };
-  }
 
   const login = job.login ?? session.login ?? undefined;
   const guide = login ? await readIntegrationGuide(context, { integration: login }) : "";
