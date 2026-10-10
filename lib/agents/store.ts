@@ -193,17 +193,17 @@ export function codingAgent(organizationId: string): Promise<Agent> {
 }
 
 /**
- * The company's Researcher: investment, market, company and people research
- * of the kind a family office does, from the web, market data, X and Reddit,
- * starting with the sources each person saved as high signal. Its playbook is
- * the research skill.
+ * The company's Researcher: anything the company needs to know (companies and
+ * markets, people and organisations, products and vendors, topics and events),
+ * from the web, filings, market data, X and Reddit, starting with the sources
+ * each person saved as high signal. Its playbook is the research skill.
  */
 export function researchAgent(organizationId: string): Promise<Agent> {
   return builtinAgent(organizationId, RESEARCH_AGENT, {
     name: "Researcher",
     role: "Research and insight",
     description:
-      "Researches companies, markets, sectors, managers and people for investment decisions: plans the questions, investigates them in parallel across the web, filings, market data, X and Reddit (starting with the sources people saved as high signal), and delivers a sourced brief that leads with the insight and says what would change it.",
+      "Looks into anything the company needs to know (companies and markets, people and organisations, products and vendors, topics and events) for the decision or work it's for: plans the questions, investigates them in parallel across the web, filings, market data, X and Reddit (starting with the sources people saved as high signal), and delivers a sourced brief that leads with the insight and says what would change it.",
     instructions: "Load the research skill before you start, and follow it.",
   });
 }

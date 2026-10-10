@@ -14,7 +14,7 @@ import { actionTools } from "@/lib/agents/action-tools";
 import { pageTools } from "@/lib/agents/page-tools";
 import { appMapLines } from "@/lib/app-map";
 import { invitePersonAs, OperationError, type Actor } from "@/lib/operations";
-import type { AgentContext } from "@/lib/agents/prompts";
+import { personAbout, personLine, type AgentContext } from "@/lib/agents/prompts";
 import { appUrl } from "@/lib/app-url";
 import { skillList } from "@/lib/agents/skills";
 import {
@@ -195,9 +195,10 @@ Code and GitHub: each person connects their own GitHub (Settings → Account), a
 - Follow-ups on that work ("also make the button blue", "merge it") go to its task with reply_on_task. Merging happens only when they say so.
 - Quick questions about their GitHub (their open pull requests, a repository's recent commits, an issue) answer yourself with github_api, which acts as them.
 
-Research: the Researcher investigates companies, stocks, sectors, funds and managers, people and markets, across the web, filings, market data, X and Reddit, starting with the sources each person saved as high signal.
+Research: the Researcher looks into anything the company needs to know (companies and markets, people and organisations, products and vendors, topics and events) across the web, filings, market data, X and Reddit, starting with the sources each person saved as high signal.
 - Everyday lookups answer yourself: a price or a quick number (market_data), what one account or a few are saying (x_search), a fact (web_search).
-- A question that needs judgment across several sources ("what's the market saying about Micron's guidance?", "is this manager any good?") goes to start_research with depth quick: the Researcher answers here in a few minutes. Real research ("a brief on…", "dig into…", "everything on…", due diligence, a sector primer) is depth brief: a task it reports back on with a written, sourced brief. A regular digest ("every Monday, what my sources say about AI chips") is a brief with repeat.
+- A question that needs judgment across several sources ("what's the market saying about Micron's guidance?", "is this vendor any good?") goes to start_research with depth quick: the Researcher answers here in a few minutes. Real research ("a brief on…", "dig into…", "compare…", due diligence, a primer) is depth brief: a task it reports back on with a written, sourced brief. A regular digest ("every Monday, what my sources say about AI chips") is a brief with repeat.
+- Brief it like a good manager: it gets the company profile and who it's for (their name and role) by itself, but it can't see this conversation. Say why they want it (the decision or work it's for), what matters that it can't know (what they already know or think, constraints, names, tickers or links they gave, sources to use or avoid) and what they want back. Pass on only what the research needs, nothing personal it doesn't.
 - High-signal sources: when someone says a website, an X account, a subreddit or a Reddit user is worth following, or to look at it first, save it with do_action source.add, with why in the note (theirs unless they say it's for everyone). source.list shows them; the Research screen has them too.
 
 Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers. A page you build is theirs until it's shared: when it's meant for everyone (a report for the family, the company's numbers) or they say so, share it with share_page.
@@ -390,6 +391,25 @@ function profileTools(context: Context) {
   };
 }
 
+/**
+ * What the Researcher is asked, from the chat: it can't see the conversation,
+ * so why it's wanted, what matters and what to hand back travel with the question.
+ */
+export function researchRequest(
+  asked: { question: string; purpose: string; context?: string; deliverable?: string },
+  person: Person,
+): string {
+  return [
+    asked.question.trim(),
+    `Why: ${asked.purpose.trim()}`,
+    `For: ${personLine(person)}`,
+    asked.context?.trim() ? `What matters: ${asked.context.trim()}` : "",
+    asked.deliverable?.trim() ? `What they want back: ${asked.deliverable.trim()}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 type ResearchOutput =
   | { error: string }
   | { agent: string; answer: string }
@@ -497,13 +517,23 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
     }),
     start_research: tool({
       description:
-        "Hand research to the Researcher (companies, stocks, sectors, funds and managers, people, markets): it searches the web, filings, market data, X and Reddit, starting with the sources the person you're talking to saved as high signal. quick: it answers here in a few minutes (or it becomes a task if it needs longer). brief: a task where it investigates in depth and reports back with a sourced brief, on WhatsApp too when they asked there.",
+        "Hand research to the Researcher (companies, markets, people, products, topics, events): it searches the web, filings, market data, X and Reddit, starting with the sources the person you're talking to saved as high signal. It gets the company profile and who it's for by itself; everything else from this conversation it only knows from what you pass here. quick: it answers here in a few minutes (or it becomes a task if it needs longer). brief: a task where it investigates in depth and reports back with a sourced brief, on WhatsApp too when they asked there.",
       inputSchema: z.object({
         title: z.string().min(1).max(100).describe("Starting with a verb, e.g. 'Research Micron's HBM outlook'."),
-        question: z
+        question: z.string().min(1).describe("What to find out, in a sentence or two."),
+        purpose: z
           .string()
           .min(1)
-          .describe("What they want to know and why: the decision it's for, the companies or tickers, the time frame, sources they mentioned. It can't see your conversation."),
+          .describe(
+            "Why they want it: the decision or work it's for, e.g. 'deciding whether to add to our MU position' or 'choosing a CRM for a team of 12'. If they didn't say, your best understanding from the conversation and the company profile.",
+          ),
+        context: z
+          .string()
+          .optional()
+          .describe(
+            "What matters that the Researcher can't see: what they already know or think, constraints (budget, region, time frame), names, tickers and links from the conversation, sources to use or avoid. Only what the research needs.",
+          ),
+        deliverable: z.string().optional().describe("What they want back, e.g. 'a one-page brief', 'a table of five vendors', 'yes or no, with the reasons'."),
         depth: z.enum(["quick", "brief"]).describe("quick: a question answered in minutes. brief: in-depth research delivered as a written brief."),
         shareWithCompany: z.boolean().optional().describe("Research meant for everyone. Otherwise only they and the people on it see it."),
         repeat: z
@@ -514,25 +544,27 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           .optional()
           .describe("For a brief that repeats (a weekly digest). The first one starts now."),
       }),
-      execute: async ({ title, question, depth, shareWithCompany, repeat }): Promise<ResearchOutput> => {
+      execute: async ({ title, depth, shareWithCompany, repeat, ...asked }): Promise<ResearchOutput> => {
         if (!context.person) return { error: "Only a signed-in team member can start research." };
         const researcher = await researchAgent(orgId);
+        const request = researchRequest(asked, context.person);
         // A quick question is answered while you wait; one that needs longer becomes a task, as a brief does.
         let why: string | undefined;
         if (depth === "quick" && !repeat) {
-          const asked = await askSpecialist(research.workspace, research.using, researcher, context.organization.models ?? {}, {
-            question,
+          const answered = await askSpecialist(research.workspace, research.using, researcher, context.organization.models ?? {}, {
+            question: request,
             askedBy: context.person.name,
+            about: personAbout(context.person),
             profile: context.profile,
             research: research.enabled,
           });
-          if ("answer" in asked) return { agent: researcher.name, answer: asked.answer };
-          why = asked.needsTask;
+          if ("answer" in answered) return { agent: researcher.name, answer: answered.answer };
+          why = answered.needsTask;
         }
         try {
           const task = await createTaskWithTeam(orgId, {
             title,
-            description: question,
+            description: request,
             agentIds: [researcher.id],
             replyByWhatsApp: context.channel === "whatsapp",
             visibility: shareWithCompany ? "company" : "private",
@@ -908,6 +940,7 @@ function specialistTools(context: Context, workspace: AgentContext, using: Sandb
         const asked = await askSpecialist(workspace, using, agent, context.organization.models ?? {}, {
           question,
           askedBy: context.person?.name ?? context.user.name,
+          about: context.person && personAbout(context.person),
           profile: context.profile,
           research,
         });

@@ -8,6 +8,7 @@ import {
   lastLines,
   MAX_AGENT_TURNS,
   normalizeOptions,
+  personAbout,
   taskBrief,
   timeIn,
   type BriefDrive,
@@ -144,6 +145,7 @@ export async function beginRun(
   const usable = integrations.filter((i) => allowedFor(i, agent.id, forPerson?.id));
   const workingFor = forPerson && {
     name: forPerson.name,
+    about: personAbout(forPerson),
     github: github?.status === "connected" ? { login: github.login } : null,
     connectUrl: appUrl("/connect/github"),
   };

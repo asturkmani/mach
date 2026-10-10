@@ -35,7 +35,14 @@ export async function askSpecialist(
   using: SandboxUser,
   agent: Agent,
   company: CompanyModels,
-  input: { question: string; askedBy: string; profile: string; research?: boolean },
+  input: {
+    question: string;
+    askedBy: string;
+    /** Their role and what they look after, so the answer fits them. */
+    about?: string;
+    profile: string;
+    research?: boolean;
+  },
   { budgetMs = BUDGET_MS }: { budgetMs?: number } = {},
 ): Promise<SpecialistAnswer> {
   const model = testModel ?? agentModel(agent, company);
@@ -55,7 +62,7 @@ export async function askSpecialist(
       agent.instructions ? `\n\nYour instructions:\n${agent.instructions}` : ""
     }
 
-The Chief of Staff is asking you a question for ${input.askedBy}, and is waiting for your answer. Answer it directly and completely, with the figures, sources and reasoning that matter, in a few short paragraphs at most. You have a few minutes: use your tools if you need to (the company's data sources, research, code in a sandbox), but don't start anything long.
+The Chief of Staff is asking you a question for ${input.askedBy}${input.about ? ` (${input.about})` : ""}, and is waiting for your answer. Answer it directly and completely, with the figures, sources and reasoning that matter, in a few short paragraphs at most. You have a few minutes: use your tools if you need to (the company's data sources, research, code in a sandbox), but don't start anything long.
 
 If answering properly needs longer work (a long analysis, files to produce, many steps, something to watch over time), don't start it: reply with exactly "${NEEDS_TASK} " and one line on what the work is. It will become a task for you.
 

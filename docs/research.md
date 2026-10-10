@@ -1,9 +1,10 @@
 # Research
 
-The Researcher is a built-in agent for the research a family office does: companies and stocks, sectors,
-funds and managers, people (due diligence), markets and macro. It reads the web and filings, market data, X
-and Reddit, starts with the sources each person trusts most, and delivers a brief that leads with the
-insight and sources every claim.
+The Researcher is a built-in agent for anything the company needs to know: companies and markets, people and
+organisations (due diligence), products and vendors, topics and events, and investments (it has market
+data). It reads the web and filings, market data, X and Reddit, starts with the sources each person trusts
+most, and delivers a brief, written for the decision it's for, that leads with the insight and sources every
+claim.
 
 ## Asking for it
 
@@ -13,8 +14,26 @@ Like everything in Mach1, it's asked for in chat (the panel, WhatsApp or email).
 | --- | --- |
 | A price, a number, what one account is saying | Answers itself (`market_data`, `x_search`, `web_search`) |
 | A question that needs judgment across sources ("what's the market saying about Micron's guidance?") | `start_research` with depth quick: the Researcher answers in the chat within a few minutes, or it becomes a task if it needs longer |
-| Real research ("a brief on…", due diligence on a manager, a sector primer) | `start_research` with depth brief: a task the Researcher works on and reports back from, on WhatsApp too |
+| Real research ("a brief on…", "compare these vendors", due diligence on someone, a primer) | `start_research` with depth brief: a task the Researcher works on and reports back from, on WhatsApp too |
 | A regular digest ("every Monday, what my sources say about AI chips") | A brief with `repeat`: a recurring task, the Researcher doing each run |
+
+## What it knows
+
+Research is only as good as its brief, and the Researcher can't see the chat. So:
+
+- **It gets by itself**: the company profile (what the company does, its goals, how it works), who it's
+  working for with their role and what they look after (from the Team page), their saved sources and the
+  company's, and on a task the whole thread and its files.
+- **The Chief of Staff hands over the rest**, as `start_research`'s fields, which become the task's
+  description (or the quick question): the question, **Why** (the decision or work it's for, required),
+  **What matters** (what they already know or think, constraints, names, tickers and links from the chat,
+  sources to use or avoid) and **What they want back**. Its instructions say to brief the Researcher like a
+  good manager would, and to pass on only what the research needs: the chat itself and the Chief of Staff's
+  private notes about the person stay with the Chief of Staff.
+- The `research` skill starts from that brief: research for their decision, not the topic in general.
+
+Any task agent now sees who it's working for with their role, and any specialist the Chief of Staff asks
+learns the asker's role too.
 
 The Researcher is made the first time it's needed (like the Developer) and then appears with the other
 agents, so `create_task` and `ask_specialist` can name it too. Its model: its own (Team → Researcher), else

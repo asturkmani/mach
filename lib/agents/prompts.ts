@@ -212,7 +212,24 @@ ${integrationListing(integrations)}
 </data_sources>${loginListing(integrations)}${workingForListing(workingFor)}${highSignal ? `\n\n${highSignal}` : ""}`;
 }
 
-export type WorkingFor = { name: string; github: { login: string } | null; connectUrl: string };
+export type WorkingFor = {
+  name: string;
+  /** Their role and what they look after, from the Team page, e.g. "Chief Investment Officer; the public portfolio". */
+  about?: string;
+  github: { login: string } | null;
+  connectUrl: string;
+};
+
+/** A person's role and what they look after, from the Team page: "Chief Investment Officer; the public portfolio". */
+export function personAbout(person: { role?: string; responsibilities?: string }): string | undefined {
+  return [person.role?.trim(), person.responsibilities?.trim()].filter(Boolean).join("; ") || undefined;
+}
+
+/** Who someone is, for an agent's instructions: "Sara (Chief Investment Officer; the public portfolio)". */
+export function personLine(person: { name: string; role?: string; responsibilities?: string }): string {
+  const about = personAbout(person);
+  return about ? `${person.name} (${about})` : person.name;
+}
 
 /** Who this run is for, and what of theirs it may use: their GitHub, if they connected it. */
 function workingForListing(workingFor?: WorkingFor | null): string {
@@ -220,7 +237,8 @@ function workingForListing(workingFor?: WorkingFor | null): string {
   const github = workingFor.github
     ? `GitHub: connected as @${workingFor.github.login}. In your sandbox, git and the GitHub API act as ${workingFor.name}, within the repositories they let Mach1 use. Clone with a plain https://github.com/owner/repo.git URL (credentials are added on the way out; never put a token in a URL or a file). Work on a new branch, commit, push, and open a pull request with github_api. Never push to the default branch, and merge only when ${workingFor.name} says so.`
     : `GitHub: ${workingFor.name} hasn't connected theirs. If the work needs GitHub, ask them to connect it at ${workingFor.connectUrl} (it takes a minute) and carry on once they say it's done. Never use anyone else's.`;
-  return `\n\n<working_for>\nThis run is for ${workingFor.name}: their latest message is what you're answering, or they asked for the task.\n${github}\n</working_for>`;
+  const who = workingFor.about ? `${workingFor.name} (${workingFor.about})` : workingFor.name;
+  return `\n\n<working_for>\nThis run is for ${who}: their latest message is what you're answering, or they asked for the task. Do the work for them: their role and what they're deciding shape what matters.\n${github}\n</working_for>`;
 }
 
 export function agentInstructions({

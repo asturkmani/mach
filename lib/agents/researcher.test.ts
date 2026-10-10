@@ -6,7 +6,7 @@ import { runAgentOnTask } from "@/lib/agents/runner";
 import { setSpecialistModel } from "@/lib/agents/specialist";
 import { agentModel, createAgent, listAgents, RESEARCH_AGENT, researchAgent } from "@/lib/agents/store";
 import { createOrganization, getOrganization } from "@/lib/orgs";
-import { getPerson, linkMember } from "@/lib/people";
+import { getPerson, linkMember, updatePerson } from "@/lib/people";
 import { getSchedule } from "@/lib/schedules";
 import { createTask, getTask, getTaskByNumber, listMessages } from "@/lib/tasks";
 import { doAction } from "@/test/do-action";
@@ -17,7 +17,8 @@ const ORG = "org_cedar";
 
 async function sara() {
   await createOrganization({ id: ORG, name: "Cedar Legacy" });
-  const person = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
+  const linked = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
+  const person = await updatePerson(ORG, linked.id, { role: "Chief Investment Officer", responsibilities: "the public portfolio" });
   const actor = { organizationId: ORG, personId: person.id, name: "Sara", userId: "user_sara", isAdmin: false };
   await doAction(actor, "source.add", { source: "@DeItaone", note: "breaking macro" });
   await doAction(actor, "source.add", { source: "semianalysis.com", note: "semis supply chain", shareWithCompany: true });
@@ -66,6 +67,9 @@ describe("the Researcher", () => {
 
     const [lead, investigator] = model.doGenerateCalls.map((call) => JSON.stringify(call.prompt));
     expect(lead).toContain("Load the research skill before you start");
+    // It knows who it's working for, and the company, without being told.
+    expect(lead).toContain("This run is for Sara (Chief Investment Officer; the public portfolio)");
+    expect(lead).toContain("<company_profile>");
     expect(lead).toContain("<high_signal_sources>");
     expect(lead).toContain("The sources Sara trusts most");
     expect(lead).toContain("@DeItaone: breaking macro");
@@ -108,17 +112,30 @@ describe("the Researcher", () => {
     return JSON.stringify(model.doGenerateCalls.at(-1)!.prompt);
   }
 
-  it("answers a quick question in the chat, with the person's sources", async () => {
+  it("answers a quick question in the chat, knowing why it's asked and for whom", async () => {
     const specialist = scriptedModel(["Mostly bearish on X today: @DeItaone flagged hawkish Fed minutes."]);
     setSpecialistModel(specialist);
     const told = await chat([
-      [["start_research", { title: "Check X on the Fed minutes", question: "What's X saying about the Fed minutes?", depth: "quick" }]],
+      [
+        [
+          "start_research",
+          {
+            title: "Check X on the Fed minutes",
+            question: "What's X saying about the Fed minutes?",
+            purpose: "Deciding whether to trim our TLT position before Friday",
+            depth: "quick",
+          },
+        ],
+      ],
       "Done.",
     ]);
     expect(told).toContain("Researcher says:");
     expect(told).toContain("hawkish Fed minutes");
     const asked = JSON.stringify(specialist.doGenerateCalls[0].prompt);
     expect(asked).toContain("You are Researcher, Research and insight");
+    expect(asked).toContain("asking you a question for Sara (Chief Investment Officer; the public portfolio)");
+    expect(asked).toContain("Why: Deciding whether to trim our TLT position before Friday");
+    expect(asked).toContain("<company_profile>");
     expect(asked).toContain("@DeItaone: breaking macro");
     expect(await getTaskByNumber(ORG, 1)).toBeNull();
   });
@@ -131,6 +148,9 @@ describe("the Researcher", () => {
           {
             title: "Weekly digest on AI semis",
             question: "What my sources say about AI semis this week",
+            purpose: "Keeping our semis positions under review",
+            context: "We hold MU and NVDA. Sara thinks HBM pricing is the swing factor.",
+            deliverable: "Five bullets and anything that changes the view",
             depth: "brief",
             repeat: { cron: "0 8 * * 1", timezone: "Europe/London" },
           },
@@ -142,6 +162,16 @@ describe("the Researcher", () => {
     expect(told).toContain("Repeats:");
     const task = (await getTaskByNumber(ORG, 1))!;
     expect(task).toMatchObject({ title: "Weekly digest on AI semis", visibility: "private" });
+    // The hand-off from the chat, which the Researcher reads as the task's description.
+    expect(task.description).toBe(
+      [
+        "What my sources say about AI semis this week",
+        "Why: Keeping our semis positions under review",
+        "For: Sara (Chief Investment Officer; the public portfolio)",
+        "What matters: We hold MU and NVDA. Sara thinks HBM pricing is the swing factor.",
+        "What they want back: Five bullets and anything that changes the view",
+      ].join("\n\n"),
+    );
     expect(task.members.map((m) => m.name)).toEqual(["Sara", "Researcher"]);
     expect(await getSchedule(task.id)).toMatchObject({ mode: "agent", timezone: "Europe/London" });
   });
