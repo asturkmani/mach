@@ -103,7 +103,9 @@ export function useCommands(commands: Command[]): void {
 
 /** Turns a keyboard event into a key name: "j", "enter", "mod+k", "shift+?" is just "?". */
 export function keyName(event: KeyboardEvent): string {
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key.toLowerCase();
+  // Picking an autofill or datalist suggestion sends a keydown with no key.
+  if (typeof event.key !== "string") return "";
+  const key = event.key.toLowerCase();
   const mod = event.metaKey || event.ctrlKey;
   return mod ? `mod+${key}` : key === "arrowdown" ? "down" : key === "arrowup" ? "up" : key;
 }
