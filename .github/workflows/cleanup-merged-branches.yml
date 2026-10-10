@@ -1,0 +1,59 @@
+# After a pull request is merged: delete its branch, and the Neon database
+# branch its Vercel previews used (preview/<branch>). Neon's Vercel-managed
+# integration only drops those when Vercel deletes the old deployments, which
+# can take months, and the plan allows 10 branches, so previews start failing
+# ("Resource provisioning failed"). A branch deleted by hand gets its database
+# deleted too. Needs the NEON_API_KEY repository secret.
+name: Clean up merged branches
+
+on:
+  pull_request:
+    types: [closed]
+  delete:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.merged &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'delete' && github.event.ref_type == 'branch')
+    runs-on: ubuntu-latest
+    env:
+      # Through env, never inlined into scripts: branch names are user input.
+      BRANCH: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.event.ref }}
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID || 'bold-bird-67358354' }}
+    steps:
+      - name: Delete the branch
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          case "$BRANCH" in main|dev|staging) echo "Keeping $BRANCH."; exit 0;; esac
+          if gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" > /dev/null 2>&1; then
+            echo "Deleted the branch $BRANCH."
+          else
+            echo "The branch $BRANCH was already gone."
+          fi
+
+      - name: Delete its preview database
+        run: |
+          case "$BRANCH" in main|dev|staging) echo "Keeping $BRANCH's database."; exit 0;; esac
+          if [ -z "$NEON_API_KEY" ]; then
+            echo "::warning::NEON_API_KEY isn't set in this repository's secrets, so preview/$BRANCH stays in Neon."
+            exit 0
+          fi
+          api="https://console.neon.tech/api/v2/projects/$NEON_PROJECT_ID/branches"
+          name="preview/$BRANCH"
+          id=$(curl -fsS -H "Authorization: Bearer $NEON_API_KEY" "$api" |
+            jq -r --arg name "$name" '.branches[] | select(.name == $name and (.default | not) and (.protected | not)) | .id')
+          if [ -z "$id" ]; then
+            echo "No preview database called $name."
+            exit 0
+          fi
+          curl -fsS -X DELETE -H "Authorization: Bearer $NEON_API_KEY" "$api/$id" > /dev/null
+          echo "Deleted the preview database $name ($id)."
