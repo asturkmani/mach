@@ -7,8 +7,10 @@ billed to it directly, and choose which models they run on.
 
 Settings → AI:
 
-- **Your AI keys**: a key for Anthropic, OpenAI, Google (Gemini) or xAI. It's checked with the provider
-  (by listing its models, which costs nothing), stored encrypted (`ai_keys`, sealed with `MACH_SECRETS_KEY`),
+- **Your AI keys**: a key for Anthropic, OpenAI, Google (Gemini) or xAI. Before it's kept it's checked
+  with the provider (by listing its models) and then with one tiny call through AI Gateway on the
+  provider's cheapest model, which must be served by the key itself (AI Gateway reports which credential
+  served each call), so a key AI Gateway would quietly skip is refused. It's stored encrypted (`ai_keys`, sealed with `MACH_SECRETS_KEY`),
   shown only by its last four characters, and never given to a model, a chat or a sandbox. Typed into the
   page, never into a chat.
 - **Default models**: the company's own model for the Chief of Staff and for agents (each agent can still

@@ -15,6 +15,7 @@ export function AiKeyRow({ provider, saved, canEdit }: { provider: Provider; sav
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [tested, setTested] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   const save = () =>
@@ -24,6 +25,7 @@ export function AiKeyRow({ provider, saved, canEdit }: { provider: Provider; sav
       else {
         setKey("");
         setError(null);
+        setTested(result.testedOn ?? null);
         setOpen(false);
       }
     });
@@ -35,6 +37,11 @@ export function AiKeyRow({ provider, saved, canEdit }: { provider: Provider; sav
         saved ? (
           <span>
             Your key ending <span className="font-mono">{saved.hint}</span>, added {new Date(saved.addedAt).toLocaleDateString()}
+            {tested && (
+              <span className="block text-ok">
+                Working: a test call on <span className="font-mono">{tested}</span> ran on your key.
+              </span>
+            )}
           </span>
         ) : (
           "Using Mach1's account"
@@ -85,12 +92,12 @@ export function AiKeyRow({ provider, saved, canEdit }: { provider: Provider; sav
             <a href={provider.keysUrl} target="_blank" rel="noreferrer" className="underline">
               {provider.name} console
             </a>
-            . It&apos;s checked with {provider.name} before it&apos;s saved.
+            . Before it&apos;s saved, it&apos;s checked with {provider.name} and with one tiny test call on your account.
           </p>
           {error && <p className="text-xs text-danger">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" className="btn btn-primary" disabled={pending || !key.trim()}>
-              {pending ? "Checking…" : "Save"}
+              {pending ? "Testing…" : "Save"}
             </button>
             <button
               type="button"

@@ -9,7 +9,7 @@ import { createOrganization, getOrganization, setCompanyModels } from "@/lib/org
 import { useTestDb } from "@/test/db";
 
 import { CompanyModel } from "./company-model";
-import { byokCredentials, listAiKeys, removeAiKey, saveAiKey } from "./keys";
+import { AiKeyError, byokCredentials, listAiKeys, removeAiKey, saveAiKey, setGatewayCheck } from "./keys";
 
 const ORG = "org_cedar";
 const KEY = "sk-ant-api03-cedar-own-key-1234567890-WXYZ";
@@ -32,14 +32,16 @@ describe("bring your own key", () => {
     await useTestDb();
     await createOrganization({ id: ORG, name: "Cedar Legacy" });
   });
+  beforeEach(() => setGatewayCheck(async (provider) => `${provider}/cheapest`));
   afterEach(() => {
+    setGatewayCheck(null);
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
 
   it("keeps a key only once the provider accepts it, sealed, showing its last four characters", async () => {
     const requests = stubFetch();
-    await saveAiKey(ORG, "anthropic", KEY, null);
+    expect(await saveAiKey(ORG, "anthropic", KEY, null)).toMatchObject({ hint: "WXYZ", testedOn: "anthropic/cheapest" });
     expect(requests[0].url).toContain("api.anthropic.com/v1/models");
     expect((requests[0].init.headers as Record<string, string>)["x-api-key"]).toBe(KEY);
     expect(await listAiKeys(ORG)).toMatchObject([{ provider: "anthropic", hint: "WXYZ" }]);
@@ -51,6 +53,14 @@ describe("bring your own key", () => {
     stubFetch(401);
     await expect(saveAiKey(ORG, "openai", "sk-proj-not-a-real-key-000000000", null)).rejects.toThrow("didn't accept");
     await expect(saveAiKey(ORG, "openai", "short", null)).rejects.toThrow("doesn't look like");
+    expect((await listAiKeys(ORG)).map((k) => k.provider)).toEqual(["anthropic"]);
+
+    // Accepted by the provider, but AI Gateway couldn't run on it (it would quietly use Mach1's): not kept.
+    stubFetch();
+    setGatewayCheck(async () => {
+      throw new AiKeyError("AI Gateway couldn't use the key (insufficient credit).");
+    });
+    await expect(saveAiKey(ORG, "openai", "sk-proj-valid-but-no-credit-0000000", null)).rejects.toThrow("insufficient credit");
     expect((await listAiKeys(ORG)).map((k) => k.provider)).toEqual(["anthropic"]);
 
     await removeAiKey(ORG, "anthropic");

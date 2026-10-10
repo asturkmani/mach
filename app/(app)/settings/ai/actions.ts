@@ -7,17 +7,18 @@ import { setCompanyModels, type CompanyModels } from "@/lib/orgs";
 import { requireAppContext } from "@/lib/session";
 
 /** Adds or replaces the company's key for a provider, once the provider accepts it (admins only). */
-export async function saveAiKeyAction(provider: string, apiKey: string): Promise<{ error?: string }> {
+export async function saveAiKeyAction(provider: string, apiKey: string): Promise<{ error?: string; testedOn?: string }> {
   const { organization, person, isAdmin } = await requireAppContext();
   if (!isAdmin) return { error: "Only admins can change the company's AI keys." };
+  let testedOn: string;
   try {
-    await saveAiKey(organization.id, provider, apiKey, person.id);
+    ({ testedOn } = await saveAiKey(organization.id, provider, apiKey, person.id));
   } catch (error) {
     if (error instanceof AiKeyError) return { error: error.message };
     throw error;
   }
   revalidatePath("/settings/ai");
-  return {};
+  return { testedOn };
 }
 
 export async function removeAiKeyAction(provider: string): Promise<{ error?: string }> {

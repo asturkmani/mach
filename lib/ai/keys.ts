@@ -1,11 +1,13 @@
 import "server-only";
 
+import { gateway, generateText } from "ai";
+
 import { getDb } from "@/lib/db";
 import { seal, unseal } from "@/lib/secrets";
 
 // Bring your own key: a company's own accounts with AI providers. An admin
 // adds a key in Settings → AI (never in a chat); it's checked with the
-// provider, sealed, and from then on every model call made for the company
+// provider and with a test call through AI Gateway, sealed, and from then on every model call made for the company
 // carries it to AI Gateway for that request (company-model.ts), so the
 // provider bills the company. If a key stops working, AI Gateway falls back
 // to Mach1's own credentials rather than failing the work.
@@ -53,11 +55,61 @@ async function checkKey(provider: string, apiKey: string): Promise<void> {
   if (!response.ok) throw new AiKeyError(`The provider said ${response.status} when checking the key.`);
 }
 
-export async function saveAiKey(organizationId: string, provider: string, apiKey: string, addedBy: string | null): Promise<AiKey> {
+type Attempt = { credentialType?: string; success?: boolean; error?: string };
+
+/**
+ * Makes one tiny call through AI Gateway with only this key, on the
+ * provider's cheapest model, and returns the model when the key itself
+ * served it (AI Gateway would otherwise quietly fall back to Mach1's).
+ */
+async function checkThroughGateway(provider: string, apiKey: string): Promise<string> {
+  const { models } = await gateway.getAvailableModels();
+  const price = (m: (typeof models)[number]) => Number(m.pricing?.input ?? Infinity);
+  const cheapest = models
+    .filter((m) => m.id.startsWith(`${provider}/`) && (!m.modelType || m.modelType === "language") && Number.isFinite(price(m)))
+    .sort((a, b) => price(a) - price(b))[0];
+  if (!cheapest) throw new AiKeyError(`AI Gateway has no ${provider} model to check the key with.`);
+  const result = await generateText({
+    model: cheapest.id,
+    prompt: "Reply with the word ok.",
+    maxOutputTokens: 16,
+    maxRetries: 0,
+    providerOptions: { gateway: { byok: { [provider]: [{ apiKey }] } } },
+  });
+  const routing = (result.providerMetadata?.gateway as { routing?: { modelAttempts?: { providerAttempts?: Attempt[] }[] } } | undefined)?.routing;
+  const own = (routing?.modelAttempts ?? []).flatMap((a) => a.providerAttempts ?? []).filter((a) => a.credentialType === "byok");
+  if (own.some((a) => a.success)) return cheapest.id;
+  throw new AiKeyError(`AI Gateway couldn't use the key${own[0]?.error ? ` (${own[0].error})` : ""}.`);
+}
+
+let gatewayCheck = checkThroughGateway;
+/** Tests stand in for AI Gateway. */
+export function setGatewayCheck(check: typeof checkThroughGateway | null): void {
+  gatewayCheck = check ?? checkThroughGateway;
+}
+
+/**
+ * Saves the company's key for a provider once it's proved to work: the
+ * provider accepts it, and a test call through AI Gateway is served with it.
+ * Returns the key and the model the test call ran on.
+ */
+export async function saveAiKey(
+  organizationId: string,
+  provider: string,
+  apiKey: string,
+  addedBy: string | null,
+): Promise<AiKey & { testedOn: string }> {
   if (!AI_PROVIDERS.some((p) => p.slug === provider)) throw new AiKeyError("Unknown provider.");
   const key = apiKey.trim();
   if (key.length < 20 || /\s/.test(key)) throw new AiKeyError("That doesn't look like an API key.");
   await checkKey(provider, key);
+  let testedOn: string;
+  try {
+    testedOn = await gatewayCheck(provider, key);
+  } catch (error) {
+    if (error instanceof AiKeyError) throw error;
+    throw new AiKeyError(`The test call through AI Gateway failed: ${(error as Error).message.slice(0, 200)}`);
+  }
   const [row] = await getDb().query<{ provider: string; hint: string; created_at: Date }>(
     `insert into ai_keys (organization_id, provider, secrets, hint, added_by_person_id) values ($1, $2, $3, $4, $5)
      on conflict (organization_id, provider) do update set secrets = excluded.secrets, hint = excluded.hint,
@@ -65,7 +117,7 @@ export async function saveAiKey(organizationId: string, provider: string, apiKey
      returning provider, hint, created_at`,
     [organizationId, provider, seal({ apiKey: key }), key.slice(-4), addedBy],
   );
-  return { provider: row.provider, hint: row.hint, createdAt: row.created_at };
+  return { provider: row.provider, hint: row.hint, createdAt: row.created_at, testedOn };
 }
 
 export async function removeAiKey(organizationId: string, provider: string): Promise<void> {
