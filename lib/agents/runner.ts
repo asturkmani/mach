@@ -286,7 +286,7 @@ export async function runAgentOnTask(
   agentId: string,
   options: RunOptions = {},
 ): Promise<RunOutcome> {
-  const begun = await beginRun(organizationId, taskId, agentId, { modelGiven: Boolean(options.model) });
+  const begun = await beginRun(organizationId, taskId, agentId);
   if (!begun.ok) return begun.outcome;
   const { context } = begun;
   const state: RunState = {};

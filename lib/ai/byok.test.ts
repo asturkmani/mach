@@ -100,12 +100,45 @@ describe("bring your own key", () => {
     expect(CompanyModel[WORKFLOW_DESERIALIZE](stored)).toBeInstanceOf(CompanyModel);
   });
 
+  it("runs Claude for a company with an Anthropic key, OpenAI otherwise, each family thinking as set, with a fallback", async () => {
+    vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
+    /** What a role's call asks AI Gateway for. */
+    async function call(organizationId: string, role: string) {
+      const requests = stubFetch();
+      await generateText({ model: new CompanyModel(organizationId, role), prompt: "hi", maxRetries: 0 }).catch(() => null);
+      const sent = requests.find((r) => r.url.includes("ai-gateway"))!;
+      return JSON.stringify({ headers: sent.init.headers, body: JSON.parse(String(sent.init.body)) });
+    }
+    // No Anthropic key: OpenAI, on Mach1's account, with Claude to fall back on.
+    let sent = await call(ORG, "mach1/chat");
+    expect(sent).toContain("openai/gpt-6-luna-fast");
+    expect(sent).toContain('"reasoningEffort":"low"');
+    expect(sent).toContain('"models":["anthropic/claude-haiku-5.5"]');
+    expect(sent).toContain('"caching":"auto"');
+
+    stubFetch();
+    await saveAiKey(ORG, "anthropic", KEY, null);
+    sent = await call(ORG, "mach1/chat");
+    expect(sent).toContain("anthropic/claude-haiku-5.5");
+    expect(sent).toContain('"thinking":{"type":"disabled"}');
+    expect(sent).toContain('"models":["openai/gpt-6-luna-fast"]');
+    sent = await call(ORG, "mach1/worker");
+    expect(sent).toContain("anthropic/claude-sonnet-5.5");
+    expect(sent).toContain('"effort":"medium"');
+    sent = await call(ORG, "mach1/planner");
+    expect(sent).toContain("anthropic/claude-opus-5.5");
+    expect(sent).toContain('"effort":"high"');
+    // A model the company chose runs as chosen, with its family's settings and no fallback.
+    sent = await call(ORG, "anthropic/claude-sonnet-5.5");
+    expect(sent).toContain('"effort":"medium"');
+    expect(sent).not.toContain('"models":[');
+  });
+
   it("runs on the company's own choice of models", async () => {
-    vi.stubEnv("CHIEF_OF_STAFF_MODEL", "mach1/assistant");
-    vi.stubEnv("AGENT_MODEL", "mach1/worker");
     await setCompanyModels(ORG, { chiefOfStaff: "openai/gpt-5-mini", agents: " " });
     const organization = (await getOrganization(ORG))!;
     expect(organization.models).toEqual({ chiefOfStaff: "openai/gpt-5-mini" });
+    // Nothing chosen for agents: the worker role, resolved per company when it runs.
     expect(agentModel({ model: null, builtin: null }, organization.models)).toBe("mach1/worker");
     expect(agentModel({ model: null, builtin: null }, { agents: "openai/gpt-5" })).toBe("openai/gpt-5");
     expect(agentModel({ model: "anthropic/claude-opus-4.5", builtin: null }, { agents: "openai/gpt-5" })).toBe("anthropic/claude-opus-4.5");

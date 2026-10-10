@@ -7,6 +7,8 @@ import { PageBody } from "@/components/kit";
 import { Face, When } from "@/components/ui";
 import { CosToggle } from "@/components/shell/cos-toggle";
 import { agentModel, getAgent } from "@/lib/agents/store";
+import { listAiKeys } from "@/lib/ai/keys";
+import { lineupFor, resolveModel } from "@/lib/ai/lineup";
 import { modelChoices } from "@/lib/models";
 import { requireAppContext } from "@/lib/session";
 import { STATUS_WORDS } from "@/lib/task-words";
@@ -18,7 +20,13 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
   const { id } = await params;
   const agent = /^[0-9a-f-]{36}$/i.test(id) ? await getAgent(organization.id, id) : null;
   if (!agent) notFound();
-  const [tasks, choices] = await Promise.all([listAgentTasks(organization.id, agent.id, { viewer: person.id }), modelChoices()]);
+  const [tasks, choices, keys] = await Promise.all([
+    listAgentTasks(organization.id, agent.id, { viewer: person.id }),
+    modelChoices(),
+    listAiKeys(organization.id),
+  ]);
+  // What it runs on when it has no model of its own: the company's default, else Mach1's for the company's lineup.
+  const fallback = resolveModel(agentModel({ ...agent, model: null }, organization.models), lineupFor(keys.map((k) => k.provider)));
 
   return (
     <>
@@ -46,7 +54,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
             <AgentForm
               agentId={agent.id}
               initial={{ name: agent.name, role: agent.role, description: agent.description, instructions: agent.instructions, model: agent.model ?? "" }}
-              models={{ choices, fallback: agentModel({ ...agent, model: null }) }}
+              models={{ choices, fallback }}
             />
           </section>
           <section>

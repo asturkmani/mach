@@ -31,9 +31,30 @@ spend can be reported per company in AI Gateway even without keys.
   just its company and model ids (`WORKFLOW_SERIALIZE`); the key is read inside the model call
   (`companyGatewayOptions`, a step that runs inline there) and never stored.
 
-Which model runs: an agent's own model, else the company's default for agents, else Mach1's defaults
-(`CODING_AGENT_MODEL` for the Developer, `AGENT_MODEL`, `CHIEF_OF_STAFF_MODEL`). The Chief of Staff: the
-company's choice, else `CHIEF_OF_STAFF_MODEL`. Voice notes are still transcribed on Mach1's account.
+## Which model runs
+
+An agent's own model, else the company's default for agents, else Mach1's for its role; the Chief of Staff:
+the company's choice, else Mach1's. Mach1's come in two lineups (`lib/ai/lineup.ts`), Claude when the
+company brought an Anthropic key, else OpenAI on Mach1's account:
+
+| Role | Claude (Anthropic key) | OpenAI |
+| --- | --- | --- |
+| Chief of Staff (`chat`) | Haiku 5.5, no thinking | GPT-6 Luna Fast, low reasoning |
+| Agents, Developer, browser (`worker`, `coder`, `browser`) | Sonnet 5.5, medium thinking | GPT-6.1 Sol, medium (browser: GPT-6 Astra) |
+| Planning big jobs (`planner`) | Opus 5.5, high | GPT-6 Astra, high |
+| Summaries, page ideas (`background`) | Haiku 5.5 | GPT-6 Luna |
+
+A role is stored as `mach1/<role>` and resolved in each model call (`CompanyModel`), so adding or removing
+a key changes the models at once. Each family's thinking setting is applied to any model of it, chosen or
+not, unless the call sets its own. Role calls name the other lineup's model as AI Gateway's fallback, and
+ask it to cache the prompt (`caching: "auto"`; Claude needs it, OpenAI caches anyway). The Chief of Staff
+tells an admin once that adding an Anthropic key runs Claude. Mach1's own account can carry the Vercel
+team's OpenAI key (AI Gateway → BYOK in the Vercel dashboard), so the OpenAI lineup bills it. Voice notes
+are transcribed on Mach1's account (`TRANSCRIPTION_MODEL`, Grok STT by default).
+
+Chosen in October 2026 by timing whole WhatsApp turns on the Chief of Staff's real prompt (13k tokens):
+Haiku 5.5 2.0s median (15/15 right), GPT-6 Luna Fast 2.3s, GPT-6.1 Sol 3.9s; open models on fast hosts
+(Cerebras, Groq, Fireworks) were fast per step but missed tool calls or took more steps.
 
 ## Code
 

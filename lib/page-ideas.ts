@@ -6,6 +6,7 @@ import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 
 import { companyModel } from "@/lib/ai/company-model";
+import { roleModel } from "@/lib/ai/lineup";
 import { getDb } from "@/lib/db";
 import { listDrive } from "@/lib/drive";
 import { listIntegrations } from "@/lib/integrations";
@@ -101,8 +102,7 @@ export async function pageIdeas(
 }
 
 async function writeIdeas(organizationId: string, text: string, sha256: string, given?: LanguageModel): Promise<PageIdea[] | null> {
-  const model = given ?? process.env.PAGE_IDEAS_MODEL ?? process.env.CHIEF_OF_STAFF_MODEL;
-  if (!model) return null;
+  const model = given ?? roleModel("background");
   let ideas: PageIdea[];
   try {
     const result = await generateText({ model: companyModel(organizationId, model), system: INSTRUCTIONS, prompt: text, output: Output.object({ schema }) });

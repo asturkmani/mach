@@ -116,10 +116,20 @@ describe("Chief of Staff", () => {
     expect(chiefOfStaffInstructions({ organization: done, user, profile: "" })).not.toContain("read it with fetch_page");
   });
 
-  it("refuses to start without a model", async () => {
+  it("tells an admin once that an Anthropic key runs Claude, never asking for it in chat", async () => {
+    const organization = { ...(await setUpOrg()), onboardingCompletedAt: new Date() };
+    const said = (extra: object) => chiefOfStaffInstructions({ organization, user, profile: "", ...extra });
+    expect(said({ isAdmin: true, aiKeys: [] })).toContain("add the company's Anthropic API key in Settings → AI");
+    expect(said({ isAdmin: true, aiKeys: [] })).toContain("never in chat");
+    expect(said({ isAdmin: true, aiKeys: ["anthropic"] })).not.toContain("Anthropic API key");
+    expect(said({ isAdmin: false, aiKeys: [] })).not.toContain("Anthropic API key");
+  });
+
+  it("runs on the chat role unless the company chose a model", async () => {
     const organization = await setUpOrg();
-    delete process.env.CHIEF_OF_STAFF_MODEL;
-    expect(() => createChiefOfStaff({ organization, user, profile: "" })).toThrow(/CHIEF_OF_STAFF_MODEL/);
+    const modelOf = (agent: ReturnType<typeof createChiefOfStaff>) => (agent as unknown as { settings: { model: { modelId: string } } }).settings.model.modelId;
+    expect(modelOf(createChiefOfStaff({ organization, user, profile: "" }, { research: false }))).toBe("mach1/chat");
+    expect(modelOf(createChiefOfStaff({ organization: { ...organization, models: { chiefOfStaff: "openai/gpt-6.1-sol" } }, user, profile: "" }, { research: false }))).toBe("openai/gpt-6.1-sol");
   });
 
   it("turns a request into a task with a worker agent, which runs and reports back", async () => {

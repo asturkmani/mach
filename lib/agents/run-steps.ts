@@ -73,7 +73,6 @@ export async function beginRun(
   organizationId: string,
   taskId: string,
   agentId: string,
-  { modelGiven = false }: { modelGiven?: boolean } = {},
 ): Promise<BegunRun> {
   "use step";
   const [organization, task, agent] = await Promise.all([
@@ -98,10 +97,6 @@ export async function beginRun(
 
   const context: RunContext = { organizationId, taskId: task.id, agentId: agent.id, agentName: agent.name };
   const model = agentModel(agent, organization.models);
-  if (!model && !modelGiven) {
-    await failRun(context, `Choose a model for ${agent.name} on its page, or set AGENT_MODEL or CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).`);
-    return { ok: false, outcome: { type: "failed", error: "No model configured." } };
-  }
   if (!(await claimRun(organizationId, task.id, agent.id))) return { ok: false, outcome: { type: "busy" } };
 
   const [profile, messages, files, schedule, drive, integrations] = await Promise.all([

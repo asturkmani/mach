@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 
 import { actionCatalog } from "@/lib/actions";
+import { roleModel } from "@/lib/ai/lineup";
 import { actionTools } from "@/lib/agents/action-tools";
 import { pageTools } from "@/lib/agents/page-tools";
 import { appMapLines } from "@/lib/app-map";
@@ -94,6 +95,8 @@ type Context = {
   hours?: AssistantHours | null;
   /** Whether the person you're talking to is one of the company's admins. */
   isAdmin?: boolean;
+  /** Providers the company brought its own AI key for (Settings → AI). */
+  aiKeys?: string[];
   /** Everyone on the Team page: whether they've joined Mach1 or been invited, and admins. */
   team?: { name: string; status: "active" | "invited" | "not_invited"; admin: boolean }[];
 };
@@ -213,11 +216,17 @@ function appInstructions(context: Context): string {
     context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
   }). Besides your own tools (create_task, reply_on_task, save_person, create_agent, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
 ${actionCatalog({ isAdmin: Boolean(context.isAdmin) })}
-Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
+${claudeLine(context)}Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
 ${appMapLines()}
 
 The team in Mach1 (who has joined):
 ${team.join("\n") || "(no one yet)"}`;
+}
+
+/** Admins of a company without an Anthropic key hear, once, that adding one runs Claude (faster for you). */
+function claudeLine({ isAdmin, aiKeys, organization }: Context): string {
+  if (!isAdmin || !aiKeys || aiKeys.includes("anthropic") || !organization.onboardingCompletedAt) return "";
+  return `Mach1 runs on OpenAI for this company. Once, when it fits (after onboarding, not mid-task), suggest they add the company's Anthropic API key in Settings → AI (${appUrl("/settings/ai")}): you and their agents then run on Claude, which replies faster, billed to their Anthropic account. The key comes from console.anthropic.com; a Claude Team or Enterprise plan doesn't include one. They add it there themselves, never in chat. Don't bring it up again once they've heard it.\n`;
 }
 
 function githubLine({ github, person }: Context): string {
@@ -882,10 +891,7 @@ export function createChiefOfStaff(
   context: Context,
   options: { model?: LanguageModel; research?: boolean; sandbox?: SandboxSession } = {},
 ) {
-  const model = options.model ?? (context.organization.models?.chiefOfStaff || process.env.CHIEF_OF_STAFF_MODEL);
-  if (!model) {
-    throw new Error("Set CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).");
-  }
+  const model = options.model ?? (context.organization.models?.chiefOfStaff || roleModel("chat"));
   const workspace = workspaceOf(context);
   const using = sandboxUser(workspace, options.sandbox ?? {});
   const tools = {

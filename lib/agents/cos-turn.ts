@@ -10,6 +10,7 @@ import { closeSandbox } from "@/lib/agents/sandbox-steps";
 import { listAgents } from "@/lib/agents/store";
 import type { SandboxSession } from "@/lib/agents/toolkit";
 import { catchUpSummary, conversationWindow, getPersonalMemory, saveConversation } from "@/lib/agents/conversation";
+import { listAiKeys } from "@/lib/ai/keys";
 import { getAssistantHours } from "@/lib/assistant/store";
 import { endReply, getOrCreateChat, takeTurn, type Chat } from "@/lib/chats";
 import { getGitHubConnection } from "@/lib/github";
@@ -48,7 +49,7 @@ export async function loadChiefOfStaff(
   } = {},
 ) {
   const organizationId = context.organization.id;
-  const [profile, agents, tasks, jobs, files, integrations, pages, github, memory, hours, team] = await Promise.all([
+  const [profile, agents, tasks, jobs, files, integrations, pages, github, memory, hours, team, aiKeys] = await Promise.all([
     loadProfile(organizationId),
     listAgents(organizationId),
     listTasks(organizationId, { closedLimit: 0, viewer: context.person?.id }),
@@ -60,6 +61,7 @@ export async function loadChiefOfStaff(
     context.person ? getPersonalMemory(organizationId, context.person.id) : "",
     context.person ? getAssistantHours(organizationId, context.person.id) : null,
     teamStatus(organizationId),
+    listAiKeys(organizationId).catch(() => []),
   ]);
   const viewing = options.viewing ? await describeViewing(organizationId, options.viewing, context.person?.id).catch(() => null) : null;
   const sandbox: SandboxSession = {};
@@ -80,6 +82,7 @@ export async function loadChiefOfStaff(
       hours,
       isAdmin: team.admins.has(context.user.id),
       team: team.people,
+      aiKeys: aiKeys.map((k) => k.provider),
       earlier: options.earlier,
     },
     { sandbox, model: options.model, research: options.research },
