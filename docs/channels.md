@@ -23,7 +23,7 @@ Only people who have joined their company in Mach1 (signed in at least once) get
    - AgentMail's Svix headers carry an HMAC-SHA256 of `id.timestamp.body`, and must be less than five minutes old.
    - Both checks were verified against the official `twilio` and `svix` libraries.
 3. **Retries are dropped:** each message id is handled once (the `inbound_messages` table).
-4. **The request returns straight away.** Twilio waits only 15 seconds for an answer. The Chief of Staff then runs in `after()`, within the route's 300-second limit, in the person's conversation (`lib/agents/cos-turn.ts`).
+4. **The request returns straight away.** Twilio waits only 15 seconds for an answer. The Chief of Staff then runs in `after()`, within the route's 800-second limit, in the person's conversation (`lib/agents/cos-turn.ts`).
 5. **The reply goes out:**
    - **WhatsApp:** through Twilio's Messages API. Markdown is turned into WhatsApp formatting (`*bold*`, tables as lines), and long replies are split at paragraphs into parts of up to 1,500 characters.
    - **Email:** in the same thread, through AgentMail's reply endpoint. The Chief of Staff reads only the new part of an email (AgentMail's `extracted_text`), not the quoted thread below it.
