@@ -192,6 +192,44 @@ A skill never contains credentials, and never grants itself access to anything. 
 - **System skills** cover how one system behaves: its endpoints, paging, quirks, the clicks through its web app, and scripts to pull from it. There's one per connection, made when the connection is made. Today's integration guides become these.
 - **Workflow skills** cover how this company does a piece of work: the steps, who gets what, the rules, the approvals, and the scripts that carry it out. "Masttro weekly tagging" and "how we do month-end" are workflow skills.
 
+### Decisions inside skills
+
+Most repeated work is a loop of small decisions: which tag, which entity, is this a repeat, who should look at it. A skill's scripts make each one with the right tool:
+
+| The decision | Made by | Examples |
+|---|---|---|
+| Arithmetic, dates, exact lookups | Code, in the script | Amount within 2% of the last three payments; monthly, last paid 3 Sept; counterparty seen before |
+| Policy: who gets what, thresholds, what needs approval | Rules written in the skill, run by code | Hassan Daher's entities go to Rita; auto-tag only above the threshold |
+| A judgment with a known set of answers | Jev, called from the script | Which tag; which entity a counterparty belongs to; whether this repeats an earlier transaction |
+| Anything that needs reasoning, writing or several steps | The worker's model | Explaining an odd transaction; drafting the note to Mustapha |
+
+Jev never compares numbers or dates itself, because that's where it's documented to be weak. Code turns them into plain facts in the state ("amount matches the last three payments", "monthly, last on 3 Sept"), and Jev judges from those.
+
+**Calling Jev from a script.** The sandbox template gets a small helper, `mach.decide` (a Python module and a CLI). A script passes it a state and its questions, and gets back the choice and its probabilities.
+- The request goes to AI Gateway, with the key added by the network proxy, so the key never enters the sandbox.
+- The proxy allows only the Jev model, within a budget per run.
+
+**Options come from the source each run.** They're never written into the script.
+- The tag list is fetched from Masttro, and the entity list from the skill.
+- Jev's Choice takes up to 255 options. With more, code narrows them first to the likely candidates: this counterparty's past tags, then the nearest past cases.
+- There's always a "none of these" option.
+
+**History goes into the state.** Every decision a skill's scripts make is kept in its decision history:
+- the state;
+- the options;
+- Jev's probabilities;
+- the threshold at the time;
+- what happened: applied automatically, confirmed by a person, or changed to something else.
+
+For a new decision, code puts the closest past cases with their final answers into the state, up to ten of them: the same counterparty first, then the nearest descriptions. That's how Jev "knows" that payments to this counterparty are tagged Rent, Hassan Daher Holdings. Nothing is trained. The history is part of each question, so a correction made last week counts this week.
+
+**Thresholds come from the history.** A skill says how often an automatic answer must be right, e.g. "98%".
+- On every run, code backtests against the past answers people confirmed or changed. It picks the lowest threshold at which Jev's automatic answers would have been right at least that often.
+- If there isn't enough history yet, or no threshold reaches the target, nothing is applied automatically. Everything goes to people, with Jev's suggestion filled in.
+- "98% confident" therefore means measured on this company's own past answers, not a number a model states about itself.
+
+**People confirm suggestions; they don't start from blank.** A person's list shows Jev's suggestion and how sure it is. Confirming or changing it adds to the history. When people keep changing the same kind of answer, the learner proposes a fix to the skill, such as a new entity or a new rule. Those are policy changes, so they go to the owner.
+
 ### Base skills and company skills
 
 | | Base skills | Company skills |
@@ -223,7 +261,7 @@ A skill never contains credentials, and never grants itself access to anything. 
 | `coordinating` | The coordinator's playbook: asking first, plan shape, batches, children, review, assembly, gates | New |
 | `presentations` | Decks with `python-pptx` from a model's numbers | New (scenario 4) |
 | `data-pipelines` | Pulling a site or API into scripts: history on the drive, diffs against last time, charts, a `SUMMARY:` line | New (scenario 5) |
-| `reconciliation` | Matching against history with fixed rules, sending the rest to people, keeping a ledger | New (scenario 6) |
+| `reconciliation` | Classifying items against history with `mach.decide`, numbers as facts from code, thresholds from backtests, the rest to people with suggestions, keeping a ledger | New (scenario 6) |
 | `issue-triage` | Finding, deduplicating and reproducing issues before fixing them | New (scenario 3) |
 | `using-the-browser` | When to use the browser agent, how to brief it, what needs approval first | New |
 | `writing-skills` | Turning what a job learned into a skill and scripts, with tests | New |
@@ -452,11 +490,15 @@ Prompts ask agents to get approval before changing other systems. With no limits
    - **First week.**
      - The chat agent calls `start_job` with a weekly `repeat`.
      - The coordinator plans and asks anything unclear.
-     - When the job closes, the gate says yes. The learner writes the workflow skill `masttro-weekly-tagging`: the routing (Hassan Daher and his entities to Rita, Wissam Daher to Mawla, everything unclear to Mustapha), the rules for repeats, the approval step, and the scripts `pull_untagged.py`, `match_repeats.py` and `tag_cmr.py`. It's a new workflow skill, so your Chief of Staff asks you, and you apply it.
+     - When the job closes, the gate says yes. The learner writes the workflow skill `masttro-weekly-tagging`: the routing (Hassan Daher and his entities to Rita, Wissam Daher to Mawla, everything unclear to Mustapha), the 98% target, the approval step, and the scripts `pull_untagged.py`, `classify.py` and `tag_cmr.py`. It's a new workflow skill, so your Chief of Staff asks you, and you apply it. The first weeks' answers seed its decision history, and Masttro's already-tagged transactions can seed it on day one.
    - **Every week after**, the coordinator loads that skill:
-     1. A script child runs `pull_untagged.py` against the read-only API.
-     2. A script child runs `match_repeats.py`. Exact matches with past tags (same counterparty, same description pattern, amount within the usual range) are auto-tagged. "98% confident" means these rules, not a number a model states.
-     3. Person children go to Rita, Mawla and Mustapha, each with their own list. Their assistants tell them on WhatsApp, and anyone who hasn't answered gets a nudge after a day.
+     1. A script child runs `pull_untagged.py` against the read-only API, and fetches the current tag list.
+     2. A script child runs `classify.py`. For each transaction:
+        - Code works out the facts: the counterparty seen before, the amount against its history, and how often it recurs.
+        - It retrieves up to ten closest past transactions with their final tags.
+        - It asks Jev three things: which tag (the current tag list plus "none"), which entity (Hassan Daher's, Wissam Daher's, other, or unknown), and whether this repeats an earlier transaction.
+        - Transactions above the backtested threshold for the 98% target are tagged automatically. The rest are routed by the skill's rules: Hassan Daher's entities to Rita, Wissam Daher's to Mawla, everything else to Mustapha, each with Jev's suggestion filled in.
+     3. Person children go to Rita, Mawla and Mustapha, each with their own list, to confirm or change. Their assistants tell them on WhatsApp, and anyone who hasn't answered gets a nudge after a day. Every answer goes into the decision history.
      4. The coordinator combines the answers and calls `request_approval` with the full list. You approve it or change it.
      5. A script child runs `tag_cmr.py` (Playwright, signed in with the Masttro login) on the approved list. It keeps a ledger and takes screenshots. If the site has changed and the script fails, a worker fixes it with the browser agent, step-checked against the approval. After the job, the learner saves the fixed script, applied automatically once its test passes.
      6. One report.
@@ -474,6 +516,7 @@ Prompts ask agents to get approval before changing other systems. With no limits
 | `integrations.agent_ids` | Dropped. `person_ids` stays. `guide` becomes the first version of the connection's system skill |
 | `approvals` | The task, what was proposed and what was approved (items or a hash), who approved it and when, and what it covers |
 | `run_log` | One row per run: skills pinned and loaded, every tool call (with the script path and exit code), and the number of model steps. The digest is built from it |
+| `skill_decisions` | A skill's decision history: the state, options, Jev's probabilities and model version, the threshold, and the outcome (applied automatically, confirmed, or changed, and by whom). Used for retrieval, backtests and the learner |
 | `learning_reviews` | One row per review: the gate's answers and model version, whether the learner ran, what it decided, the changes and how each was applied (automatically, applied by a person, declined). The gate's eval set |
 
 **Moving existing companies over:**
@@ -497,6 +540,7 @@ Prompts ask agents to get approval before changing other systems. With no limits
 4. **Learning on the job.**
    - Company skills with scripts and tests, and system skills taking over from guides.
    - The run log, digests, the gate (Jev, with the `background` model as fallback) and the learner, with checks and approval tiers.
+   - `mach.decide` in the sandbox template, the decision history, retrieval of past cases, and backtested thresholds.
    - `propose_skill` from chat, suggestion cards, and the Skills page with its actions.
    - Workflow skills saved by repeating jobs, `extends`, and `find_skill`.
    - Defined agents become workflow skills, and the Team page lists people only.
@@ -514,7 +558,7 @@ The six scenarios above, plus one for learning. Each is run against a test compa
 3. One job with one child per real issue. Each child has a pull request and a test that fails before the fix. One report.
 4. Questions asked before work starts, and a plan with a cost, approved. One assumptions file, read by every model. A deck whose numbers match the models.
 5. Two repeating tasks, each with a system skill and scripts. The next run replays with no model call, and its `SUMMARY:` line says what changed.
-6. Person children to the right people, and auto-tags only for rule matches. An approval before any write, and writes outside it refused. A retry that resumes from the ledger.
+6. Person children to the right people, with Jev's suggestions filled in. Auto-tags only above the backtested threshold, and none while the history is too short. An approval before any write, and writes outside it refused. A retry that resumes from the ledger.
 7. **Learning.**
    - The first week of scenario 6 ends with the gate saying yes, and the learner writing `masttro-weekly-tagging`, which reaches you to apply.
    - The second week loads the skill, plans nothing, and makes model calls only for exceptions. Its gate says no, and no learner runs.
@@ -543,6 +587,7 @@ Where it will live:
 | `lib/agents/approvals.ts` | `request_approval`, tool effects, the browser step check |
 | `skills/<name>/` | Base skills: `SKILL.md` and scripts |
 | `lib/skills/` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `propose_skill`, script tests |
+| `sandbox/` (template), `lib/skills/decisions.ts` | `mach.decide`, the proxy rule that lets it reach Jev, the decision history, retrieval and backtests |
 | `lib/learning/` | The run log, digests, the gate (Jev through AI Gateway), the learner, checks, classifying changes, applying them or asking the owner |
 | `lib/actions/skills.ts`, `app/(app)/skills/` | Skill actions and the Skills page |
 | `lib/integrations.ts` | Connections: limits by agent removed, guides moved to system skills |
