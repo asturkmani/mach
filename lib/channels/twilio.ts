@@ -85,10 +85,12 @@ export async function sendWhatsApp(to: string, text: string): Promise<void> {
 /** The approved WhatsApp template for writing to someone outside the 24-hour window, if one is set up (docs/channels.md). */
 export const whatsappTemplateSid = () => (twilioConfigured() && process.env.TWILIO_WHATSAPP_TEMPLATE_SID) || null;
 
-/** A template's variable: one line, at most `max` characters (WhatsApp refuses line breaks and long values). */
+/** A template's variable: one sentence-ending line, at most `max` characters (WhatsApp refuses line breaks and long values). */
 export function templateValue(text: string, max = 900): string {
   const line = whatsappText(text).replace(/\s*\n+\s*/g, " · ").replace(/\s{2,}/g, " ").trim();
-  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+  const cut = line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+  // The template carries on after it ("… Reply to carry on."), so it ends a sentence.
+  return /[.!?…]$/.test(cut) ? cut : `${cut}.`;
 }
 
 /**

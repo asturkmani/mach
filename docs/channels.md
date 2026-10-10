@@ -58,14 +58,14 @@ app's chat with a push notification instead. To set one up:
    language English. Body:
 
    ```
-   Hi {{1}}, update: {{2}}. Reply to carry on.
+   Hi {{1}}, update: {{2}} Reply to carry on.
    ```
 
    with samples such as `Sara` and `#14 Cash runway is ready for you to review. Want the short version?`.
 2. Submit it for WhatsApp approval (usually minutes to a day).
 3. Once approved, set `TWILIO_WHATSAPP_TEMPLATE_SID` to its SID (it starts with `HX`) and redeploy.
 
-`{{1}}` is their first name and `{{2}}` the assistant's message on one line (at most 900 characters). When they
+`{{1}}` is their first name and `{{2}}` the assistant's message on one line (at most 900 characters), always ending in a full stop or question mark. When they
 reply, the 24 hours start again and the conversation carries on as normal.
 
 ### Email (AgentMail)
