@@ -28,7 +28,7 @@ const link = (number: number) => appUrl(`/tasks/${number}`);
 export const taskActions = [
   defineAction({
     name: "task.set_status",
-    description: "Move a task to a status (open, ready, working, waiting, review, done, cancelled…).",
+    description: "Move a task to a status.",
     input: z.object({ task: taskRef, status: z.enum(TASK_STATUSES) }),
     run: async (scope, { task, status }) => {
       const found = await taskFor(scope.actor, task);

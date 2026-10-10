@@ -295,14 +295,14 @@ export const companyActions = [
   }),
   defineAction({
     name: "me.set_hours",
-    description: "Save your timezone, working days and hours, and quiet hours (HH:MM; days 1 is Monday).",
+    description: "Save your timezone, working days and hours, and quiet hours.",
     input: z.object({
-      timezone: z.string(),
-      days: z.array(z.number().int().min(1).max(7)),
-      start: z.string(),
-      end: z.string(),
-      quietStart: z.string(),
-      quietEnd: z.string(),
+      timezone: z.string().describe("IANA, e.g. Asia/Dubai."),
+      days: z.array(z.number().int().min(1).max(7)).describe("ISO weekdays: 1 Monday … 6 Saturday, 7 Sunday (never 0). Sunday to Thursday is [7, 1, 2, 3, 4]."),
+      start: z.string().describe("HH:MM, e.g. 08:00."),
+      end: z.string().describe("HH:MM, e.g. 17:00."),
+      quietStart: z.string().describe("No messages from, HH:MM, e.g. 22:00."),
+      quietEnd: z.string().describe("Until, HH:MM, e.g. 07:00."),
     }),
     run: async ({ actor }, { timezone, ...hours }) => {
       try {
