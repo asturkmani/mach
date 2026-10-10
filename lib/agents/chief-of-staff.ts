@@ -45,6 +45,8 @@ import {
   setSection,
 } from "@/lib/profile/markdown";
 import { MEMORY_LIMIT, savePersonalMemory } from "@/lib/agents/conversation";
+import { describeHours } from "@/lib/assistant/hours";
+import { saveAssistantHours, scheduleWakeup, type AssistantHours } from "@/lib/assistant/store";
 import { getGitHubConnection } from "@/lib/github";
 import { updateProfile } from "@/lib/profile/store";
 import { describeSchedule, getSchedule } from "@/lib/schedules";
@@ -82,6 +84,8 @@ type Context = {
   memory?: string;
   /** A summary of the conversation before the messages you're shown in full. */
   earlier?: string;
+  /** When the person you're talking to works and wants quiet, in their timezone. */
+  hours?: AssistantHours | null;
 };
 
 function channelInstructions(channel: Channel): string {
@@ -102,6 +106,8 @@ Only three things are needed to finish onboarding:
 1. What the company does and for whom (Overview). ${website}
 2. The team and who reports to whom. Ask for everyone in one go ("Who's on the team? Give me names, roles and who each reports to."). Mention they can also add people on the Team page and invite them from there. If it's just them, that's a complete answer: save their own role and pass justMe to complete_onboarding. Don't push for a team that doesn't exist.
 3. The top one to three priorities right now (Goals).
+
+Once those are done (or in the same breath as the last one), ask the one personal question you need to work for them: their timezone, working hours, and when you should stay quiet (see below). It isn't needed to complete onboarding.
 
 How to run it:
 - Ask one question per message and no more than about five questions in total. Keep messages short.
@@ -180,7 +186,14 @@ function githubLine({ github, person }: Context): string {
 }
 
 /** What you know about the person you're talking to, and your conversation with them so far. */
-function personalInstructions({ person, memory, earlier }: Context): string {
+function hoursLine({ person, hours }: Context): string {
+  if (!person || !hours) return "";
+  if (hours.saved) return `${person.name}'s hours: ${describeHours(hours.hours, hours.timezone)}. If they change them, save the new ones with save_my_hours.`;
+  return `You don't know ${person.name}'s hours yet (until you do, you assume ${describeHours(hours.hours, hours.timezone)}). Early on, when it fits, ask once in one short question which timezone they're in, when they work, and when you should never message them, proposing those defaults so a "yes" will do; save the answer with save_my_hours. Don't ask again if they skip it.`;
+}
+
+function personalInstructions(context: Context): string {
+  const { person, memory, earlier } = context;
   if (!person) return "";
   return `
 You are ${person.name}'s own assistant as well as the company's Chief of Staff: you work on their behalf, and for the company through them.
@@ -188,6 +201,9 @@ You are ${person.name}'s own assistant as well as the company's Chief of Staff: 
 What you know about ${person.name} (your notes; only you see them, and only while talking with them):
 ${memory?.trim() || "(nothing yet)"}
 Keep these notes current with update_personal_notes when you learn something lasting about them: how they like answers, what they look after, who and what they care about, what you're following up on for them. Facts about the company go in the profile instead. Never put credentials in notes.
+
+${hoursLine(context)}
+You wake up by yourself to tell them when work of theirs is done or needs them, and you can set yourself a check-in with check_back_later ("I'll check on the import at 4 and tell you"): use it whenever you promise to come back to something or are waiting on work they care about, then keep the promise. You never message them in their quiet hours, and anything that can wait goes in their working hours.
 ${earlier?.trim() ? `\nEarlier in your conversation with ${person.name} (a summary; the latest messages follow in full):\n${earlier.trim()}\n` : ""}`;
 }
 
@@ -445,6 +461,51 @@ function workTools(context: Context) {
             ? `Not started: ${output.error}`
             : `Started task #${output.task.number}: ${output.agent} is on it as @${output.github}. It reports back with a pull request${context.channel === "whatsapp" ? ", here on WhatsApp too" : ""}.`,
       }),
+    }),
+    check_back_later: tool({
+      description:
+        "Wake yourself up later to check on something and tell the person you're talking to how it went (a job you're waiting on, something you promised to come back to, an answer they owe someone). At that time you look into it and message them, or stay quiet if there's nothing to say. Moved out of their quiet hours.",
+      inputSchema: z.object({
+        about: z.string().min(1).max(500).describe("What to check and what to tell them, e.g. 'Whether #14's import finished; send the totals'."),
+        minutes: z.number().int().min(5).max(60 * 24 * 14).optional().describe("How many minutes from now."),
+        at: z.string().optional().describe("Or an exact time, ISO 8601 with offset, e.g. 2026-10-12T16:00:00+01:00."),
+        task: z.number().int().positive().optional().describe("The task it's about, if any."),
+        urgent: z.boolean().optional().describe("True if it can go outside their working hours (still never in quiet hours)."),
+      }),
+      execute: async ({ about, minutes, at, task, urgent }) => {
+        if (!context.person) return "There's no one signed in to check back with.";
+        const when = at ? new Date(at) : new Date(Date.now() + (minutes ?? 60) * 60_000);
+        if (Number.isNaN(when.getTime())) return `${at} isn't a time I can read. Use ISO 8601, e.g. 2026-10-12T16:00:00+01:00.`;
+        const found = task ? await getTaskByNumber(orgId, task, { viewer: context.person.id }) : null;
+        const dueAt = await scheduleWakeup(orgId, context.person.id, {
+          reason: "check_in",
+          note: found ? `#${found.number}: ${about}` : about,
+          urgent: urgent ?? true,
+          at: when,
+        });
+        return `You'll wake up at ${dueAt.toISOString()} to check: ${about}`;
+      },
+    }),
+    save_my_hours: tool({
+      description:
+        "Save the timezone, working hours and quiet hours of the person you're talking to: you only message them first in working hours (or, when they're needed, any time but quiet hours).",
+      inputSchema: z.object({
+        timezone: z.string().describe("IANA timezone, e.g. Europe/London."),
+        days: z.array(z.number().int().min(1).max(7)).describe("Days they work: 1 is Monday, 7 is Sunday."),
+        start: z.string().describe("When their working day starts, HH:MM, e.g. 09:00."),
+        end: z.string().describe("When it ends, e.g. 18:00."),
+        quietStart: z.string().describe("When you must stop messaging them, e.g. 21:00."),
+        quietEnd: z.string().describe("When you may start again, e.g. 08:00."),
+      }),
+      execute: async ({ timezone, ...hours }) => {
+        if (!context.person) return "There's no one signed in.";
+        try {
+          const saved = await saveAssistantHours(orgId, context.person.id, timezone, hours);
+          return `Saved: ${describeHours(saved.hours, saved.timezone)}.`;
+        } catch (error) {
+          return (error as Error).message;
+        }
+      },
     }),
     share_task: tool({
       description:

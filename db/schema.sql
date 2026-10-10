@@ -505,3 +505,30 @@ alter table pages add column if not exists visibility text not null default 'com
 
 -- Which people may use an integration (through their assistant and the work it does for them): null is everyone.
 alter table integrations add column if not exists person_ids uuid[];
+
+-- When a person's assistant may message them first: their timezone (else the company's) and working and
+-- quiet hours (lib/assistant/hours.ts). WhatsApp only lets a business write freely within 24 hours of the
+-- person's last message, so the last one in and the assistant's last unprompted message are kept too.
+alter table people add column if not exists timezone text;
+alter table people add column if not exists work_hours jsonb;
+alter table people add column if not exists whatsapp_in_at timestamptz;
+alter table people add column if not exists assistant_nudged_at timestamptz;
+
+-- Moments a person's assistant wakes up by itself (lib/assistant/wake.ts): work of theirs that's done or
+-- needs them, a check-in it set itself, or a keep-alive before WhatsApp's 24-hour window closes. A due
+-- wake-up is claimed by one cron tick, and done once its turn has run.
+create table if not exists assistant_wakeups (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  person_id uuid not null references people (id) on delete cascade,
+  reason text not null check (reason in ('task', 'check_in', 'keepalive')),
+  note text not null default '',
+  task_id uuid references tasks (id) on delete cascade,
+  urgent boolean not null default false,
+  due_at timestamptz not null,
+  claimed_at timestamptz,
+  done_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists assistant_wakeups_due on assistant_wakeups (due_at) where done_at is null;
+create index if not exists assistant_wakeups_person on assistant_wakeups (person_id, created_at desc);

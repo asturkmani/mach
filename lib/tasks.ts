@@ -1,6 +1,6 @@
 import "server-only";
 
-import { tellOnWhatsApp } from "@/lib/channels/task-replies";
+import { scheduleWakeup } from "@/lib/assistant/store";
 import { getDb } from "@/lib/db";
 import { pushConfigured, pushToPeople } from "@/lib/push";
 import type { AgentKind, AgentStatus } from "@/lib/agents/store";
@@ -629,15 +629,35 @@ const NOTIFY_STATUS: Partial<Record<TaskStatus, string>> = { waiting: "needs you
 /** A task just started waiting on its people: a push notification to each of them (who turned them on). */
 async function notifyNeeded(organizationId: string, task: Task): Promise<void> {
   if (task.laterUntil && task.laterUntil > new Date()) return;
-  if (task.replyByWhatsApp) await tellOnWhatsApp(organizationId, task);
-  if (!pushConfigured()) return;
   const people = task.members.filter((m) => m.type === "person").map((m) => m.id);
+  await wakeAssistants(organizationId, task, people);
+  if (!pushConfigured()) return;
   await pushToPeople(
     organizationId,
     people,
     { title: `#${task.number} ${NOTIFY_STATUS[task.status]}`, body: task.summary || task.title, url: `/tasks/${task.number}`, tag: `task-${task.id}` },
     { badge: (personId) => countInbox(organizationId, personId) },
   );
+}
+
+/**
+ * The assistants of the people on it who reach theirs on WhatsApp wake up to
+ * tell them there: straight away when they're needed (outside quiet hours),
+ * in working hours when it's ready to review. Push covers everyone else.
+ */
+async function wakeAssistants(organizationId: string, task: Task, personIds: string[]): Promise<void> {
+  const ids = [...new Set([...personIds, ...(task.createdByPersonId ? [task.createdByPersonId] : [])])];
+  try {
+    const reachable = await getDb().query<{ id: string }>(
+      `select id from people where organization_id = $1 and id = any($2::uuid[]) and whatsapp is not null and workos_user_id is not null and status = 'active'`,
+      [organizationId, ids],
+    );
+    for (const { id } of reachable) {
+      await scheduleWakeup(organizationId, id, { reason: "task", taskId: task.id, urgent: task.status === "waiting" });
+    }
+  } catch (error) {
+    console.error("Couldn't wake the assistants for a task", error);
+  }
 }
 
 export async function addMember(taskId: string, member: { personId?: string; agentId?: string }): Promise<void> {

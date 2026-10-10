@@ -19,7 +19,8 @@ export function emailAddress(from: string): string {
   return (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();
 }
 
-async function contextFor(organizationId: string, personId: string): Promise<ChiefOfStaffContext | null> {
+/** A person's conversation with their assistant: only someone who has joined (signed in) has one. */
+export async function contextFor(organizationId: string, personId: string): Promise<ChiefOfStaffContext | null> {
   const [organization, person] = await Promise.all([getOrganization(organizationId), getPerson(organizationId, personId)]);
   if (!organization || !person?.workosUserId) return null;
   return { organization, person, user: { id: person.workosUserId, email: person.email ?? "", name: person.name } };

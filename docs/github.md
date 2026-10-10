@@ -59,4 +59,4 @@ A company that keeps its code in a GitHub organization installs the app there on
 | `lib/agents/github-steps.ts`, `githubTools` in `lib/agents/toolkit.ts` | `github_api` |
 | `lib/agents/chief-of-staff.ts` | `start_coding` and what the Chief of Staff knows about your GitHub |
 | `lib/agents/store.ts`, `lib/agents/skills.ts` | The Developer agent and its `coding-in-github` playbook |
-| `lib/channels/task-replies.ts` | Reporting back on WhatsApp |
+| `lib/assistant/wake.ts` | Reporting back on WhatsApp (the assistant wakes up when the work is done or needs them) |

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { chiefOfStaffTurn } from "@/lib/agents/cos-turn";
+import { recordWhatsAppIn } from "@/lib/assistant/store";
 import { appUrl } from "@/lib/app-url";
 import { replyToEmail } from "@/lib/channels/agentmail";
 import { findByEmail, findByPhone } from "@/lib/channels/senders";
@@ -59,6 +60,8 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
     );
     return;
   }
+  // WhatsApp's 24 hours, in which their assistant may write first, start again.
+  await recordWhatsAppIn(context.organization.id, context.person.id);
   const voice = message.mediaType?.startsWith("audio/") ?? false;
   const spoken = voice ? await voiceNote(message, options.transcriber) : null;
   const notes: string[] = [];
