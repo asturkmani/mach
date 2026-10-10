@@ -473,7 +473,7 @@ Who gets what: ● always, ○ when a skill switches it on, – never.
 
 | Tool | Takes | Does |
 |---|---|---|
-| `spawn_worker` | title, brief, skills, people?, files?, repeat?, share?, model?, `wait`? | Starts a task for the Worker with those skills pinned. With `wait`, it runs inline in the person's sandbox for up to 3 minutes (today's `ask_specialist`); if it needs longer, it becomes the task. Replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist` |
+| `spawn_worker` | title, brief, why, context?, deliverable?, skills, `wait`?, model? (`coder` or `planner`), people?, files?, priority?, repeat?, after?, share? | Starts a task for the Worker with those skills pinned. With `wait`, it runs inline in the person's sandbox for up to 3 minutes; if it needs longer, it becomes the task. Code work checks the person's GitHub first. Until defined agents become skills (phase 4), `agent?` names one to do it instead. Replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist` (shipped in phase 2) |
 | `start_job` | title, request, skills?, people?, files?, repeat?, share? | Starts a job: a task for the coordinator, with the request as its brief. Replaces `plan_job` |
 | `start_child` | assignee (worker, person or script), title, brief, skills?, after?, files? | A child task on the job, created for the person the job is for. Children started in one step are one batch |
 | `message_child`, `cancel_child` | child, text | Reply on a child (an answer, or "redo this"), or stop it |
@@ -580,9 +580,10 @@ Prompts ask agents to get approval before changing other systems. With no limits
    - Old tool results are trimmed in long runs.
    - Base skills move to `skills/<name>/SKILL.md`.
    - Until jobs exist, the research skill keeps `investigate`, so briefs don't get worse in between.
-2. **One hand-off.** `spawn_worker` (with `wait`) and `escalate` replace `create_task` with agents, `start_coding`, `start_research` and `ask_specialist`.
+2. **One hand-off.** `spawn_worker` (with `wait`) replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist`. `create_task` is left for work only people do. A stored chat that called a retired tool keeps the message, with the call as a note.
 3. **Jobs.**
    - Parent and child tasks, with worker, person and script children.
+   - `escalate`, which needs a coordinator to take over (moved here from phase 2).
    - Batches that wake the coordinator once, and one report per job.
    - In-depth research moves to jobs. `plan_job` and `investigate` go.
 4. **Learning on the job.**

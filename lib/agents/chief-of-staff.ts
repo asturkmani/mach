@@ -176,14 +176,18 @@ function workInstructions(context: Context): string {
       const v = f.versions[0];
       return `- ${f.name} (v${v.version}${v.taskNumber ? `, from #${v.taskNumber}` : ""})`;
     });
-  return `Tasks and agents:
-- When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or else the Worker (workerRole says what kind of work) with the skills the work needs pinned (skills). The agent starts straight away and reports back to their inbox; tell them that in one line.
-- Answer quick questions yourself. Create a task only for real work.
+  return `Tasks and the Worker. Decide in this order:
+1. If what you already have, or one quick tool, covers it, answer yourself.
+2. If it's one change in the app, do it with do_action.
+3. If it's one deliverable and one kind of work ("do a review of…", "draft…", "find…", "fix…"), hand it to the Worker with spawn_worker instead of doing the work in chat. Load the writing-tasks skill first. Pin the skills the work needs: it reads them before it starts, and can load others itself. If the answer is likely within a few minutes, pass wait and answer here; otherwise it's a task that reports back to their inbox (and here on WhatsApp when they asked there): tell them that in one line. A defined agent whose role fits can take it instead (spawn_worker's agent).
+4. A big job (several deliverables that depend on each other, a process with people or an approval in it, in-depth research, or work whose shape nobody knows until someone looks) gets planned first with plan_job.
+5. If unsure between 3 and 4, one worker is enough.
+- create_task is for work only people do: a to-do for someone on the team, with no agent on it.
 - Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company"): task.set_visibility.
-- A big job (several steps or agents, several deliverables, days of work) gets planned first with plan_job (acknowledge first: it takes a minute or two). If the plan has things to ask first, ask them in one message and wait. Otherwise create its steps as tasks with create_task, each with its agent or a workerRole, and later steps with after set to the numbers of the tasks they need: they start by themselves as those are delivered. Then tell them the plan in a few lines with the task numbers. Everyday requests: just create the task.
-- A question that needs one of the defined agents' expertise (the analyst on a number, the lawyer on a clause) goes to it with ask_specialist rather than you guessing: it answers in a few minutes on a model chosen for that work, or it becomes a task for it. Answer everyday questions yourself.
+- Planning (acknowledge first: it takes a minute or two): if the plan has things to ask first, ask them in one message and wait. Otherwise start its steps: spawn_worker for each step an agent does, with its skills, and create_task for steps only people do; later steps with after set to the numbers of the tasks they need, so they start by themselves as those are delivered. Then tell them the plan in a few lines with the task numbers.
+- Workers can't see this conversation: the brief carries everything the work needs. Say why they want it (the decision or work it's for), what matters that it can't know and what they want back. Pass on only what the work needs, nothing personal it doesn't.
 - If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
-- For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on create_task. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the agent builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
+- For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on spawn_worker. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the worker builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
 - Jobs share a company data drive: datasets one job saves there are available to every other job.
 
 Defined agents (who they are):
@@ -198,20 +202,20 @@ Your sandbox: like every agent, you have a Linux sandbox for the company with a 
 ${integrationLines.join("\n") || "(none yet)"}
 
 Code and GitHub: each person connects their own GitHub (Settings → Account), and work in GitHub always runs as the person who asked, never anyone else. ${githubLine(context)}
-- For a code change in a repository ("fix the typo on the pricing page", "add a field to the signup form"), call start_coding with what they want and the repository if they named it. The Worker, with the coding-in-github skill, clones it, works on a branch, runs its checks, pushes and opens a pull request, then reports back with the link (on WhatsApp too, when they asked there). Don't write code in chat.
+- For a code change in a repository ("fix the typo on the pricing page", "add a field to the signup form"), call spawn_worker with the coding-in-github skill, with what they want and the repository if they named it in the brief. The Worker clones it, works on a branch, runs its checks, pushes and opens a pull request, then reports back with the link (on WhatsApp too, when they asked there). Don't write code in chat.
 - Follow-ups on that work ("also make the button blue", "merge it") go to its task with reply_on_task. Merging happens only when they say so.
 - Quick questions about their GitHub (their open pull requests, a repository's recent commits, an issue) answer yourself with github_api, which acts as them.
 
 Research: the Worker, with the research skill, looks into anything the company needs to know (companies and markets, people and organisations, products and vendors, topics and events) across the web, filings, market data, X and Reddit, starting with the sources each person saved as high signal.
 - Everyday lookups answer yourself: a price or a quick number (market_data), what one account or a few are saying (x_search), a fact (web_search).
-- A question that needs judgment across several sources ("what's the market saying about Micron's guidance?", "is this vendor any good?") goes to start_research with depth quick: it answers here in a few minutes. Real research ("a brief on…", "dig into…", "compare…", due diligence, a primer) is depth brief: a task it reports back on with a written, sourced brief. A regular digest ("every Monday, what my sources say about AI chips") is a brief with repeat.
-- Brief it like a good manager: it gets the company profile and who it's for (their name and role) by itself, but it can't see this conversation. Say why they want it (the decision or work it's for), what matters that it can't know (what they already know or think, constraints, names, tickers or links they gave, sources to use or avoid) and what they want back. Pass on only what the research needs, nothing personal it doesn't.
+- A question that needs judgment across several sources ("what's the market saying about Micron's guidance?", "is this vendor any good?") goes to spawn_worker with the research skill and wait: it answers here in a few minutes. Real research ("a brief on…", "dig into…", "compare…", due diligence, a primer) is spawn_worker with research and no wait: a task it reports back on with a written, sourced brief. A regular digest ("every Monday, what my sources say about AI chips") is that with repeat (mode agent).
+- Brief it like a good manager: it gets the company profile and who it's for (their name and role) by itself. In what matters, pass what they already know or think, constraints, names, tickers or links they gave, and sources to use or avoid.
 - High-signal sources: when someone says a website, an X account, a subreddit or a Reddit user is worth following, or to look at it first, save it with do_action source.add, with why in the note (theirs unless they say it's for everyone). source.list shows them; the Research screen has them too.
 
 Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers. A page you build is theirs until it's shared: when it's meant for everyone (a report for the family, the company's numbers) or they say so, share it with share_page.
 ${pageLines.join("\n") || "(no pages yet)"}
 
-Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in create_task's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
+Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in spawn_worker's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
 ${fileLines.join("\n") || "(none yet)"}`;
 }
 
@@ -222,7 +226,7 @@ function appInstructions(context: Context): string {
   );
   return `The app: you can do from chat everything ${name} can do on Mach1's screens, as them and with their permissions (${
     context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
-  }). Besides your own tools (create_task, reply_on_task, save_person, create_agent, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
+  }). Besides your own tools (spawn_worker, create_task, reply_on_task, save_person, create_agent, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
 ${actionCatalog({ isAdmin: Boolean(context.isAdmin) })}
 ${claudeLine(context)}Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
 ${appMapLines()}
@@ -410,14 +414,15 @@ function profileTools(context: Context) {
  * What the Researcher is asked, from the chat: it can't see the conversation,
  * so why it's wanted, what matters and what to hand back travel with the question.
  */
-export function researchRequest(
-  asked: { question: string; purpose: string; context?: string; deliverable?: string },
-  person: Person,
+/** A worker's brief: what to do, why, for whom, what matters and what they want back. It can't see the chat. */
+export function briefFor(
+  asked: { brief: string; why: string; context?: string; deliverable?: string },
+  person?: Person,
 ): string {
   return [
-    asked.question.trim(),
-    `Why: ${asked.purpose.trim()}`,
-    `For: ${personLine(person)}`,
+    asked.brief.trim(),
+    `Why: ${asked.why.trim()}`,
+    person ? `For: ${personLine(person)}` : "",
     asked.context?.trim() ? `What matters: ${asked.context.trim()}` : "",
     asked.deliverable?.trim() ? `What they want back: ${asked.deliverable.trim()}` : "",
   ]
@@ -425,78 +430,79 @@ export function researchRequest(
     .join("\n\n");
 }
 
-type ResearchOutput =
+type SpawnOutput =
   | { error: string }
   | { agent: string; answer: string }
-  | { agent: string; task: number; why: string }
-  | { agent: string; task: number; repeats: string | null };
+  | {
+      agent: string;
+      task: { id: string; number: number; title: string; waitsFor: number[] };
+      members: string[];
+      skills: string[];
+      repeats: string | null;
+      /** Set when it was asked to answer in the chat but needed longer. */
+      why?: string;
+      /** The GitHub account code work runs as. */
+      github?: string;
+    };
+
+const SKILL_NAMES = SKILLS.map((s) => s.name) as [string, ...string[]];
 
 function workTools(context: Context, research: { workspace: AgentContext; using: SandboxUser; enabled: boolean }) {
   const orgId = context.organization.id;
   const by = { name: context.user.name, personId: context.person?.id };
+  /** Company files a new task starts from, by exact name. */
+  const startingFiles = async (names: string[] = []) => {
+    const found = await findFiles(orgId, names, { viewer: context.person?.id });
+    const missing = names.filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
+    if (missing.length) throw new WorkError(`No company file called ${missing.join(", ")}.`);
+    return found;
+  };
+  /** The tasks a new one waits for, by number. */
+  const earlierTasks = async (numbers: number[] = []) => {
+    const tasks = await Promise.all(numbers.map((number) => getTaskByNumber(orgId, number, { viewer: context.person?.id })));
+    const unknown = numbers.filter((_, i) => !tasks[i]);
+    if (unknown.length) throw new WorkError(`There's no task #${unknown.join(", #")}.`);
+    return tasks as Task[];
+  };
   return {
     create_task: tool({
       description:
-        "Create a task for real work and put people and agents on it. The person you're talking to is added automatically. Agents on it start straight away.",
+        "Create a task for people only: a to-do for someone on the team, with no agent on it. The person you're talking to is added automatically. Work for an agent goes to spawn_worker.",
       inputSchema: z.object({
         title: z.string().min(1).max(100).describe("The outcome, starting with a verb."),
         description: z.string().describe("Goal, inputs or sources, what done looks like, and any deadline."),
         priority: z.enum(PRIORITIES).optional(),
         people: z.array(z.string()).optional().describe("Exact names of other people to put on it."),
-        agents: z.array(z.string()).optional().describe("Exact names of defined agents to put on it."),
-        workerRole: z
-          .string()
-          .optional()
-          .describe("Put the Worker on it for this kind of work, e.g. 'Financial analysis', when no defined agent fits."),
-        skills: z
-          .array(z.enum(SKILLS.map((s) => s.name) as [string, ...string[]]))
-          .optional()
-          .describe("Skills the work needs (e.g. research, excel-models, presentations, data-pipelines): its agent reads them before it starts."),
-        files: z.array(z.string()).optional().describe("Exact names of company files the job should start from."),
+        files: z.array(z.string()).optional().describe("Exact names of company files it starts from."),
         shareWithCompany: z
           .boolean()
           .optional()
           .describe("Share it with the whole company: work meant for everyone, or company work they want visible. Otherwise only they and the people on it see it."),
-        repeat: z
-          .object({
-            cron: z.string().describe("Five-field cron in the timezone, e.g. '0 16 * * 1-5' for weekdays at 16:00."),
-            timezone: z.string().describe("IANA timezone, e.g. Europe/London."),
-            mode: z.enum(["script", "agent"]).describe("script: replay the job's run.sh each time. agent: the agent does the job each time."),
-          })
-          .optional()
-          .describe("Makes it a recurring job. The first run starts now."),
         after: z
           .array(z.number().int().positive())
           .optional()
           .describe("Numbers of tasks it needs first (a planned job's later steps): it waits, then starts by itself once each is delivered."),
       }),
-      execute: async ({ title, description, priority, people, agents, workerRole, skills, files, repeat, shareWithCompany, after }) => {
+      execute: async ({ title, description, priority, people, files, shareWithCompany, after }) => {
         try {
-          const found = await findFiles(orgId, files ?? [], { viewer: context.person?.id });
-          const missing = (files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
-          if (missing.length) throw new WorkError(`No company file called ${missing.join(", ")}.`);
-          const team = await resolveTeam(orgId, { people, agents });
-          const first = await Promise.all((after ?? []).map((number) => getTaskByNumber(orgId, number, { viewer: context.person?.id })));
-          const unknown = (after ?? []).filter((_, i) => !first[i]);
-          if (unknown.length) throw new WorkError(`There's no task #${unknown.join(", #")}.`);
+          const found = await startingFiles(files);
+          const team = await resolveTeam(orgId, { people });
+          const first = await earlierTasks(after);
           const task = await createTaskWithTeam(orgId, {
             title,
             description,
             priority,
             personIds: team.people.map((p) => p.id),
-            agentIds: team.agents.map((a) => a.id),
-            workerRole,
-            skills,
             inputFileIds: found.map((f) => f.id),
-            schedule: repeat,
             visibility: shareWithCompany ? "company" : "private",
-            after: first.map((t) => t!.id),
+            after: first.map((t) => t.id),
             by,
           });
           return {
             task: { id: task.id, number: task.number, title: task.title, waitsFor: task.status === "backlog" ? task.waitsFor : [] },
             members: task.members.map((m) => m.name),
-            repeats: repeat ? describeSchedule(repeat.cron, repeat.timezone) : null,
+            // Older results, from when it also started agents, can repeat.
+            repeats: null as string | null,
           };
         } catch (error) {
           if (error instanceof WorkError) return { error: error.message };
@@ -514,115 +520,150 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
               }`,
       }),
     }),
-    start_coding: tool({
+    spawn_worker: tool({
       description:
-        "Start a code change in a GitHub repository, done by the Worker with the coding-in-github skill as the person you're talking to (with their own GitHub): a task it works on straight away, ending in a pull request. They're on it and hear back when it's ready.",
+        "Hand work to the Worker: one deliverable, one kind of work. It starts straight away with the skills you pin, and works for the person you're talking to (as them, with their GitHub, for code). It gets the company profile and who it's for by itself; everything else from this conversation it only knows from what you pass here. With wait, it answers here within a few minutes, or becomes a task if it needs longer. Otherwise it's a task that reports back to their inbox, and here on WhatsApp too when they asked there.",
       inputSchema: z.object({
-        title: z.string().min(1).max(100).describe("The change, starting with a verb, e.g. 'Fix the typo on the pricing page'."),
-        request: z.string().min(1).describe("What they want, in their words plus anything you know: where, why, what done looks like."),
-        repository: z.string().optional().describe("owner/name, if they said which; the agent finds it otherwise."),
-      }),
-      execute: async ({ title, request, repository }) => {
-        if (!context.person) return { error: "Only a signed-in team member can start code changes." };
-        const github = await getGitHubConnection(orgId, context.person.id);
-        if (github?.status !== "connected") {
-          return { error: `${context.person.name} needs to connect their GitHub first: ${appUrl("/connect/github")}` };
-        }
-        const developer = await workerAgent(orgId);
-        const task = await createTaskWithTeam(orgId, {
-          title,
-          description: [request.trim(), repository ? `Repository: ${repository.trim()}` : ""].filter(Boolean).join("\n\n"),
-          agentIds: [developer.id],
-          skills: ["coding-in-github"],
-          replyByWhatsApp: context.channel === "whatsapp",
-          by,
-        });
-        return { task: { number: task.number, title: task.title }, agent: developer.name, github: github.login };
-      },
-      toModelOutput: ({ output }) => ({
-        type: "text" as const,
-        value:
-          "error" in output
-            ? `Not started: ${output.error}`
-            : `Started task #${output.task.number}: ${output.agent} is on it as @${output.github}. It reports back with a pull request${context.channel === "whatsapp" ? ", here on WhatsApp too" : ""}.`,
-      }),
-    }),
-    start_research: tool({
-      description:
-        "Hand research to the Worker with the research skill (companies, markets, people, products, topics, events): it searches the web, filings, market data, X and Reddit, starting with the sources the person you're talking to saved as high signal. It gets the company profile and who it's for by itself; everything else from this conversation it only knows from what you pass here. quick: it answers here in a few minutes (or it becomes a task if it needs longer). brief: a task where it investigates in depth and reports back with a sourced brief, on WhatsApp too when they asked there.",
-      inputSchema: z.object({
-        title: z.string().min(1).max(100).describe("Starting with a verb, e.g. 'Research Micron's HBM outlook'."),
-        question: z.string().min(1).describe("What to find out, in a sentence or two."),
-        purpose: z
+        title: z.string().min(1).max(100).describe("The outcome, starting with a verb, e.g. 'Fix the typo on the pricing page'."),
+        brief: z
           .string()
           .min(1)
-          .describe(
-            "Why they want it: the decision or work it's for, e.g. 'deciding whether to add to our MU position' or 'choosing a CRM for a team of 12'. If they didn't say, your best understanding from the conversation and the company profile.",
-          ),
+          .describe("What to do, in their words plus what you know: where (repository, files, sites, tickers), inputs, what done looks like, any deadline."),
+        why: z
+          .string()
+          .min(1)
+          .describe("The decision or work it's for, e.g. 'deciding whether to add to our MU position'. If they didn't say, your best understanding from the conversation and the profile."),
         context: z
           .string()
           .optional()
-          .describe(
-            "What matters that the research can't see: what they already know or think, constraints (budget, region, time frame), names, tickers and links from the conversation, sources to use or avoid. Only what the research needs.",
-          ),
-        deliverable: z.string().optional().describe("What they want back, e.g. 'a one-page brief', 'a table of five vendors', 'yes or no, with the reasons'."),
-        depth: z.enum(["quick", "brief"]).describe("quick: a question answered in minutes. brief: in-depth research delivered as a written brief."),
-        shareWithCompany: z.boolean().optional().describe("Research meant for everyone. Otherwise only they and the people on it see it."),
+          .describe("What matters that it can't see: what they already know or think, constraints, names and links from the conversation, sources to use or avoid. Only what the work needs."),
+        deliverable: z.string().optional().describe("What they want back, e.g. 'a pull request', 'a one-page brief', 'a spreadsheet with three cases'."),
+        skills: z
+          .array(z.enum(SKILL_NAMES))
+          .describe("The skills the work needs, read before it starts: e.g. coding-in-github for a code change, research for research, excel-models, presentations, data-pipelines. Can be empty."),
+        wait: z
+          .boolean()
+          .optional()
+          .describe("Answer here in a few minutes (a question that needs judgment across sources, a quick check). Not with repeat or after."),
+        agent: z
+          .string()
+          .optional()
+          .describe("Exact name of a defined agent to do it instead of the Worker, when one's role fits."),
+        model: z
+          .enum(["coder", "planner"])
+          .optional()
+          .describe("Only when the skills' own choice won't do: coder for heavy code work, planner for hard thinking. Usually leave it out."),
+        people: z.array(z.string()).optional().describe("Exact names of other people to put on it."),
+        files: z.array(z.string()).optional().describe("Exact names of company files it starts from."),
+        priority: z.enum(PRIORITIES).optional(),
+        shareWithCompany: z
+          .boolean()
+          .optional()
+          .describe("Share it with the whole company: work meant for everyone, or company work they want visible. Otherwise only they and the people on it see it."),
         repeat: z
           .object({
-            cron: z.string().describe("Five-field cron in the timezone, e.g. '0 8 * * 1' for Mondays at 08:00."),
+            cron: z.string().describe("Five-field cron in the timezone, e.g. '0 16 * * 1-5' for weekdays at 16:00."),
             timezone: z.string().describe("IANA timezone, e.g. Europe/London."),
+            mode: z.enum(["script", "agent"]).describe("script: replay the job's run.sh each time. agent: the worker does the job each time."),
           })
           .optional()
-          .describe("For a brief that repeats (a weekly digest). The first one starts now."),
+          .describe("Makes it a recurring job. The first run starts now."),
+        after: z
+          .array(z.number().int().positive())
+          .optional()
+          .describe("Numbers of tasks it needs first (a planned job's later steps): it waits, then starts by itself once each is delivered."),
       }),
-      execute: async ({ title, depth, shareWithCompany, repeat, ...asked }): Promise<ResearchOutput> => {
-        if (!context.person) return { error: "Only a signed-in team member can start research." };
-        const researcher = await workerAgent(orgId);
-        const request = researchRequest(asked, context.person);
-        // A quick question is answered while you wait; one that needs longer becomes a task, as a brief does.
-        let why: string | undefined;
-        if (depth === "quick" && !repeat) {
-          const answered = await askSpecialist(research.workspace, research.using, researcher, context.organization.models ?? {}, {
-            question: request,
-            askedBy: context.person.name,
-            about: personAbout(context.person),
-            profile: context.profile,
-            research: research.enabled,
-            skills: ["research"],
-          });
-          if ("answer" in answered) return { agent: researcher.name, answer: answered.answer };
-          why = answered.needsTask;
-        }
+      execute: async (input): Promise<SpawnOutput> => {
+        const { title, skills, wait, repeat, after, files, people, priority, shareWithCompany } = input;
         try {
+          let agent: Agent;
+          if (input.agent) {
+            const found = await findAgentByName(orgId, input.agent);
+            if (!found || found.kind !== "defined" || found.status !== "active") return { error: `There's no active agent called ${input.agent}.` };
+            agent = found;
+          } else {
+            agent = await workerAgent(orgId);
+          }
+          let github: string | undefined;
+          if (skills.includes("coding-in-github")) {
+            if (!context.person) return { error: "Only a signed-in team member can start code changes." };
+            const connection = await getGitHubConnection(orgId, context.person.id);
+            if (connection?.status !== "connected") {
+              return { error: `${context.person.name} needs to connect their GitHub first: ${appUrl("/connect/github")}` };
+            }
+            github = connection.login;
+          }
+          const description = briefFor(input, context.person);
+          // A quick one is answered while you wait; one that needs longer becomes a task.
+          let why: string | undefined;
+          if (wait && !repeat && !after?.length) {
+            const answered = await askSpecialist(research.workspace, research.using, agent, context.organization.models ?? {}, {
+              question: description,
+              askedBy: context.person?.name ?? context.user.name,
+              about: context.person && personAbout(context.person),
+              profile: context.profile,
+              research: research.enabled,
+              skills,
+            });
+            if ("answer" in answered) return { agent: agent.name, answer: answered.answer };
+            why = answered.needsTask;
+          }
+          const found = await startingFiles(files);
+          const team = await resolveTeam(orgId, { people });
+          const first = await earlierTasks(after);
           const task = await createTaskWithTeam(orgId, {
             title,
-            description: request,
-            agentIds: [researcher.id],
-            skills: ["research"],
+            description,
+            priority,
+            personIds: team.people.map((p) => p.id),
+            agentIds: [agent.id],
+            skills,
+            model: input.model ? roleModel(input.model) : undefined,
+            inputFileIds: found.map((f) => f.id),
+            schedule: repeat,
             replyByWhatsApp: context.channel === "whatsapp",
             visibility: shareWithCompany ? "company" : "private",
-            schedule: repeat ? { ...repeat, mode: "agent" } : undefined,
+            after: first.map((t) => t.id),
             by,
           });
-          if (why) return { agent: researcher.name, task: task.number, why };
-          return { agent: researcher.name, task: task.number, repeats: repeat ? describeSchedule(repeat.cron, repeat.timezone) : null };
+          return {
+            agent: agent.name,
+            task: { id: task.id, number: task.number, title: task.title, waitsFor: task.status === "backlog" ? task.waitsFor : [] },
+            members: task.members.map((m) => m.name),
+            skills: task.skills,
+            repeats: repeat ? describeSchedule(repeat.cron, repeat.timezone) : null,
+            ...(why ? { why } : {}),
+            ...(github ? { github } : {}),
+          };
         } catch (error) {
           if (error instanceof WorkError) return { error: error.message };
           throw error;
         }
       },
-      toModelOutput: ({ output }) => ({
-        type: "text" as const,
-        value:
-          "error" in output
-            ? `Not started: ${output.error}`
-            : "answer" in output
-              ? `${output.agent} says:\n${output.answer}`
-              : "why" in output
-                ? `${output.agent} needs longer (${output.why}), so it's now task #${output.task}, which it has started; they'll hear when it's done. Tell them in one line.`
-                : `Started task #${output.task}: ${output.agent} is on it and reports back with a brief${context.channel === "whatsapp" ? ", here on WhatsApp too" : ""}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
-      }),
+      toModelOutput: ({ output }) => {
+        if ("error" in output) return { type: "text" as const, value: `Not started: ${output.error}` };
+        if ("answer" in output) return { type: "text" as const, value: `${output.agent} says:\n${output.answer}` };
+        const { agent, task } = output;
+        if (output.why) {
+          return {
+            type: "text" as const,
+            value: `${agent} needs longer (${output.why}), so it's now task #${task.number}, which it has started; they'll hear when it's done. Tell them in one line.`,
+          };
+        }
+        const others = output.members.filter((m) => m !== agent);
+        return {
+          type: "text" as const,
+          value: [
+            `Started task #${task.number}: ${agent} is on it${output.github ? ` as @${output.github}` : ""}${output.skills.length ? `, with ${output.skills.join(", ")}` : ""}.`,
+            others.length ? `With ${others.join(", ")}.` : "",
+            task.waitsFor.length ? `It starts once #${task.waitsFor.join(" and #")} ${task.waitsFor.length > 1 ? "are" : "is"} delivered.` : "",
+            `It reports back${context.channel === "whatsapp" ? ", here on WhatsApp too" : ""}.`,
+            output.repeats ? `Repeats: ${output.repeats}.` : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        };
+      },
     }),
     check_back_later: tool({
       description:
@@ -943,16 +984,13 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
   } satisfies ToolSet;
 }
 
-type SpecialistOutput = { error: string } | { agent: string; answer: string } | { agent: string; task: number; why: string };
-
-/** Quick questions for the company's agents, answered while you wait, or turned into a task when they need longer. */
-function specialistTools(context: Context, workspace: AgentContext, using: SandboxUser, research: boolean) {
+/** Planning a big job before it starts. */
+function planTools(context: Context) {
   const orgId = context.organization.id;
-  const names = (context.agents ?? []).filter((a) => a.kind === "defined" && a.status === "active").map((a) => a.name);
   return {
     plan_job: tool({
       description:
-        "Think a big job through before starting it (several steps or agents, several deliverables, days of work, or they ask you to plan): the company's planner, a stronger model, writes what to ask first, the steps, who does each and which wait for which. Takes a minute or two.",
+        "Think a big job through before starting it (several deliverables that depend on each other, a process with people or approvals in it, in-depth research, or they ask you to plan): the company's planner, a stronger model, writes what to ask first, the steps, who does each with which skills, and which wait for which. Takes a minute or two.",
       inputSchema: z.object({
         request: z.string().min(1).describe("The whole job in their words plus everything you know (deadlines, files, who's involved): the planner can't see your conversation."),
       }),
@@ -966,44 +1004,6 @@ function specialistTools(context: Context, workspace: AgentContext, using: Sandb
           files: context.files ?? [],
           openTasks: context.openTasks ?? [],
         }),
-    }),
-    ask_specialist: tool({
-      description:
-        "Ask one of the company's defined agents a question that needs its expertise, and wait for the answer (a few minutes at most): it works on its own model, with its instructions and the data sources it may use. For questions, not jobs. If it needs longer, it becomes a task for that agent, which reports back.",
-      inputSchema: z.object({
-        agent: z.string().min(1).describe(`Exact name of a defined agent${names.length ? `: ${names.join(", ")}` : ""}.`),
-        question: z.string().min(1).describe("The whole question with everything it needs to know: it can't see your conversation."),
-        title: z.string().min(1).max(100).describe("A task title for it, starting with a verb, in case it needs longer."),
-      }),
-      execute: async ({ agent: name, question, title }): Promise<SpecialistOutput> => {
-        const agent = await findAgentByName(orgId, name);
-        if (!agent || agent.kind !== "defined" || agent.status !== "active") return { error: `There's no active agent called ${name}.` };
-        const asked = await askSpecialist(workspace, using, agent, context.organization.models ?? {}, {
-          question,
-          askedBy: context.person?.name ?? context.user.name,
-          about: context.person && personAbout(context.person),
-          profile: context.profile,
-          research,
-        });
-        if ("answer" in asked) return { agent: agent.name, answer: asked.answer };
-        const task = await createTaskWithTeam(orgId, {
-          title,
-          description: question,
-          agentIds: [agent.id],
-          replyByWhatsApp: context.channel === "whatsapp",
-          by: { name: context.user.name, personId: context.person?.id },
-        });
-        return { agent: agent.name, task: task.number, why: asked.needsTask };
-      },
-      toModelOutput: ({ output }) => ({
-        type: "text" as const,
-        value:
-          "error" in output
-            ? output.error
-            : "answer" in output
-              ? `${output.agent} says:\n${output.answer}`
-              : `${output.agent} needs longer (${output.why}), so it's now task #${output.task}, which ${output.agent} has started; they'll hear when it's done. Tell them in one line.`,
-      }),
     }),
   } satisfies ToolSet;
 }
@@ -1041,7 +1041,7 @@ export function createChiefOfStaff(
     })),
     ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),
     ...githubTools(workspace),
-    ...specialistTools(context, workspace, using, options.research !== false),
+    ...planTools(context),
     ...actionTools(actorFor(context), { whatsapp: context.channel === "whatsapp" ? context.person?.whatsapp : null }),
     ...(options.research === false ? {} : researchTools(workspace)),
     use_skill: skillTool(),

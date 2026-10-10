@@ -13,7 +13,7 @@ import { setSpecialistModel } from "./specialist";
 
 const ORG = "org_cedar";
 
-describe("asking a specialist", () => {
+describe("asking a defined agent and waiting for the answer", () => {
   beforeEach(async () => {
     await useTestDb();
     await createOrganization({ id: ORG, name: "Cedar Legacy" });
@@ -31,7 +31,19 @@ describe("asking a specialist", () => {
     const specialistModel = scriptedModel([specialist]);
     setSpecialistModel(specialistModel);
     const model = scriptedModel([
-      [["ask_specialist", { agent: "Analyst", question: "What's our cash runway at the current burn?", title: "Work out the cash runway" }]],
+      [
+        [
+          "spawn_worker",
+          {
+            agent: "Analyst",
+            title: "Work out the cash runway",
+            brief: "What's our cash runway at the current burn?",
+            why: "Sara is planning next year's spending",
+            skills: [],
+            wait: true,
+          },
+        ],
+      ],
       "Done.",
     ]);
     const organization = { ...(await getOrganization(ORG))!, onboardingCompletedAt: new Date() };

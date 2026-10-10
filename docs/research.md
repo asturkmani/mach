@@ -13,8 +13,8 @@ Like everything in Mach1, it's asked for in chat (the panel, WhatsApp or email).
 | They ask | It does |
 | --- | --- |
 | A price, a number, what one account is saying | Answers itself (`market_data`, `x_search`, `web_search`) |
-| A question that needs judgment across sources ("what's the market saying about Micron's guidance?") | `start_research` with depth quick: the Worker, with the research skill, answers in the chat within a few minutes, or it becomes a task if it needs longer |
-| Real research ("a brief on…", "compare these vendors", due diligence on someone, a primer) | `start_research` with depth brief: a task for the Worker with the research skill pinned, reporting back, on WhatsApp too |
+| A question that needs judgment across sources ("what's the market saying about Micron's guidance?") | `spawn_worker` with the `research` skill and `wait`: the Worker answers in the chat within a few minutes, or it becomes a task if it needs longer |
+| Real research ("a brief on…", "compare these vendors", due diligence on someone, a primer) | `spawn_worker` with the `research` skill: a task for the Worker, reporting back with a brief, on WhatsApp too |
 | A regular digest ("every Monday, what my sources say about AI chips") | A brief with `repeat`: a recurring task, the Worker doing each run |
 
 ## What it knows
@@ -24,19 +24,19 @@ Research is only as good as its brief, and the Worker can't see the chat. So:
 - **It gets by itself**: the company profile (what the company does, its goals, how it works), who it's
   working for with their role and what they look after (from the Team page), their saved sources and the
   company's, and on a task the whole thread and its files.
-- **The Chief of Staff hands over the rest**, as `start_research`'s fields, which become the task's
-  description (or the quick question): the question, **Why** (the decision or work it's for, required),
+- **The Chief of Staff hands over the rest**, as `spawn_worker`'s fields, which become the task's
+  description (or the quick question): the brief, **Why** (the decision or work it's for, required),
   **What matters** (what they already know or think, constraints, names, tickers and links from the chat,
   sources to use or avoid) and **What they want back**. Its instructions say to brief the Worker like a
   good manager would, and to pass on only what the research needs: the chat itself and the Chief of Staff's
   private notes about the person stay with the Chief of Staff.
 - The `research` skill starts from that brief: research for their decision, not the topic in general.
 
-Any task agent now sees who it's working for with their role, and any specialist the Chief of Staff asks
-learns the asker's role too.
+Any task agent now sees who it's working for with their role, and so does a Worker the Chief of Staff waits
+for.
 
 There is no separate Researcher: the one Worker does research when a task pins the `research` skill (as
-`start_research` does), or when it loads the skill itself mid-run. Its model: its own (Team → Worker), else
+`spawn_worker` does with `skills: ["research"]`), or when it loads the skill itself mid-run. Its model: its own (Team → Worker), else
 the company's default for agents, else Mach1's model for agents' work (`lib/ai/lineup.ts`): Claude Sonnet with
 the company's Anthropic key, else OpenAI's.
 
@@ -128,4 +128,4 @@ and integrations don't get them.
 | `lib/research/x.ts`, `grok.ts`, `reddit.ts` | X through its API or Grok, Grok's search tools on xAI's API, Reddit through its API or Grok |
 | `lib/research/steps.ts`, `tools.ts` | The tools (durable steps on tasks), and `investigate` |
 | `lib/actions/research.ts`, `app/(app)/research/` | `source.add`, `source.update`, `source.remove`, `source.list`, and the Research screen |
-| `lib/agents/store.ts` (`workerAgent`), `lib/agents/chief-of-staff.ts` (`start_research`) | The Worker, and handing research to it |
+| `lib/agents/store.ts` (`workerAgent`), `lib/agents/chief-of-staff.ts` (`spawn_worker`) | The Worker, and handing research to it |

@@ -57,14 +57,19 @@ Friday), it goes in the last three hours before it does, outside quiet hours. On
 them (`keepAliveDue` in
 `lib/assistant/hours.ts`).
 
-## Asking a specialist
+## Handing work to the Worker
 
-The Chief of Staff runs on a fast, cheaper model and hands expertise to the company's defined agents, each
-on a model chosen for its work (Team → the agent → Model; defaults in `.env.example`). For a question,
-`ask_specialist` runs the agent on the spot (its instructions, the data sources it may use, research and the
-person's sandbox) and waits up to three minutes. If the agent says the question needs real work, or runs
-out of time, it becomes a task for that agent instead, which reports back (and wakes the assistant when
-it's done). Jobs still go to tasks directly (`create_task`, `start_coding`).
+The Chief of Staff runs on a fast, cheaper model and hands work to the Worker with `spawn_worker`: a title,
+the brief (what to do, why, what matters, what they want back), the skills to pin, and optionally people,
+files, a schedule (`repeat`), tasks to wait for (`after`), or a defined agent to do it instead. The task's
+model comes from its skills (`coder` for `coding-in-github`) unless the company chose one. With `wait`, it
+runs the Worker on the spot (the pinned skills, the data sources the person may use, research and the
+person's sandbox) and waits up to three minutes. If it says the question needs real work, or runs out of
+time, it becomes the task instead, which reports back (and wakes the assistant when it's done). Code work
+checks the person has connected GitHub first. `create_task` is left for work only people do.
+
+A stored chat that called a tool since retired (`start_coding`, `start_research`, `ask_specialist`) keeps the
+message: the old call becomes a short note of what it did (`lib/agents/history.ts`).
 
 ## Code
 
@@ -73,16 +78,16 @@ it's done). Jobs still go to tasks directly (`create_task`, `start_coding`).
 | `lib/assistant/hours.ts` | Working and quiet hours, when something may be delivered, when a keep-alive is due |
 | `lib/assistant/store.ts` | Hours, the WhatsApp window, and the `assistant_wakeups` queue |
 | `lib/assistant/wake.ts` | The wake-up turn, run from the cron tick (`app/api/cron/tick`) every minute |
-| `lib/agents/specialist.ts` | `ask_specialist`: a defined agent answering a question while the Chief of Staff waits |
+| `lib/agents/specialist.ts` | `spawn_worker` with `wait`: the Worker (or a defined agent) answering while the Chief of Staff waits |
 
 ## Big jobs: the coordinator
 
 Before a big job (several steps or agents, several deliverables, days of work), the Chief of Staff calls
 `plan_job` (`lib/agents/planner.ts`): the company's planner model (Opus 5.5 at high, or GPT-6 Astra;
-`lib/ai/lineup.ts`) writes what to ask first, the steps, who does each (a defined agent or a new worker)
-and which need which, from the profile, agents, data sources, files and open tasks. The Chief of Staff asks
-the questions, or creates each step with `create_task`, later ones with `after` (the task numbers they
-need). A task that waits stays in backlog (`tasks.waits_for`) and starts by itself once everything it
+`lib/ai/lineup.ts`) writes what to ask first, the steps, who does each (the Worker with which skills, a
+defined agent, or people) and which need which, from the profile, skills, agents, data sources, files and
+open tasks. The Chief of Staff asks the questions, or starts each step with `spawn_worker` (or `create_task`
+for people), later ones with `after` (the task numbers they need). A task that waits stays in backlog (`tasks.waits_for`) and starts by itself once everything it
 waits for is delivered, in review or done (`startFollowers` in `lib/agents/dispatch.ts`, run when a
 status changes and when an agent's run ends).
 
@@ -102,7 +107,7 @@ page it is) live in `lib/operations.ts`, so chat can never do more than the pers
 **Adding something to a screen**: declare it in `lib/actions` and call `performAs` from the server action;
 chat has it from then on. `lib/actions/coverage.test.ts` reads every `app/**/actions.ts` and fails for a
 server action that doesn't go through the registry (or an operation a registered action uses), isn't one of
-the Chief of Staff's own tools (`create_task`, `reply_on_task`, …), and isn't listed as screen-only with the
+the Chief of Staff's own tools (`spawn_worker`, `create_task`, `reply_on_task`, …), and isn't listed as screen-only with the
 reason. Never through chat, whoever asks: credentials and keys, deleting the company, linking WhatsApp. For
 those it sends the exact link.
 

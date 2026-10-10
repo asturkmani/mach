@@ -169,7 +169,18 @@ describe("each person's own GitHub", () => {
     setScheduler(() => {}); // the agent's run isn't part of this test
     const ask = (github: { login: string; status: "connected" } | null) => {
       const model = scriptedModel([
-        [["start_coding", { title: "Fix the typo on the pricing page", request: "It says 'anual'.", repository: "cedar/site" }]],
+        [
+          [
+            "spawn_worker",
+            {
+              title: "Fix the typo on the pricing page",
+              brief: "It says 'anual'. Repository: cedar/site",
+              why: "The pricing page is public",
+              deliverable: "A pull request",
+              skills: ["coding-in-github"],
+            },
+          ],
+        ],
         "On it.",
       ]);
       return createChiefOfStaff({ organization, user, person, profile: "", channel: "whatsapp", github }, { model, research: false })
@@ -182,7 +193,7 @@ describe("each person's own GitHub", () => {
     expect(await getTaskByNumber(ORG, 1)).toBeNull();
 
     await saveGitHubConnection(ORG, me, tokens("ghu_sara_token"), sara);
-    expect(await ask({ login: "sara-h", status: "connected" })).toContain("Started task #1: Worker is on it as @sara-h");
+    expect(await ask({ login: "sara-h", status: "connected" })).toContain("Started task #1: Worker is on it as @sara-h, with coding-in-github.");
     const task = (await getTaskByNumber(ORG, 1))!;
     expect(task).toMatchObject({ title: "Fix the typo on the pricing page", createdByPersonId: me, replyByWhatsApp: true });
     expect(task.description).toContain("Repository: cedar/site");

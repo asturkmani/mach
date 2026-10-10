@@ -116,6 +116,21 @@ describe("prepareHistory", () => {
   });
 });
 
+describe("a tool that's since been retired", () => {
+  it("keeps the message, with the old call as a note of what it did", async () => {
+    const old = assistantWith({
+      type: "tool-start_coding",
+      toolCallId: "call_2",
+      state: "output-available",
+      input: { title: "Fix the typo" },
+      output: { task: { number: 3, title: "Fix the typo" }, agent: "Developer", github: "sara-h" },
+    });
+    const [kept] = await prepareHistory([old], tools);
+    expect(kept.parts.map((p) => p.type)).toEqual(["step-start", "text", "text"]);
+    expect(kept.parts[1]).toMatchObject({ text: expect.stringContaining('[Earlier, start_coding (a tool you no longer have): {"task":{"number":3') });
+  });
+});
+
 describe("a reply cut off mid-tool", () => {
   it("records the unfinished call as failed, so the next turn isn't refused for a missing tool result", async () => {
     const { convertToModelMessages } = await import("ai");

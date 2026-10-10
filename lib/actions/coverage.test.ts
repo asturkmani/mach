@@ -12,8 +12,9 @@ import { ACTIONS, getAction } from "@/lib/actions";
 // with the reason. A new screen action that's none of these fails here.
 
 /** Server actions the Chief of Staff does with one of its own tools. */
-const CHAT_TOOL: Record<string, string> = {
-  createTaskAction: "create_task",
+const CHAT_TOOL: Record<string, string | string[]> = {
+  // A task for people, or one with an agent on it.
+  createTaskAction: ["create_task", "spawn_worker"],
   replyAction: "reply_on_task",
   searchTasksAction: "find_tasks",
   createAgentAction: "create_agent",
@@ -100,7 +101,7 @@ describe("every screen action is open to the Chief of Staff", () => {
   it("names only actions and tools that exist", () => {
     const named = serverActions.flatMap((a) => [...a.source.matchAll(/"((?:task|person|agent|file|page|integration|company|me|source)\.[a-z_]+)"/g)].map((m) => m[1]));
     expect(named.filter((name) => !getAction(name))).toEqual([]);
-    for (const tool of Object.values(CHAT_TOOL)) expect(chiefOfStaff, tool).toContain(`    ${tool}: tool({`);
+    for (const tool of Object.values(CHAT_TOOL).flat()) expect(chiefOfStaff, tool).toContain(`    ${tool}: tool({`);
     const exported = new Set(serverActions.map((a) => a.name));
     expect([...Object.keys(CHAT_TOOL), ...Object.keys(SCREEN_ONLY)].filter((name) => !exported.has(name)), "stale entries").toEqual([]);
     expect(serverActions.filter((a) => a.through && (CHAT_TOOL[a.name] || SCREEN_ONLY[a.name])).map((a) => a.name), "goes through the registry now").toEqual([]);

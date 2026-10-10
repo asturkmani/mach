@@ -57,7 +57,17 @@ async function isValidOutput(tools: ToolSet, toolName: string, output: unknown):
 /** What the model reads for a tool call that never got its result. */
 export const CUT_OFF = "This didn't finish: the reply was cut off before the tool returned. Run it again if it's still needed.";
 
+/** A stored call to a tool that has since been retired, as a short note of what it did. */
+function retired(toolName: string, part: UIMessage["parts"][number]): UIMessage["parts"][number] {
+  const { state, output, errorText } = part as { state?: string; output?: unknown; errorText?: string };
+  const result = state === "output-available" ? JSON.stringify(output ?? null) : state === "output-error" ? `failed: ${errorText ?? ""}` : "didn't finish";
+  return { type: "text", text: `[Earlier, ${toolName} (a tool you no longer have): ${result.length > 600 ? `${result.slice(0, 599)}…` : result}]` };
+}
+
 async function repairPart(tools: ToolSet, part: UIMessage["parts"][number]) {
+  // A tool that's been retired (start_coding became spawn_worker) would fail validation and take its
+  // whole message with it: keep the message, with the call as a note of what it did.
+  if (part.type.startsWith("tool-") && !tools[part.type.slice("tool-".length)]) return retired(part.type.slice("tool-".length), part);
   // A reply cut off mid-tool (the request ended, the server restarted) leaves a
   // call with no result, and providers refuse a conversation like that: record
   // it as failed so the conversation carries on.

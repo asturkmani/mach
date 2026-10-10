@@ -70,13 +70,14 @@ describe("planned jobs", () => {
     await createAgent(ORG, { name: "Analyst", role: "Financial analysis" });
     await createAgent(ORG, { name: "Writer", role: "Reports" });
     setScheduler(() => {}); // the agents' runs aren't part of this test
-    const plan = "Goal: a Q3 report for the family.\nAsk first: none\nSteps:\n1. Pull the Q3 numbers | who: Analyst | after: none\n2. Write the Q3 report | who: Writer | after: 1\nRisks: none";
+    const plan =
+      "Goal: a Q3 report for the family.\nAsk first: none\nSteps:\n1. Pull the Q3 numbers | who: Analyst | skills: none | after: none\n2. Write the Q3 report | who: Worker | skills: presentations | after: 1\nRisks: none";
     const planner = scriptedModel([plan]);
     setPlannerModel(planner);
     const model = scriptedModel([
       { text: "On it: planning the Q3 report.", calls: [["plan_job", { request: "Q3 report for the family by Friday" }]] },
-      [["create_task", { title: "Pull the Q3 numbers", description: "From Masttro.", agents: ["Analyst"] }]],
-      [["create_task", { title: "Write the Q3 report", description: "From #1's numbers.", agents: ["Writer"], after: [1] }]],
+      [["spawn_worker", { title: "Pull the Q3 numbers", brief: "From Masttro.", why: "The family's Q3 report", agent: "Analyst", skills: [] }]],
+      [["spawn_worker", { title: "Write the Q3 report", brief: "From #1's numbers.", why: "The family's Q3 report", skills: ["presentations"], after: [1] }]],
       "Planned: #1 pulls the numbers, then #2 writes it up.",
     ]);
     const organization = { ...(await getOrganization(ORG))!, onboardingCompletedAt: new Date() };
@@ -88,7 +89,8 @@ describe("planned jobs", () => {
     const asked = JSON.stringify(planner.doGenerateCalls[0].prompt);
     expect(asked).toContain("Q3 report for the family by Friday");
     expect(asked).toContain("Analyst (Financial analysis)");
-    expect(JSON.stringify(model.doGenerateCalls[1].prompt)).toContain("2. Write the Q3 report | who: Writer | after: 1");
+    expect(asked).toContain("Skills: ");
+    expect(JSON.stringify(model.doGenerateCalls[1].prompt)).toContain("2. Write the Q3 report | who: Worker | skills: presentations | after: 1");
     expect(await getTaskByNumber(ORG, 2)).toMatchObject({ title: "Write the Q3 report", status: "backlog", waitsFor: [1] });
     expect(JSON.stringify(model.doGenerateCalls[3].prompt)).toContain("It starts once #1 is delivered.");
   });

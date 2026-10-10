@@ -132,7 +132,7 @@ describe("Chief of Staff", () => {
     expect(modelOf(createChiefOfStaff({ organization: { ...organization, models: { chiefOfStaff: "openai/gpt-6.1-sol" } }, user, profile: "" }, { research: false }))).toBe("openai/gpt-6.1-sol");
   });
 
-  it("turns a request into a task for the Worker, which runs and reports back", async () => {
+  it("hands a request to the Worker with the skills it needs, which runs and reports back", async () => {
     const organization = { ...(await setUpOrg()), onboardingCompletedAt: new Date() };
     const person = (await listPeople(ORG))[0];
     const runs: Promise<void>[] = [];
@@ -148,11 +148,12 @@ describe("Chief of Staff", () => {
       [["use_skill", { name: "writing-tasks" }]],
       [
         [
-          "create_task",
+          "spawn_worker",
           {
             title: "Review Micron's latest earnings",
-            description: "Earnings review plus a model with projections for the next 4 quarters.",
-            workerRole: "Financial analysis",
+            brief: "Earnings review plus a model with projections for the next 4 quarters.",
+            why: "Ahmed follows Micron for the portfolio",
+            skills: ["financial-analysis", "excel-models"],
           },
         ],
       ],
@@ -168,11 +169,12 @@ describe("Chief of Staff", () => {
       ["person", "Ahmed"],
       ["agent", "Worker"],
     ]);
-    expect(task.description).toMatch(/^Kind of work: Financial analysis\n\n/);
+    expect(task.description).toMatch(/^Earnings review plus a model.*\n\nWhy: Ahmed follows Micron/);
+    expect(task.skills).toEqual(["financial-analysis", "excel-models"]);
     expect(task).toMatchObject({ status: "review", summary: "Model ready: revenue grows to $100M. Share it?" });
     expect((await listTaskFiles(ORG, task.id)).map((f) => f.name)).toEqual(["model.csv"]);
     expect((await listInbox(ORG, person.id)).map((t) => t.number)).toEqual([1]);
-    expect(JSON.stringify(model.doGenerateCalls.at(-1)!.prompt)).toContain("Created task #1 with Ahmed, Worker.");
+    expect(JSON.stringify(model.doGenerateCalls.at(-1)!.prompt)).toContain("Started task #1: Worker is on it, with financial-analysis, excel-models. With Ahmed.");
   });
 
   it("only offers profile edits that fit the moment, and suggests changes after onboarding", async () => {

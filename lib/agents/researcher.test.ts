@@ -123,12 +123,13 @@ describe("research: the Worker with the research skill", () => {
     const told = await chat([
       [
         [
-          "start_research",
+          "spawn_worker",
           {
             title: "Check X on the Fed minutes",
-            question: "What's X saying about the Fed minutes?",
-            purpose: "Deciding whether to trim our TLT position before Friday",
-            depth: "quick",
+            brief: "What's X saying about the Fed minutes?",
+            why: "Deciding whether to trim our TLT position before Friday",
+            skills: ["research"],
+            wait: true,
           },
         ],
       ],
@@ -150,25 +151,25 @@ describe("research: the Worker with the research skill", () => {
     const told = await chat([
       [
         [
-          "start_research",
+          "spawn_worker",
           {
             title: "Weekly digest on AI semis",
-            question: "What my sources say about AI semis this week",
-            purpose: "Keeping our semis positions under review",
+            brief: "What my sources say about AI semis this week",
+            why: "Keeping our semis positions under review",
             context: "We hold MU and NVDA. Sara thinks HBM pricing is the swing factor.",
             deliverable: "Five bullets and anything that changes the view",
-            depth: "brief",
-            repeat: { cron: "0 8 * * 1", timezone: "Europe/London" },
+            skills: ["research"],
+            repeat: { cron: "0 8 * * 1", timezone: "Europe/London", mode: "agent" },
           },
         ],
       ],
       "Done.",
     ]);
-    expect(told).toContain("Started task #1: Worker is on it");
+    expect(told).toContain("Started task #1: Worker is on it, with research.");
     expect(told).toContain("Repeats:");
     const task = (await getTaskByNumber(ORG, 1))!;
     expect(task).toMatchObject({ title: "Weekly digest on AI semis", visibility: "private" });
-    // The hand-off from the chat, which the Researcher reads as the task's description.
+    // The hand-off from the chat, which the Worker reads as the task's description.
     expect(task.description).toBe(
       [
         "What my sources say about AI semis this week",
