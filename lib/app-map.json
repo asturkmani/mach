@@ -36,6 +36,12 @@
     "what": "One page: the report itself, how fresh its data is, the job that refreshes it, its versions, Private/Company."
   },
   {
+    "path": "/research",
+    "title": "Research",
+    "where": "Left menu → Research",
+    "what": "The sources you trust most (websites, X accounts, subreddits, Reddit users), which the Researcher looks at first: yours and the company's, with adding, sharing and removing them; and the Researcher's recent work."
+  },
+  {
     "path": "/settings",
     "title": "Settings → General",
     "where": "Company menu (top left) → Settings",

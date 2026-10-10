@@ -39,6 +39,7 @@
     "vercel": "^62.7.0",
     "web-push": "3.6.7",
     "workflow": "^5.1.0",
+    "yahoo-finance2": "4.0.3",
     "zod": "^4.6.5"
   },
   "devDependencies": {

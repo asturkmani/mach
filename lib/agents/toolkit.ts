@@ -6,6 +6,7 @@ import { browserLogin, browsePage } from "@/lib/agents/browser-steps";
 import { githubRequest } from "@/lib/agents/github-steps";
 import { callApi, readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
+import { insightTools } from "@/lib/research/tools";
 import { listSandboxFiles, readSandboxFile, runCode, runShell, startSandbox, writeSandboxFile } from "@/lib/agents/sandbox-steps";
 
 export { skillTool } from "@/lib/agents/skills";
@@ -37,11 +38,16 @@ export function sandboxUser(context: AgentContext, session: SandboxSession): San
   };
 }
 
-/** Web search and page reading, run by AI Gateway and billed to its credits (a few dollars per thousand calls). */
-export const researchTools = () =>
+/**
+ * Research: web search and page reading, run by AI Gateway and billed to its
+ * credits (a few dollars per thousand calls), plus market data, X and Reddit
+ * (lib/research), each able to look only at the sources people saved as high signal.
+ */
+export const researchTools = (context: AgentContext) =>
   ({
     web_search: gateway.tools.parallelSearch({ mode: "agentic", maxResults: 5 }),
     fetch_page: gateway.tools.browserbaseFetch({ format: "markdown", allowRedirects: true, proxies: false }),
+    ...insightTools(context),
   }) satisfies ToolSet;
 
 export function sandboxTools(context: AgentContext, using: SandboxUser) {

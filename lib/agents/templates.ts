@@ -1,4 +1,5 @@
 // Starting points for defined agents. Each is a full profile that people can edit.
+// (Research has its own built-in agent, the Researcher: lib/agents/store.ts.)
 
 export type AgentTemplate = { name: string; role: string; description: string; instructions: string };
 
@@ -18,13 +19,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
       "Finds and researches prospects that fit our customer profile, drafts personal outreach and keeps a clean list of who was contacted and what they said. Good work is specific to each prospect and never spammy.",
     instructions:
       "- Research each prospect before writing.\n- Keep emails under 120 words, one clear ask.\n- Never send anything without approval; save drafts for review.\n- Save prospect lists as CSV: name, company, role, why they fit, source.",
-  },
-  {
-    name: "Researcher",
-    role: "Research",
-    description:
-      "Answers questions about markets, companies, people and tools with sourced, concise briefs. Good work separates facts from opinion and says what is still unknown.",
-    instructions: "- Cite a source for every fact.\n- Keep briefs to one page unless asked for more.\n- End with what you would do next.",
   },
   {
     name: "Bookkeeper",

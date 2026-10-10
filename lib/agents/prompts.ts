@@ -140,6 +140,7 @@ export function taskBrief({
   drive,
   integrations,
   workingFor,
+  highSignal,
 }: {
   task: Task;
   messages: TaskMessage[];
@@ -150,6 +151,8 @@ export function taskBrief({
   integrations?: Integration[];
   /** The person this run is for, and their GitHub if they connected it. */
   workingFor?: WorkingFor | null;
+  /** The research sources saved as high signal for them, and the company's (sourcesBrief). */
+  highSignal?: string;
 }): string {
   const members = task.members
     .map((m) =>
@@ -206,7 +209,7 @@ ${driveListing(drive)}
 
 <data_sources>
 ${integrationListing(integrations)}
-</data_sources>${loginListing(integrations)}${workingForListing(workingFor)}`;
+</data_sources>${loginListing(integrations)}${workingForListing(workingFor)}${highSignal ? `\n\n${highSignal}` : ""}`;
 }
 
 export type WorkingFor = { name: string; github: { login: string } | null; connectUrl: string };

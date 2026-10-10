@@ -163,6 +163,12 @@ export async function handOverShared(organizationId: string, fromId: string, toI
     fromId,
     toId,
   ]);
+  // The company's research sources they saved (any the new owner already has go with them).
+  await db.query(
+    `update research_sources s set owner_person_id = $3 where organization_id = $1 and owner_person_id = $2 and visibility = 'company'
+     and not exists (select 1 from research_sources t where t.organization_id = $1 and t.owner_person_id = $3 and t.kind = s.kind and lower(t.handle) = lower(s.handle))`,
+    [organizationId, fromId, toId],
+  );
 }
 
 export async function removePerson(organizationId: string, id: string): Promise<void> {

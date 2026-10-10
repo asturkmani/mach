@@ -1,4 +1,4 @@
-import { agentModel, getAgent } from "@/lib/agents/store";
+import { agentModel, getAgent, RESEARCH_AGENT } from "@/lib/agents/store";
 import { driveStats, listDrive } from "@/lib/drive";
 import { allowedFor, listIntegrations } from "@/lib/integrations";
 import { contentTypeFor, isText, listTaskFiles, readVersion, saveVersion } from "@/lib/files";
@@ -20,6 +20,8 @@ import { getGitHubConnection } from "@/lib/github";
 import { getOrganization } from "@/lib/orgs";
 import { getPerson } from "@/lib/people";
 import { loadProfile } from "@/lib/profile/store";
+import { listSources } from "@/lib/research/store";
+import { sourcesBrief } from "@/lib/research/sources";
 import { deleteSchedule, getSchedule, saveSchedule, scheduleProblem, type ScheduleMode } from "@/lib/schedules";
 import { recordMentions } from "@/lib/task-mentions";
 import { imageForModel, MODEL_IMAGE_TYPES } from "@/lib/agents/images";
@@ -64,6 +66,10 @@ export type BegunRun =
       images: BriefImage[];
       /** The people's messages this run answers: they get its reaction (👀, then how it ended). */
       answering: string[];
+      /** The Researcher: it sends questions to sub-researchers (investigate). */
+      researcher: boolean;
+      /** The research sources saved as high signal for whoever it works for, and the company's, for its prompts. */
+      highSignal: string;
     };
 
 export type BriefImage = { name: string; mediaType: string; data: string };
@@ -128,9 +134,11 @@ export async function beginRun(
   await reactToMessages(agent.id, answering, "👀");
   // Who this run is for: what of theirs it may use (their GitHub) follows from it.
   const forId = workingForId(task, messages, answering);
-  const [forPerson, github] = forId
-    ? await Promise.all([getPerson(organizationId, forId), getGitHubConnection(organizationId, forId)])
-    : [null, null];
+  const [forPerson, github, sources] = await Promise.all([
+    forId ? getPerson(organizationId, forId) : null,
+    forId ? getGitHubConnection(organizationId, forId) : null,
+    listSources(organizationId, { viewer: forId }),
+  ]);
   if (forPerson) context.personId = forPerson.id;
   // Only the integrations the person it works for may use (and this agent).
   const usable = integrations.filter((i) => allowedFor(i, agent.id, forPerson?.id));
@@ -139,17 +147,26 @@ export async function beginRun(
     github: github?.status === "connected" ? { login: github.login } : null,
     connectUrl: appUrl("/connect/github"),
   };
+  // Mach1's own agents for code and integrations don't research; every other agent may.
+  const highSignal = agent.builtin && agent.builtin !== RESEARCH_AGENT ? "" : sourcesBrief(sources, forPerson?.name);
   return {
     ok: true,
     context,
     model,
-    instructions: agentInstructions({ organization, agent, profile, brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations: usable, workingFor }) }),
+    instructions: agentInstructions({
+      organization,
+      agent,
+      profile,
+      brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations: usable, workingFor, highSignal }),
+    }),
     prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
     sources: usable.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
     logins: usable.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
     images,
     answering,
+    researcher: agent.builtin === RESEARCH_AGENT,
+    highSignal,
   };
 }
 
