@@ -47,11 +47,17 @@ const isFile = (part: UIMessage["parts"][number]): part is FileUIPart => part.ty
  * The conversation as the model gets it. Stored file parts point at the app's
  * own (private) file URLs, which a provider can't fetch, so they're turned
  * into what the model can use; the stored conversation keeps the originals.
+ * Reasoning from earlier turns is left out: models don't use it, and one
+ * from another provider (after the company changed its model) can't read it.
  */
 export async function forModel(organizationId: string, messages: UIMessage[]): Promise<UIMessage[]> {
   const newest = messages.findLastIndex((m) => m.role === "user");
   return Promise.all(
-    messages.map(async (message, index) => {
+    messages.map(async (original, index) => {
+      const message =
+        index < newest && original.role === "assistant" && original.parts.some((p) => p.type === "reasoning")
+          ? { ...original, parts: original.parts.filter((p) => p.type !== "reasoning") }
+          : original;
       const files = message.parts.filter(isFile);
       if (files.length === 0) return message;
       const others = message.parts.filter((p) => !isFile(p));

@@ -90,6 +90,20 @@ describe("files attached in the Chief of Staff chat", () => {
     expect(newest).toHaveLength(4);
   });
 
+  it("leaves earlier turns' reasoning out (another provider's can't be read), but not the turn in progress", async () => {
+    const thought = (text: string) => ({ type: "reasoning" as const, text, providerMetadata: { openai: { itemId: "rs_1" } } });
+    const messages = [
+      user("m1", [{ type: "text", text: "What's open?" }]),
+      { id: "m2", role: "assistant" as const, parts: [thought("Let me look."), { type: "text" as const, text: "Two tasks." }] },
+      user("m3", [{ type: "text", text: "And now?" }]),
+      { id: "m4", role: "assistant" as const, parts: [thought("Checking again."), { type: "text" as const, text: "Still two." }] },
+    ];
+    const shown = await forModel(ORG, messages);
+    expect(shown[1].parts).toEqual([{ type: "text", text: "Two tasks." }]);
+    expect(shown[3]).toBe(messages[3]);
+    expect(messages[1].parts).toHaveLength(2); // the stored conversation keeps it
+  });
+
   it("stores the conversation with its file links, not what the model was shown", () => {
     const original = user("m1", [{ type: "file", mediaType: "image/png", filename: "a.png", url: "/files/x?inline=1" }]);
     const asShown = user("m1", [{ type: "file", mediaType: "image/jpeg", filename: "a.png", url: "data:image/jpeg;base64,AAAA" }]);
