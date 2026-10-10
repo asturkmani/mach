@@ -83,11 +83,16 @@ export function deliverAt(now: Date, timezone: string, hours: WorkHours, { urgen
   return urgent ? next(now, (at) => !isQuiet(at, timezone, hours)) : next(now, (at) => isWorking(at, timezone, hours));
 }
 
+/** How long before the window closes the last-chance keep-alive goes, when no working day starts or ends in time. */
+const LAST_CALL = 3 * HOUR;
+
 /**
- * Whether to send a keep-alive now: they last wrote within 24 hours, there's
- * been no nudge since, and it's the start or end of their working day, and
- * either it's been quiet for 12 hours or the next such moment would come
- * after the window closes.
+ * Whether to send a keep-alive now: they last wrote within 24 hours and
+ * there's been no nudge since. Normally at the start or end of their working
+ * day, once it's been quiet for 12 hours or when the next such moment would
+ * come after the window closes. When none comes before it closes (a message
+ * late on a Friday, say), in the last few hours before it does, outside
+ * quiet hours, so something always goes out in time.
  */
 export function keepAliveDue(
   now: Date,
@@ -95,13 +100,20 @@ export function keepAliveDue(
 ): boolean {
   if (!lastIn) return false;
   const silent = now.getTime() - lastIn.getTime();
-  if (silent >= 24 * HOUR || (lastNudge && lastNudge > lastIn)) return false;
-  if (!atDayEdge(now, timezone, hours)) return false;
-  if (silent >= 12 * HOUR) return true;
-  // Skip past the edge we're in, then find the next one: if it's after the window closes, now is the last chance.
-  const after = next(now, (at) => !atDayEdge(at, timezone, hours));
-  const following = next(after, (at) => atDayEdge(at, timezone, hours));
-  return following.getTime() >= lastIn.getTime() + 24 * HOUR - STEP;
+  const closes = lastIn.getTime() + 24 * HOUR - STEP;
+  if (now.getTime() >= closes || (lastNudge && lastNudge > lastIn)) return false;
+  if (isQuiet(now, timezone, hours)) return false;
+  // The working-day edges, and the moments outside quiet hours, from now until the window closes.
+  let nextEdge: number | null = null;
+  let lastOpen = now.getTime();
+  for (let t = now.getTime(); t < closes; t += STEP) {
+    const at = new Date(t);
+    if (!isQuiet(at, timezone, hours)) lastOpen = t;
+    if (nextEdge === null && t > now.getTime() && atDayEdge(at, timezone, hours) && !atDayEdge(new Date(t - STEP), timezone, hours)) nextEdge = t;
+  }
+  if (atDayEdge(now, timezone, hours)) return silent >= 12 * HOUR || nextEdge === null;
+  // No start or end of a working day before it closes: the last call.
+  return nextEdge === null && lastOpen - now.getTime() <= LAST_CALL;
 }
 
 /** "Mon–Fri 09:00–18:00, quiet 21:00–08:00 (Europe/London)". */

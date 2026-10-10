@@ -10,7 +10,7 @@ and messages them when there's something worth their attention.
 | Work of theirs is ready to review | In their working hours | A task they're on or asked for moves to review (`notifyNeeded` in `lib/tasks.ts`) |
 | Work of theirs needs their answer | Straight away, unless it's their quiet hours | A task moves to waiting |
 | A check-in it set itself | When it asked, moved out of quiet hours | The `check_back_later` tool ("I'll check on the import at 4") |
-| Keep-alive | The start or end of their working day | WhatsApp's window would otherwise close (below) |
+| Keep-alive | The start or end of their working day, else just before the window closes | WhatsApp's window would otherwise close (below) |
 
 Task wake-ups are only for people who reach their assistant on WhatsApp; everyone gets the push notification.
 
@@ -18,8 +18,8 @@ Each wake-up is a turn in the person's conversation (one at a time, like any rep
 only the assistant sees: why it woke, their local time and hours, how long since they last wrote. It checks
 the work involved (`read_task`, `find_tasks`) and replies with one short message, or exactly `QUIET` when
 there's nothing worth saying. Only the message is kept in the conversation. It goes out on WhatsApp while
-the window is open, in the approved template once it has closed (docs/channels.md), otherwise into the
-app's chat with a push notification. If they're mid-conversation it
+the window is open. Once it has closed, nothing more goes to WhatsApp until they write (an approved
+template could, docs/channels.md, but none is set): it goes into the app's chat with a push notification. If they're mid-conversation it
 waits two minutes.
 
 ## Their hours
@@ -39,9 +39,12 @@ or end of their working day (when people reply), it writes something worth answe
 2. something they asked about and never followed up;
 3. something it's still waiting on from them;
 
-ending with a question they can answer in a few words. Never "just checking in". It goes out once 12 hours
+ending with a question they can answer in a few words; with none of those, one concrete thing it could do
+for them next. Never "just checking in", and a keep-alive is never skipped. It goes out once 12 hours
 have passed, or earlier at the last start or end of a working day before the window closes (a Friday
-afternoon before the weekend), and only once per message from them (`keepAliveDue` in
+afternoon before the weekend). When no working day starts or ends before it closes (they wrote late on a
+Friday), it goes in the last three hours before it does, outside quiet hours. Only once per message from
+them (`keepAliveDue` in
 `lib/assistant/hours.ts`).
 
 ## Asking a specialist

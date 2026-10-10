@@ -116,6 +116,7 @@ describe("the assistant wakes up by itself", () => {
     const model = scriptedModel(["The Q3 pack you asked about on Monday is still waiting on Omar's numbers. Want me to chase him?"]);
     await runAssistantWakeups({ model, research: false });
     expect(promptOf(model)).toContain("It's been quiet");
+    expect(promptOf(model)).toContain("This message must go out");
     expect(sent).toHaveLength(1);
     expect(await wakeups()).toMatchObject([{ reason: "keepalive" }]);
     // Until they reply, no more.

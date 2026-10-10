@@ -128,7 +128,7 @@ export async function wakeTurn(context: ChiefOfStaffContext, wakeups: Wakeup[], 
       ? "Check each one first (read_task: what was done, what's being asked, and whether they've already seen to it or it has moved on). Tell them in a sentence or two what happened, with the link, and exactly what you need from them, if anything."
       : "",
     keepAlive
-      ? `It's been quiet${items.length ? " otherwise too" : ""}, and the conversation goes cold if they don't reply within the window. Find something of theirs worth a reply, in this order: work they're waiting on (find_tasks and read_task: their open tasks and jobs, anything that moved or finished), something they asked about before and never followed up on (from the conversation and your notes), something you're still waiting on from them. End with one clear question they can answer in a few words. No filler: never "just checking in".`
+      ? `It's been quiet${items.length ? " otherwise too" : ""}, and the conversation goes cold if they don't reply within the window. Find something of theirs worth a reply, in this order: work they're waiting on (find_tasks and read_task: their open tasks and jobs, anything that moved or finished), something they asked about before and never followed up on (from the conversation and your notes), something you're still waiting on from them. If none of those exist, offer one concrete, useful thing you could do for them next, from their priorities, your notes on them and the company's goals. End with one clear question they can answer in a few words. No filler: never "just checking in". This message must go out: don't reply ${QUIET}.`
       : "",
     `Then reply with ONE short message to ${person.name}, which is sent as it stands ${
       onWhatsApp
@@ -136,7 +136,9 @@ export async function wakeTurn(context: ChiefOfStaffContext, wakeups: Wakeup[], 
         : template
           ? "on WhatsApp inside a notice (their window has closed): one or two plain sentences, no line breaks, ending with what you'd like from them, so they reply"
           : "to their chat in Mach1, with a notification"
-    }. Or, if nothing here is worth their attention now (already handled, nothing new, nothing open), reply with exactly ${QUIET} and nothing else. Don't create tasks or post on tasks on your own here.`,
+    }.${
+      keepAlive ? "" : ` Or, if nothing here is worth their attention now (already handled, nothing new, nothing open), reply with exactly ${QUIET} and nothing else.`
+    } Don't create tasks or post on tasks on your own here.`,
   ]
     .filter(Boolean)
     .join("\n\n");
