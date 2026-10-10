@@ -70,6 +70,8 @@ export type Task = {
   replyByWhatsApp: boolean;
   /** Everyone in the company sees it, or (private) only whoever created it, the people on it and anyone mentioned. */
   visibility: TaskVisibility;
+  /** The numbers of the tasks it starts after: it waits in backlog until each is in review or done. */
+  waitsFor: number[];
   /** Who @-mentioned the person this list is for, when that's why it needs them. */
   mentionedBy?: string | null;
   createdAt: Date;
@@ -130,6 +132,7 @@ type TaskRow = {
   pending_login: string | null;
   reply_by_whatsapp: boolean;
   visibility: TaskVisibility;
+  waits_for: number[];
   mentioned_by?: string | null;
   created_at: Date;
   updated_at: Date;
@@ -152,7 +155,8 @@ const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary,
   t.priority, t.options, t.payload, t.later_until, t.created_by_person_id, t.created_by_agent_id, t.run_agent_id,
   t.run_started_at, t.run_began_at, t.run_activity, t.agent_turns, t.memory, t.sandbox_name, t.archived_at,
   exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats, t.pending_login,
-  t.reply_by_whatsapp, t.visibility, t.created_at, t.updated_at, t.closed_at`;
+  t.reply_by_whatsapp, t.visibility, t.created_at, t.updated_at, t.closed_at,
+  array(select d.number from tasks d where d.id = any(t.waits_for) order by d.number) as waits_for`;
 
 /** Sorts urgent first, then high, medium, low. */
 export const PRIORITY_ORDER = `case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`;
@@ -189,6 +193,7 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     pendingLogin: row.pending_login,
     replyByWhatsApp: row.reply_by_whatsapp,
     visibility: row.visibility,
+    waitsFor: row.waits_for ?? [],
     mentionedBy: row.mentioned_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -533,6 +538,8 @@ export type NewTask = {
   replyByWhatsApp?: boolean;
   /** Company tasks (the default here, for Mach1's own) or private to whoever created it and the people on it. */
   visibility?: TaskVisibility;
+  /** Ids of the tasks it starts after. */
+  waitsFor?: string[];
 };
 
 export async function createTask(organizationId: string, input: NewTask): Promise<Task> {
@@ -545,9 +552,9 @@ export async function createTask(organizationId: string, input: NewTask): Promis
     try {
       const [row] = await db.query<{ id: string }>(
         `insert into tasks (organization_id, number, kind, title, description, summary, status, priority, options,
-                            payload, created_by_person_id, created_by_agent_id, reply_by_whatsapp, visibility)
+                            payload, created_by_person_id, created_by_agent_id, reply_by_whatsapp, visibility, waits_for)
          values ($1, (select coalesce(max(number), 0) + 1 from tasks where organization_id = $1), $2, $3, $4, $5, $6,
-                 $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
+                 $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14::uuid[])
          returning id`,
         [
           organizationId,
@@ -563,6 +570,7 @@ export async function createTask(organizationId: string, input: NewTask): Promis
           input.createdBy?.agentId ?? null,
           input.replyByWhatsApp ?? false,
           input.visibility ?? "company",
+          input.waitsFor ?? [],
         ],
       );
       id = row.id;
@@ -879,4 +887,19 @@ export async function countPersonComments(taskId: string): Promise<number> {
     [taskId],
   );
   return row.count;
+}
+
+/**
+ * Tasks waiting on this one that can start now: in backlog, and everything
+ * they wait for is delivered (in review or done).
+ */
+export async function followersReady(organizationId: string, taskId: string): Promise<string[]> {
+  const rows = await getDb().query<{ id: string }>(
+    `select f.id from tasks f
+     where f.organization_id = $1 and $2 = any(f.waits_for) and f.status = 'backlog' and f.archived_at is null
+       and not exists (select 1 from tasks d where d.id = any(f.waits_for) and d.status not in ('review', 'done'))
+     order by f.number`,
+    [organizationId, taskId],
+  );
+  return rows.map((r) => r.id);
 }

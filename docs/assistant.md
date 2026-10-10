@@ -75,6 +75,17 @@ it's done). Jobs still go to tasks directly (`create_task`, `start_coding`).
 | `lib/assistant/wake.ts` | The wake-up turn, run from the cron tick (`app/api/cron/tick`) every minute |
 | `lib/agents/specialist.ts` | `ask_specialist`: a defined agent answering a question while the Chief of Staff waits |
 
+## Big jobs: the coordinator
+
+Before a big job (several steps or agents, several deliverables, days of work), the Chief of Staff calls
+`plan_job` (`lib/agents/planner.ts`): the company's planner model (Opus 5.5 at high, or GPT-6 Astra;
+`lib/ai/lineup.ts`) writes what to ask first, the steps, who does each (a defined agent or a new worker)
+and which need which, from the profile, agents, data sources, files and open tasks. The Chief of Staff asks
+the questions, or creates each step with `create_task`, later ones with `after` (the task numbers they
+need). A task that waits stays in backlog (`tasks.waits_for`) and starts by itself once everything it
+waits for is delivered, in review or done (`startFollowers` in `lib/agents/dispatch.ts`, run when a
+status changes and when an agent's run ends).
+
 ## Everything from chat
 
 The Chief of Staff can do what the person it's talking to can do on Mach1's screens, with their permissions.

@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 
 import { actionCatalog } from "@/lib/actions";
+import { planJob } from "@/lib/agents/planner";
 import { roleModel } from "@/lib/ai/lineup";
 import { actionTools } from "@/lib/agents/action-tools";
 import { pageTools } from "@/lib/agents/page-tools";
@@ -179,6 +180,7 @@ function workInstructions(context: Context): string {
 - When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
 - Answer quick questions yourself. Create a task only for real work.
 - Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company"): task.set_visibility.
+- A big job (several steps or agents, several deliverables, days of work) gets planned first with plan_job (acknowledge first: it takes a minute or two). If the plan has things to ask first, ask them in one message and wait. Otherwise create its steps as tasks with create_task, each with its agent or a workerRole, and later steps with after set to the numbers of the tasks they need: they start by themselves as those are delivered. Then tell them the plan in a few lines with the task numbers. Everyday requests: just create the task.
 - A question that needs one of the defined agents' expertise (the analyst on a number, the lawyer on a clause) goes to it with ask_specialist rather than you guessing: it answers in a few minutes on a model chosen for that work, or it becomes a task for it. Answer everyday questions yourself.
 - If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
 - For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on create_task. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the agent builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
@@ -428,13 +430,20 @@ function workTools(context: Context) {
           })
           .optional()
           .describe("Makes it a recurring job. The first run starts now."),
+        after: z
+          .array(z.number().int().positive())
+          .optional()
+          .describe("Numbers of tasks it needs first (a planned job's later steps): it waits, then starts by itself once each is delivered."),
       }),
-      execute: async ({ title, description, priority, people, agents, workerRole, files, repeat, shareWithCompany }) => {
+      execute: async ({ title, description, priority, people, agents, workerRole, files, repeat, shareWithCompany, after }) => {
         try {
           const found = await findFiles(orgId, files ?? [], { viewer: context.person?.id });
           const missing = (files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
           if (missing.length) throw new WorkError(`No company file called ${missing.join(", ")}.`);
           const team = await resolveTeam(orgId, { people, agents });
+          const first = await Promise.all((after ?? []).map((number) => getTaskByNumber(orgId, number, { viewer: context.person?.id })));
+          const unknown = (after ?? []).filter((_, i) => !first[i]);
+          if (unknown.length) throw new WorkError(`There's no task #${unknown.join(", #")}.`);
           const task = await createTaskWithTeam(orgId, {
             title,
             description,
@@ -445,10 +454,11 @@ function workTools(context: Context) {
             inputFileIds: found.map((f) => f.id),
             schedule: repeat,
             visibility: shareWithCompany ? "company" : "private",
+            after: first.map((t) => t!.id),
             by,
           });
           return {
-            task: { id: task.id, number: task.number, title: task.title },
+            task: { id: task.id, number: task.number, title: task.title, waitsFor: task.status === "backlog" ? task.waitsFor : [] },
             members: task.members.map((m) => m.name),
             repeats: repeat ? describeSchedule(repeat.cron, repeat.timezone) : null,
           };
@@ -462,7 +472,9 @@ function workTools(context: Context) {
         value:
           "error" in output
             ? `Not created: ${output.error}`
-            : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
+            : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}${
+                output.task.waitsFor.length ? ` It starts once #${output.task.waitsFor.join(" and #")} ${output.task.waitsFor.length > 1 ? "are" : "is"} delivered.` : ""
+              }`,
       }),
     }),
     start_coding: tool({
@@ -833,6 +845,23 @@ function specialistTools(context: Context, workspace: AgentContext, using: Sandb
   const orgId = context.organization.id;
   const names = (context.agents ?? []).filter((a) => a.kind === "defined" && a.status === "active").map((a) => a.name);
   return {
+    plan_job: tool({
+      description:
+        "Think a big job through before starting it (several steps or agents, several deliverables, days of work, or they ask you to plan): the company's planner, a stronger model, writes what to ask first, the steps, who does each and which wait for which. Takes a minute or two.",
+      inputSchema: z.object({
+        request: z.string().min(1).describe("The whole job in their words plus everything you know (deadlines, files, who's involved): the planner can't see your conversation."),
+      }),
+      execute: async ({ request }) =>
+        planJob(orgId, {
+          request,
+          askedBy: context.person?.name ?? context.user.name,
+          profile: context.profile,
+          agents: context.agents ?? [],
+          integrations: context.integrations ?? [],
+          files: context.files ?? [],
+          openTasks: context.openTasks ?? [],
+        }),
+    }),
     ask_specialist: tool({
       description:
         "Ask one of the company's defined agents a question that needs its expertise, and wait for the answer (a few minutes at most): it works on its own model, with its instructions and the data sources it may use. For questions, not jobs. If it needs longer, it becomes a task for that agent, which reports back.",

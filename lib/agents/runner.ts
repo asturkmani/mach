@@ -1,5 +1,6 @@
 import { WorkflowAgent } from "@ai-sdk/workflow";
 
+import { startFollowersStep } from "@/lib/agents/follower-steps";
 import { CompanyModel } from "@/lib/ai/company-model";
 import { hasToolCall, isStepCount, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
@@ -375,4 +376,5 @@ export async function runAgentChain(
       next = undefined;
     }
   }
+  await startFollowersStep(organizationId, taskId);
 }
