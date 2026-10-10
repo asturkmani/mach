@@ -1,4 +1,4 @@
-import { getAgent } from "@/lib/agents/store";
+import { agentModel, getAgent } from "@/lib/agents/store";
 import { driveStats, listDrive } from "@/lib/drive";
 import { allowedFor, listIntegrations } from "@/lib/integrations";
 import { contentTypeFor, isText, listTaskFiles, readVersion, saveVersion } from "@/lib/files";
@@ -97,9 +97,9 @@ export async function beginRun(
   }
 
   const context: RunContext = { organizationId, taskId: task.id, agentId: agent.id, agentName: agent.name };
-  const model = process.env.AGENT_MODEL || process.env.CHIEF_OF_STAFF_MODEL || "";
+  const model = agentModel(agent);
   if (!model && !modelGiven) {
-    await failRun(context, "Set AGENT_MODEL or CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).");
+    await failRun(context, `Choose a model for ${agent.name} on its page, or set AGENT_MODEL or CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).`);
     return { ok: false, outcome: { type: "failed", error: "No model configured." } };
   }
   if (!(await claimRun(organizationId, task.id, agent.id))) return { ok: false, outcome: { type: "busy" } };

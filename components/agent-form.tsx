@@ -7,18 +7,22 @@ import { createAgentAction, setAgentStatusAction, updateAgentAction, type AgentA
 import type { AgentStatus } from "@/lib/agents/store";
 import type { AgentTemplate } from "@/lib/agents/templates";
 
-type Values = { name: string; role: string; description: string; instructions: string };
+type Values = { name: string; role: string; description: string; instructions: string; model?: string };
 const EMPTY: Values = { name: "", role: "", description: "", instructions: "" };
+type ModelOption = { id: string; name: string };
 
 export function AgentForm({
   agentId,
   initial = EMPTY,
   templates = [],
+  models,
   onDone,
 }: {
   agentId?: string;
   initial?: Values;
   templates?: AgentTemplate[];
+  /** Offered when editing: the models to choose from, and what it runs on without one. */
+  models?: { choices: ModelOption[]; fallback: string };
   onDone?: () => void;
 }) {
   const router = useRouter();
@@ -89,6 +93,29 @@ export function AgentForm({
           placeholder="Do's and don'ts, sources, tone, formats."
         />
       </label>
+      {models && (
+        <label className="block space-y-1.5">
+          <span className="label">Model</span>
+          <input
+            name="model"
+            list="agent-models"
+            value={values.model ?? ""}
+            onChange={set("model")}
+            className="field font-mono text-[13px]"
+            placeholder={models.fallback ? `Default: ${models.fallback}` : "provider/model"}
+          />
+          <datalist id="agent-models">
+            {models.choices.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </datalist>
+          <span className="block text-xs text-faint">
+            Pick one that suits its work: a strong coding model for a developer, a cheaper one for routine jobs. Empty uses the default.
+          </span>
+        </label>
+      )}
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className="btn btn-primary">
           {pending ? "Saving…" : agentId ? "Save" : "Create agent"}

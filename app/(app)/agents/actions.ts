@@ -9,7 +9,14 @@ export type AgentActionResult = { error?: string; id?: string };
 
 function fields(form: FormData) {
   const field = (key: string) => String(form.get(key) ?? "").trim();
-  return { name: field("name"), role: field("role"), description: field("description"), instructions: field("instructions") };
+  return {
+    name: field("name"),
+    role: field("role"),
+    description: field("description"),
+    instructions: field("instructions"),
+    // Only the edit form has the field: absent leaves the model as it is.
+    ...(form.has("model") ? { model: field("model") } : {}),
+  };
 }
 
 export async function createAgentAction(_: AgentActionResult, form: FormData): Promise<AgentActionResult> {

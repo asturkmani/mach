@@ -20,6 +20,8 @@ export type Agent = {
   createdAt: Date;
   /** A built-in agent Mach1 runs itself ("integrations"), or null for the company's own. */
   builtin: string | null;
+  /** The model it runs on (an AI Gateway id), or null for the default for its kind (agentModel). */
+  model: string | null;
 };
 
 type AgentRow = {
@@ -32,9 +34,10 @@ type AgentRow = {
   status: AgentStatus;
   created_at: Date;
   builtin: string | null;
+  model: string | null;
 };
 
-const COLUMNS = "id, kind, name, role, description, instructions, status, created_at, builtin";
+const COLUMNS = "id, kind, name, role, description, instructions, status, created_at, builtin, model";
 
 const toAgent = (r: AgentRow): Agent => ({
   id: r.id,
@@ -46,6 +49,7 @@ const toAgent = (r: AgentRow): Agent => ({
   status: r.status,
   createdAt: r.created_at,
   builtin: r.builtin,
+  model: r.model,
 });
 
 export async function listAgents(
@@ -76,15 +80,45 @@ export async function findAgentByName(organizationId: string, name: string): Pro
   return row ? toAgent(row) : null;
 }
 
-export type AgentInput = { name: string; role?: string; description?: string; instructions?: string };
+export type AgentInput = {
+  name: string;
+  role?: string;
+  description?: string;
+  instructions?: string;
+  /** An AI Gateway model id; empty for the default. */
+  model?: string;
+};
+
+/** A model id as AI Gateway takes it ("provider/model"), or null for the default. */
+function cleanModel(model: string | undefined): string | null {
+  const id = model?.trim() ?? "";
+  if (!id) return null;
+  if (!/^[a-z0-9][\w.-]*\/[\w.:-]+$/i.test(id)) throw new Error(`${id} isn't a model id. Use provider/model, e.g. anthropic/claude-sonnet-4.5.`);
+  return id;
+}
+
+/**
+ * The model an agent runs on: its own, else the default for its kind (the
+ * Developer: CODING_AGENT_MODEL), else AGENT_MODEL, else the Chief of
+ * Staff's. Empty when none is set.
+ */
+export function agentModel(agent: Pick<Agent, "model" | "builtin">): string {
+  return (
+    agent.model ||
+    (agent.builtin === CODING_AGENT ? process.env.CODING_AGENT_MODEL : "") ||
+    process.env.AGENT_MODEL ||
+    process.env.CHIEF_OF_STAFF_MODEL ||
+    ""
+  );
+}
 
 export async function createAgent(organizationId: string, input: AgentInput & { kind?: AgentKind }): Promise<Agent> {
   const name = input.name.trim();
   if (!name) throw new Error("An agent needs a name.");
   if (await findAgentByName(organizationId, name)) throw new Error(`There is already an agent called ${name}.`);
   const [row] = await getDb().query<AgentRow>(
-    `insert into agents (organization_id, kind, name, role, description, instructions)
-     values ($1, $2, $3, $4, $5, $6) returning ${COLUMNS}`,
+    `insert into agents (organization_id, kind, name, role, description, instructions, model)
+     values ($1, $2, $3, $4, $5, $6, $7) returning ${COLUMNS}`,
     [
       organizationId,
       input.kind ?? "defined",
@@ -92,6 +126,7 @@ export async function createAgent(organizationId: string, input: AgentInput & { 
       input.role?.trim() ?? "",
       input.description?.trim() ?? "",
       input.instructions?.trim() ?? "",
+      cleanModel(input.model),
     ],
   );
   return toAgent(row);
@@ -191,6 +226,7 @@ export async function updateAgent(
        description = coalesce($5, description),
        instructions = coalesce($6, instructions),
        status = coalesce($7, status),
+       model = case when $8 then $9 else model end,
        updated_at = now()
      where organization_id = $1 and id = $2 returning ${COLUMNS}`,
     [
@@ -201,6 +237,8 @@ export async function updateAgent(
       patch.description?.trim() ?? null,
       patch.instructions?.trim() ?? null,
       patch.status ?? null,
+      patch.model !== undefined,
+      cleanModel(patch.model),
     ],
   );
   return row ? toAgent(row) : null;

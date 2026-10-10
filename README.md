@@ -98,7 +98,7 @@ The Chief of Staff's web search and page-reading tools run through AI Gateway (P
 ### Deploy to Vercel
 
 1. Import the repo; connect Neon from the Marketplace.
-2. Add the WorkOS variables and `CHIEF_OF_STAFF_MODEL` (and optionally `AGENT_MODEL` for task agents). Set `NEXT_PUBLIC_WORKOS_REDIRECT_URI` to `https://<your-domain>/callback` and add the same URL in WorkOS.
+2. Add the WorkOS variables and `CHIEF_OF_STAFF_MODEL` (and optionally `AGENT_MODEL` for task agents and `CODING_AGENT_MODEL` for the Developer; each agent can also have its own model, chosen on its page). Set `NEXT_PUBLIC_WORKOS_REDIRECT_URI` to `https://<your-domain>/callback` and add the same URL in WorkOS.
 3. Connect a private Blob store, and add `CRON_SECRET` (any long random string) so the every-minute cron in `vercel.json` can start recurring jobs. Cron runs only on production deployments. Add `MACH_SECRETS_KEY` for integrations.
 4. Deploy. Vercel builds run `vercel-build`, which applies `db/schema.sql` before building, so the production tables are created automatically.
 

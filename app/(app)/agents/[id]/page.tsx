@@ -6,7 +6,8 @@ import { AgentForm, AgentStatusControl } from "@/components/agent-form";
 import { PageBody } from "@/components/kit";
 import { Face, When } from "@/components/ui";
 import { CosToggle } from "@/components/shell/cos-toggle";
-import { getAgent } from "@/lib/agents/store";
+import { agentModel, getAgent } from "@/lib/agents/store";
+import { modelChoices } from "@/lib/models";
 import { requireAppContext } from "@/lib/session";
 import { STATUS_WORDS } from "@/lib/task-words";
 import { listAgentTasks } from "@/lib/tasks";
@@ -16,7 +17,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
   const { id } = await params;
   const agent = /^[0-9a-f-]{36}$/i.test(id) ? await getAgent(organization.id, id) : null;
   if (!agent) notFound();
-  const tasks = await listAgentTasks(organization.id, agent.id, { viewer: person.id });
+  const [tasks, choices] = await Promise.all([listAgentTasks(organization.id, agent.id, { viewer: person.id }), modelChoices()]);
 
   return (
     <>
@@ -43,7 +44,8 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
             <h2 className="label mb-4">Profile</h2>
             <AgentForm
               agentId={agent.id}
-              initial={{ name: agent.name, role: agent.role, description: agent.description, instructions: agent.instructions }}
+              initial={{ name: agent.name, role: agent.role, description: agent.description, instructions: agent.instructions, model: agent.model ?? "" }}
+              models={{ choices, fallback: agentModel({ ...agent, model: null }) }}
             />
           </section>
           <section>

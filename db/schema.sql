@@ -532,3 +532,7 @@ create table if not exists assistant_wakeups (
 );
 create index if not exists assistant_wakeups_due on assistant_wakeups (due_at) where done_at is null;
 create index if not exists assistant_wakeups_person on assistant_wakeups (person_id, created_at desc);
+
+-- The model an agent runs on (an AI Gateway id such as anthropic/claude-sonnet-4.5), chosen for its work:
+-- null takes the default for its kind (CODING_AGENT_MODEL for the Developer, else AGENT_MODEL).
+alter table agents add column if not exists model text;
