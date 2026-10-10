@@ -15,7 +15,11 @@ export type Organization = {
   emailInbox: string | null;
   /** Colleagues with a verified email at the company's domain join without asking. */
   autoJoin: boolean;
+  /** The company's own choice of models (AI Gateway ids), over Mach1's defaults. */
+  models: CompanyModels;
 };
+
+export type CompanyModels = { chiefOfStaff?: string; agents?: string };
 
 type OrgRow = {
   id: string;
@@ -26,9 +30,10 @@ type OrgRow = {
   onboarding_completed_at: Date | null;
   email_inbox: string | null;
   auto_join: boolean;
+  models: CompanyModels | null;
 };
 
-const ORG_COLUMNS = "id, name, website, domain, timezone, onboarding_completed_at, email_inbox, auto_join";
+const ORG_COLUMNS = "id, name, website, domain, timezone, onboarding_completed_at, email_inbox, auto_join, models";
 
 const toOrg = (row: OrgRow): Organization => ({
   id: row.id,
@@ -39,6 +44,7 @@ const toOrg = (row: OrgRow): Organization => ({
   onboardingCompletedAt: row.onboarding_completed_at,
   emailInbox: row.email_inbox,
   autoJoin: row.auto_join ?? false,
+  models: row.models ?? {},
 });
 
 export async function getOrganization(id: string): Promise<Organization | null> {
@@ -103,4 +109,10 @@ export async function findOrganizationByInbox(inbox: string): Promise<Organizati
 /** Whether colleagues with the company's domain join without asking. */
 export async function setAutoJoin(id: string, on: boolean): Promise<void> {
   await getDb().query("update organizations set auto_join = $2 where id = $1", [id, on]);
+}
+
+/** The company's own default models; an empty one goes back to Mach1's. */
+export async function setCompanyModels(id: string, models: CompanyModels): Promise<void> {
+  const clean = Object.fromEntries(Object.entries(models).filter(([, v]) => typeof v === "string" && v.trim()).map(([k, v]) => [k, v!.trim()]));
+  await getDb().query("update organizations set models = $2::jsonb where id = $1", [id, JSON.stringify(clean)]);
 }

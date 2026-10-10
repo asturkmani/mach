@@ -97,7 +97,7 @@ export async function beginRun(
   }
 
   const context: RunContext = { organizationId, taskId: task.id, agentId: agent.id, agentName: agent.name };
-  const model = agentModel(agent);
+  const model = agentModel(agent, organization.models);
   if (!model && !modelGiven) {
     await failRun(context, `Choose a model for ${agent.name} on its page, or set AGENT_MODEL or CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).`);
     return { ok: false, outcome: { type: "failed", error: "No model configured." } };

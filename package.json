@@ -20,6 +20,7 @@
     "@neondatabase/serverless": "^1.2.0",
     "@vercel/blob": "^2.8.1",
     "@vercel/sandbox": "^3.5.1",
+    "@workflow/serde": "5.0.0",
     "@workos-inc/authkit-nextjs": "^4.4.0",
     "@workos-inc/node": "^10.14.0",
     "ai": "^7.0.130",

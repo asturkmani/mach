@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getDb } from "@/lib/db";
+import type { CompanyModels } from "@/lib/orgs";
 
 // The organization's agents, apart from the Chief of Staff. Defined agents have
 // a standing profile and get similar work again and again; worker agents are
@@ -98,13 +99,15 @@ function cleanModel(model: string | undefined): string | null {
 }
 
 /**
- * The model an agent runs on: its own, else the default for its kind (the
- * Developer: CODING_AGENT_MODEL), else AGENT_MODEL, else the Chief of
- * Staff's. Empty when none is set.
+ * The model an agent runs on: its own, else the company's default for
+ * agents, else Mach1's default for its kind (the Developer:
+ * CODING_AGENT_MODEL), else AGENT_MODEL, else the Chief of Staff's. Empty
+ * when none is set.
  */
-export function agentModel(agent: Pick<Agent, "model" | "builtin">): string {
+export function agentModel(agent: Pick<Agent, "model" | "builtin">, company: CompanyModels = {}): string {
   return (
     agent.model ||
+    company.agents ||
     (agent.builtin === CODING_AGENT ? process.env.CODING_AGENT_MODEL : "") ||
     process.env.AGENT_MODEL ||
     process.env.CHIEF_OF_STAFF_MODEL ||

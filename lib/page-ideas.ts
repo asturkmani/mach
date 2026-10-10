@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 
+import { companyModel } from "@/lib/ai/company-model";
 import { getDb } from "@/lib/db";
 import { listDrive } from "@/lib/drive";
 import { listIntegrations } from "@/lib/integrations";
@@ -104,7 +105,7 @@ async function writeIdeas(organizationId: string, text: string, sha256: string, 
   if (!model) return null;
   let ideas: PageIdea[];
   try {
-    const result = await generateText({ model, system: INSTRUCTIONS, prompt: text, output: Output.object({ schema }) });
+    const result = await generateText({ model: companyModel(organizationId, model), system: INSTRUCTIONS, prompt: text, output: Output.object({ schema }) });
     ideas = result.output.ideas.map((i) => ({ ...i, needsConnecting: i.needsConnecting?.trim() || null }));
   } catch (error) {
     console.error("Couldn't write page ideas", error);

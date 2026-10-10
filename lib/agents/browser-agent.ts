@@ -1,5 +1,6 @@
 import { WorkflowAgent } from "@ai-sdk/workflow";
 import { hasToolCall, isStepCount, ToolLoopAgent, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
+import { companyModel } from "@/lib/ai/company-model";
 import { z } from "zod";
 
 import { JOB_DIR } from "@/lib/sandbox";
@@ -352,6 +353,7 @@ export async function runBrowserAgent(
   if ("error" in opened) return { status: "failed", message: opened.error, session: job.session ?? "", evidence: [] };
   const session = opened.session;
   const model = options.model ?? modelOverride ?? browserAgentModel();
+  const forCompany = companyModel(context.organizationId, model);
   if (!model) {
     return { status: "failed", message: "Set BROWSER_AGENT_MODEL to an AI Gateway model id (see README).", session: session.id, evidence: [] };
   }
@@ -373,7 +375,7 @@ export async function runBrowserAgent(
   const state: RunState = { session: session.id, evidence: [], login };
   const tools = browserAgentTools(context, using, state, options.logins);
   const settings = {
-    model,
+    model: forCompany,
     instructions: BROWSER_AGENT_INSTRUCTIONS,
     tools,
     stopWhen: [isStepCount(60), hasToolCall("finish"), () => state.stopped === true],

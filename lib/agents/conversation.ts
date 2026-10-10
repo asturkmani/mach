@@ -2,6 +2,7 @@ import "server-only";
 
 import { generateText, type LanguageModel, type UIMessage } from "ai";
 
+import { companyModel } from "@/lib/ai/company-model";
 import { getDb } from "@/lib/db";
 
 // A person's conversation with their assistant never ends (the chat panel and
@@ -43,14 +44,14 @@ function plain(message: UIMessage): string {
   return text ? `${message.role === "user" ? "Them" : "You"}: ${text.slice(0, 3000)}` : "";
 }
 
-type Stored = { summary: string; summarizedThrough: string | null };
+type Stored = { summary: string; summarizedThrough: string | null; organizationId: string };
 
 async function readSummary(chatId: string): Promise<Stored> {
-  const [row] = await getDb().query<{ summary: string; summarized_through: string | null }>(
-    "select summary, summarized_through from chats where id = $1",
+  const [row] = await getDb().query<{ summary: string; summarized_through: string | null; organization_id: string }>(
+    "select summary, summarized_through, organization_id from chats where id = $1",
     [chatId],
   );
-  return { summary: row?.summary ?? "", summarizedThrough: row?.summarized_through ?? null };
+  return { summary: row?.summary ?? "", summarizedThrough: row?.summarized_through ?? null, organizationId: row?.organization_id ?? "" };
 }
 
 /**
@@ -69,7 +70,7 @@ export async function conversationWindow(
   const covered = stored.summarizedThrough ? messages.findIndex((m) => m.id === stored.summarizedThrough) + 1 : 0;
   let summary = stored.summary;
   if (start - covered >= CATCH_UP || (covered === 0 && !summary)) {
-    summary = (await summarize(summary, messages.slice(covered, start))) ?? summary;
+    summary = (await summarize(stored.organizationId, summary, messages.slice(covered, start))) ?? summary;
     if (summary !== stored.summary) {
       await getDb().query("update chats set summary = $2, summarized_through = $3 where id = $1", [chatId, summary, messages[start - 1].id]);
     }
@@ -77,13 +78,13 @@ export async function conversationWindow(
   return { earlier: summary, older: messages.slice(0, start), recent: messages.slice(start) };
 }
 
-async function summarize(previous: string, messages: UIMessage[]): Promise<string | null> {
+async function summarize(organizationId: string, previous: string, messages: UIMessage[]): Promise<string | null> {
   const model = summaryModel ?? process.env.SUMMARY_MODEL ?? process.env.CHIEF_OF_STAFF_MODEL;
   const text = messages.map(plain).filter(Boolean).join("\n");
   if (!model || !text) return null;
   try {
     const result = await generateText({
-      model,
+      model: companyModel(organizationId, model),
       system:
         "You keep the running summary of an assistant's conversation with one person, which the assistant reads instead of the old messages. Update the summary with the new messages. Keep what will matter later: what they asked for and what was done (task numbers, links, files, decisions, numbers), what they said about themselves and how they like things, and anything still open or promised. Drop small talk and anything finished that won't come up again. Short dated bullet points under a few headings, most recent last. At most 500 words. Write only the summary.",
       prompt: `${previous ? `The summary so far:\n${previous}\n\n` : ""}New messages (oldest first):\n${text}`,

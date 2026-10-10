@@ -1,4 +1,6 @@
 import { WorkflowAgent } from "@ai-sdk/workflow";
+
+import { CompanyModel } from "@/lib/ai/company-model";
 import { hasToolCall, isStepCount, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
 
@@ -295,7 +297,8 @@ export async function runAgentOnTask(
 
   try {
     const agent = new WorkflowAgent({
-      model: options.model ?? begun.model,
+      // The company's own provider keys ride along with each model call (bring your own key).
+      model: options.model ?? new CompanyModel(organizationId, begun.model),
       instructions: begun.instructions,
       tools: narrated(context, {
         ...taskTools(context, begun.otherAgents, using, end),

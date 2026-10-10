@@ -13,6 +13,7 @@ const GROUPS = [
       { href: "/settings", label: "General" },
       { href: "/settings/integrations", label: "Integrations" },
       { href: "/settings/channels", label: "Channels" },
+      { href: "/settings/ai", label: "AI" },
     ],
   },
   { label: "You", items: [{ href: "/settings/account", label: "Account" }] },

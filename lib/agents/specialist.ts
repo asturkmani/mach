@@ -3,9 +3,11 @@ import "server-only";
 import { stepCountIs, ToolLoopAgent, type LanguageModel } from "ai";
 
 import type { AgentContext } from "@/lib/agents/prompts";
+import { companyModel } from "@/lib/ai/company-model";
 import { agentModel, type Agent } from "@/lib/agents/store";
 import { integrationTools, researchTools, sandboxTools, type SandboxUser } from "@/lib/agents/toolkit";
 import { listIntegrations } from "@/lib/integrations";
+import type { CompanyModels } from "@/lib/orgs";
 
 // A quick question for one of the company's agents, answered while the
 // Chief of Staff waits: the agent works on its own model (one chosen for its
@@ -29,10 +31,11 @@ export async function askSpecialist(
   workspace: AgentContext,
   using: SandboxUser,
   agent: Agent,
+  company: CompanyModels,
   input: { question: string; askedBy: string; profile: string; research?: boolean },
   { budgetMs = BUDGET_MS }: { budgetMs?: number } = {},
 ): Promise<SpecialistAnswer> {
-  const model = testModel ?? agentModel(agent);
+  const model = testModel ?? agentModel(agent, company);
   if (!model) return { needsTask: `${agent.name} has no model set.` };
   const context: AgentContext = { ...workspace, agentId: agent.id, agentName: agent.name };
   const integrations = await listIntegrations(workspace.organizationId, { agentId: agent.id, personId: workspace.personId });
@@ -41,7 +44,7 @@ export async function askSpecialist(
     logins: integrations.filter((i) => i.kind === "login").map((i) => i.slug),
   };
   const specialist = new ToolLoopAgent({
-    model,
+    model: companyModel(workspace.organizationId, model),
     instructions: `You are ${agent.name}${agent.role ? `, ${agent.role}` : ""}, one of the company's agents.${agent.description ? `\n\nYour job: ${agent.description}` : ""}${
       agent.instructions ? `\n\nYour instructions:\n${agent.instructions}` : ""
     }

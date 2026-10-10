@@ -25,6 +25,7 @@ import {
   type SandboxUser,
 } from "@/lib/agents/toolkit";
 import { askSpecialist } from "@/lib/agents/specialist";
+import { companyModel } from "@/lib/ai/company-model";
 import { codingAgent, createAgent, findAgentByName, type Agent } from "@/lib/agents/store";
 import { findFiles, listTaskFiles, type LibraryFile } from "@/lib/files";
 import {
@@ -845,7 +846,7 @@ function specialistTools(context: Context, workspace: AgentContext, using: Sandb
       execute: async ({ agent: name, question, title }): Promise<SpecialistOutput> => {
         const agent = await findAgentByName(orgId, name);
         if (!agent || agent.kind !== "defined" || agent.status !== "active") return { error: `There's no active agent called ${name}.` };
-        const asked = await askSpecialist(workspace, using, agent, {
+        const asked = await askSpecialist(workspace, using, agent, context.organization.models ?? {}, {
           question,
           askedBy: context.person?.name ?? context.user.name,
           profile: context.profile,
@@ -892,7 +893,7 @@ export function createChiefOfStaff(
   context: Context,
   options: { model?: LanguageModel; research?: boolean; sandbox?: SandboxSession } = {},
 ) {
-  const model = options.model ?? process.env.CHIEF_OF_STAFF_MODEL;
+  const model = options.model ?? (context.organization.models?.chiefOfStaff || process.env.CHIEF_OF_STAFF_MODEL);
   if (!model) {
     throw new Error("Set CHIEF_OF_STAFF_MODEL to an AI Gateway model id (see README).");
   }
@@ -918,7 +919,7 @@ export function createChiefOfStaff(
   // the moment are offered to the model.
   const hidden: readonly string[] = context.organization.onboardingCompletedAt ? ONBOARDING_ONLY : AFTER_ONBOARDING_ONLY;
   return new ToolLoopAgent({
-    model,
+    model: companyModel(context.organization.id, model),
     instructions: chiefOfStaffInstructions(context),
     tools,
     activeTools: (Object.keys(tools) as (keyof typeof tools)[]).filter((name) => !hidden.includes(name)),

@@ -536,3 +536,19 @@ create index if not exists assistant_wakeups_person on assistant_wakeups (person
 -- The model an agent runs on (an AI Gateway id such as anthropic/claude-sonnet-4.5), chosen for its work:
 -- null takes the default for its kind (CODING_AGENT_MODEL for the Developer, else AGENT_MODEL).
 alter table agents add column if not exists model text;
+
+-- Bring your own key: a company's own accounts with AI providers (Anthropic, OpenAI, …), sealed like
+-- integration credentials (lib/secrets.ts). Every model call made for the company carries them to AI Gateway
+-- for that one request (lib/ai), so its usage is billed to its own provider accounts.
+create table if not exists ai_keys (
+  organization_id text not null references organizations (id) on delete cascade,
+  provider text not null,
+  secrets bytea not null,
+  hint text not null default '', -- the key's last four characters, to tell keys apart
+  added_by_person_id uuid references people (id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (organization_id, provider)
+);
+
+-- The company's own choice of models (AI Gateway ids): { "chiefOfStaff": …, "agents": … }. Empty uses Mach1's.
+alter table organizations add column if not exists models jsonb not null default '{}';
