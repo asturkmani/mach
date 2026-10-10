@@ -94,6 +94,17 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     expect(JSON.stringify(model.doGenerateCalls[0].prompt)).toContain("This message came by WhatsApp");
   });
 
+  it("marks the message read and shows typing as soon as it arrives, before the reply", async () => {
+    await setUp();
+    const sent = stubProviders();
+    await handleWhatsApp({ sid: "SM_in_1", from: "+447700900123", body: "What's open?", media: 0 }, { model: scriptedModel(["Nothing."]), research: false });
+    expect(sent.map((r) => r.url)).toEqual([
+      "https://messaging.twilio.com/v2/Indicators/Typing.json",
+      "https://api.twilio.com/2010-04-01/Accounts/AC_test/Messages.json",
+    ]);
+    expect(Object.fromEntries(new URLSearchParams(sent[0].body))).toEqual({ messageId: "SM_in_1", channel: "whatsapp" });
+  });
+
   it("answers two quick messages one after the other, keeping both in the conversation", async () => {
     await setUp();
     stubProviders();

@@ -6,7 +6,7 @@ import { appUrl } from "@/lib/app-url";
 import { replyToEmail } from "@/lib/channels/agentmail";
 import { findByEmail, findByPhone } from "@/lib/channels/senders";
 import { completeWhatsAppLink, LINK_MESSAGE } from "@/lib/channels/whatsapp-links";
-import { fetchTwilioMedia, sendWhatsApp } from "@/lib/channels/twilio";
+import { fetchTwilioMedia, keepTyping, sendWhatsApp } from "@/lib/channels/twilio";
 import { findOrganizationByInbox } from "@/lib/orgs";
 import { MAX_AUDIO_BYTES, transcribeAudio } from "@/lib/transcribe";
 import type { LanguageModel, TranscriptionModel } from "ai";
@@ -20,6 +20,8 @@ type TurnOptions = { model?: LanguageModel; research?: boolean; transcriber?: Tr
 const trouble = () => `Sorry, something went wrong on my side. Try again, or open Mach1: ${appUrl("/")}`;
 
 export type WhatsAppMessage = {
+  /** Twilio's id for it (SM…), to mark it read. */
+  sid?: string;
   from: string;
   body: string;
   media: number;
@@ -60,6 +62,8 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
     );
     return;
   }
+  // Blue ticks and "typing…" straight away, until the reply goes out.
+  const stopTyping = keepTyping(message.sid);
   // WhatsApp's 24 hours, in which their assistant may write first, start again.
   await recordWhatsAppIn(context.organization.id, context.person.id);
   const voice = message.mediaType?.startsWith("audio/") ?? false;
@@ -72,13 +76,15 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
     notes.push(`[They sent ${others} ${voice ? "more " : ""}attachment${others === 1 ? "" : "s"} by WhatsApp, which you can't open here. Ask them to attach it on a task in Mach1 if it matters.]`);
   }
   const text = [message.body.trim(), ...notes].filter(Boolean).join("\n\n");
-  if (!text) return;
+  if (!text) return stopTyping();
   let reply: string;
   try {
     reply = await chiefOfStaffTurn(context, text, "whatsapp", { model: options.model, research: options.research });
   } catch (error) {
     console.error("WhatsApp turn failed", error);
     reply = trouble();
+  } finally {
+    stopTyping();
   }
   await sendWhatsApp(message.from, reply);
   await catchUpConversation(context);

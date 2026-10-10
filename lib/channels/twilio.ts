@@ -82,6 +82,35 @@ export async function sendWhatsApp(to: string, text: string): Promise<void> {
   }
 }
 
+/**
+ * Marks their message read (blue ticks) and shows "typing…" in their chat:
+ * Twilio's typing indicator (public beta), which WhatsApp shows until the
+ * reply arrives or for 25 seconds. Never throws: it's a courtesy.
+ */
+export async function showTyping(messageSid: string): Promise<void> {
+  const sid = process.env.TWILIO_ACCOUNT_SID!;
+  const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
+  try {
+    const response = await fetch("https://messaging.twilio.com/v2/Indicators/Typing.json", {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ messageId: messageSid, channel: "whatsapp" }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) console.error(`Twilio typing indicator failed (${response.status})`);
+  } catch (error) {
+    console.error("Twilio typing indicator failed", (error as Error).message);
+  }
+}
+
+/** Keeps "typing…" showing while a reply is being worked on (WhatsApp drops it after 25 seconds). Returns how to stop. */
+export function keepTyping(messageSid: string | undefined): () => void {
+  if (!messageSid) return () => {};
+  void showTyping(messageSid);
+  const timer = setInterval(() => void showTyping(messageSid), 20_000);
+  return () => clearInterval(timer);
+}
+
 /** The approved WhatsApp template for writing to someone outside the 24-hour window, if one is set up (docs/channels.md). */
 export const whatsappTemplateSid = () => (twilioConfigured() && process.env.TWILIO_WHATSAPP_TEMPLATE_SID) || null;
 

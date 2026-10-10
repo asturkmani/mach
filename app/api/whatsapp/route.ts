@@ -28,6 +28,7 @@ export async function POST(request: Request) {
   }
   if (!params.From || (params.MessageSid && !(await firstTime("twilio", params.MessageSid)))) return empty();
   const message = {
+    sid: params.MessageSid,
     from: params.From.replace(/^whatsapp:/, ""),
     body: params.Body ?? "",
     media: Number(params.NumMedia ?? 0),
