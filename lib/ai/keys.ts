@@ -51,8 +51,22 @@ async function checkKey(provider: string, apiKey: string): Promise<void> {
   } catch {
     throw new AiKeyError("Couldn't reach the provider to check the key. Try again.");
   }
-  if (response.status === 401 || response.status === 403) throw new AiKeyError("The provider didn't accept that key.");
-  if (!response.ok) throw new AiKeyError(`The provider said ${response.status} when checking the key.`);
+  if (response.ok) return;
+  const reason = providerMessage(await response.text().catch(() => ""), apiKey);
+  if (response.status === 401 || response.status === 403) throw new AiKeyError(`The provider didn't accept that key${reason ? `: ${reason}` : "."}`);
+  throw new AiKeyError(`The provider said ${response.status} when checking the key${reason ? `: ${reason}` : "."}`);
+}
+
+/** The provider's own words about what's wrong ({ error: { message } } or { error: "…" }), never including the key. */
+function providerMessage(body: string, apiKey: string): string {
+  let message = "";
+  try {
+    const parsed = JSON.parse(body) as { error?: string | { message?: string }; message?: string };
+    message = (typeof parsed.error === "string" ? parsed.error : parsed.error?.message) ?? parsed.message ?? "";
+  } catch {
+    message = body;
+  }
+  return message.split(apiKey).join("[the key]").replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
 type Attempt = { credentialType?: string; success?: boolean; error?: string };

@@ -52,6 +52,9 @@ describe("bring your own key", () => {
 
     stubFetch(401);
     await expect(saveAiKey(ORG, "openai", "sk-proj-not-a-real-key-000000000", null)).rejects.toThrow("didn't accept");
+    // The provider's own reason is shown, without the key.
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { message: "Your credit balance is too low (key sk-ant-api03-cedar-own-key-1234567890-WXYZ)" } }, { status: 400 })));
+    await expect(saveAiKey(ORG, "anthropic", KEY, null)).rejects.toThrow("The provider said 400 when checking the key: Your credit balance is too low (key [the key])");
     await expect(saveAiKey(ORG, "openai", "short", null)).rejects.toThrow("doesn't look like");
     expect((await listAiKeys(ORG)).map((k) => k.provider)).toEqual(["anthropic"]);
 
