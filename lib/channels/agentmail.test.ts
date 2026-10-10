@@ -46,10 +46,20 @@ describe("AgentMail's webhook, registered by Mach1 itself", () => {
     vi.stubEnv("MACH_SECRETS_KEY", randomBytes(32).toString("base64"));
     vi.stubEnv("AGENTMAIL_API_KEY", "key_old");
     vi.stubEnv("AGENTMAIL_WEBHOOK_SECRET", "");
+    vi.stubEnv("VERCEL_ENV", "production");
   });
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+  });
+
+  it("leaves the webhook alone anywhere but production", async () => {
+    await ensureEmailWebhook("https://trymach1.app/api/email");
+    const before = calls.length;
+    expect(await ensureEmailWebhook("http://localhost:3000/api/email")).toBe("skipped");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    expect(await ensureEmailWebhook("https://mach-git-feature.vercel.app/api/email")).toBe("skipped");
+    expect(calls.length).toBe(before);
   });
 
   it("registers once per account, keeps the secret sealed, and registers again for a new key", async () => {

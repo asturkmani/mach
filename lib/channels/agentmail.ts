@@ -125,8 +125,12 @@ const keyService = () => `agentmail:${createHash("sha256").update(process.env.AG
  * registered on the key's account, pointing here. Registers it (once) when
  * it's missing, for a new key or a new address, and keeps its secret sealed.
  */
-export async function ensureEmailWebhook(url = appUrl("/api/email")): Promise<"ok" | "registered"> {
+export async function ensureEmailWebhook(url = appUrl("/api/email")): Promise<"ok" | "registered" | "skipped"> {
   if (!agentmailConfigured()) throw new Error("AgentMail isn't set up (AGENTMAIL_API_KEY).");
+  // Only production looks after the webhook. A preview, or a laptop with the same key and database, would
+  // otherwise replace production's webhook with its own, taking the company's incoming email (and AgentMail
+  // only posts to https anyway).
+  if (process.env.VERCEL_ENV !== "production" || !url.startsWith("https://")) return "skipped";
   const service = keyService();
   const [row] = await getDb().query<{ webhook_id: string; url: string }>("select webhook_id, url from service_webhooks where service = $1", [
     service,
