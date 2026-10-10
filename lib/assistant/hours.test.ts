@@ -39,6 +39,13 @@ describe("a person's hours", () => {
     expect(keepAliveDue(at("2026-10-13T10:30:00Z"), { lastIn: at("2026-10-12T08:00:00Z"), lastNudge: null, timezone, hours })).toBe(false);
     // Written before work on Monday: Tuesday's start would be too late, so the end of Monday is the moment.
     expect(keepAliveDue(at("2026-10-12T16:30:00Z"), { lastIn: at("2026-10-12T07:30:00Z"), lastNudge: null, timezone, hours })).toBe(true);
+    // Written late on Friday: no working day starts or ends before it closes on Saturday evening (20:30),
+    // so it goes in the last three hours outside quiet hours, not in the middle of the night.
+    const friday = { lastIn: at("2026-10-16T19:30:00Z"), lastNudge: null, timezone, hours };
+    expect(keepAliveDue(at("2026-10-16T22:00:00Z"), friday)).toBe(false); // 23:00, quiet
+    expect(keepAliveDue(at("2026-10-17T12:00:00Z"), friday)).toBe(false); // 13:00 Saturday, too early
+    expect(keepAliveDue(at("2026-10-17T16:30:00Z"), friday)).toBe(true); // 17:30 Saturday
+    expect(keepAliveDue(at("2026-10-17T19:30:00Z"), friday)).toBe(false); // closed
     // Friday afternoon: the next working morning is Monday, so before the weekend.
     expect(keepAliveDue(at("2026-10-16T16:30:00Z"), { lastIn: at("2026-10-16T12:00:00Z"), lastNudge: null, timezone, hours })).toBe(true);
   });
