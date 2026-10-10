@@ -29,6 +29,13 @@ them, the company's timezone and Mon–Fri 09:00–18:00, quiet 21:00–08:00 st
 (at the end of onboarding, or early on for people who join later) and saves the answer with `save_my_hours`;
 people can change them in Settings → Account → Your hours.
 
+## How it looks on WhatsApp
+
+When a message arrives, the assistant marks it read (blue ticks) and shows "typing…" until it replies
+(`showTyping` in `lib/channels/twilio.ts`, renewed every 20 seconds). Twilio can't send emoji reactions, so
+every reply starts with one status emoji instead: ✅ done, ⏳ working on it, ❓ needs them, ⚠️ a problem, or
+one for the subject when that says more (🎂, 📊, 💻, 📎, 📅).
+
 ## WhatsApp's 24 hours
 
 WhatsApp lets a business write freely only within 24 hours of the person's last message; after that, only

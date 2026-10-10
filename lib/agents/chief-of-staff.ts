@@ -114,7 +114,11 @@ function channelInstructions(channel: Channel): string {
   const where = channel === "whatsapp" ? "WhatsApp" : "email";
   return `This message came by ${where}, and your reply goes back the same way, as plain text. Keep it short: a few sentences or a short list, no tables or headings${
     channel === "whatsapp" ? ", *single asterisks* for bold" : ""
-  }. Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give the link to the screen where they finish it, from the app's screens below. It's the same conversation as their chat panel in Mach1, so they can carry on in either.`;
+  }.${
+    channel === "whatsapp"
+      ? " Start every WhatsApp message with one emoji that says where things stand, so they can tell at a glance: ✅ done, ⏳ started or still working on it, ❓ you need something from them, ⚠️ a problem or blocked; or one for what it's about when that says more (🎂 a birthday, 📊 numbers or a financial model, 💻 code, 📎 a file, 📅 a meeting). Exactly one, first, then the message; no other emojis unless they use them."
+      : ""
+  } Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give the link to the screen where they finish it, from the app's screens below. It's the same conversation as their chat panel in Mach1, so they can carry on in either.`;
 }
 
 function onboardingInstructions({ organization }: Context): string {
