@@ -10,7 +10,9 @@ People ask in chat, and three kinds of agent do the work:
 - **A worker** does one piece of work on a task, with whatever skills that work needs.
 - **A coordinator** runs a big job or a process. It plans, starts the parts (workers, people, scripts), checks what comes back and reports once.
 
-What makes work "research" or "coding" is a **skill** the worker loads, not a different agent. Separate agent loops are kept only where they earn it: the browser agent, and helpers that work in a fresh context.
+What makes work "research" or "coding" is a **skill** the worker loads, not a different agent. Going wide (in-depth research, many issues at once) is always a job: the coordinator splits the work and workers do the parts in parallel. The only other agent loop is the browser agent, which earns its own (below).
+
+That's the whole set: **chat agent, coordinator, worker, and the browser agent**. Profiles are settings a worker runs with, not agents. The planner becomes the coordinator's model.
 
 ## Why
 
@@ -45,9 +47,9 @@ Every part of this design is there for at least one of these. They are also the 
           │   Worker   │◀── start_child ────│ Coordinator  │  planner model, on the job's task
           │  + skills  │                    └──────┬───────┘
           └─────┬──────┘                           │ start_child
-     use_browser│ delegate                         ▼
+     use_browser│                                  ▼
                 ▼                           a person, or a script
-   browser agent · helpers
+          browser agent
 ```
 
 ### Chat agent
@@ -67,7 +69,7 @@ It hands everything else off, using these rules:
 1. The context or one quick tool covers it: answer.
 2. One thing to change in the app: `do_action`.
 3. One deliverable, one kind of work: `spawn_worker`. If the answer is likely within a few minutes, pass `wait` and answer in the chat. If it needs longer, it becomes a task that reports back.
-4. Several deliverables that depend on each other, a process with people or an approval in it, or a shape it can't know until someone looks: `start_job`.
+4. Several deliverables that depend on each other, a process with people or an approval in it, in-depth research, or a shape it can't know until someone looks: `start_job`.
 5. Unsure between 3 and 4: a worker. It can escalate.
 
 It writes the brief: the request with everything from the conversation that the work needs, since workers don't see the chat. It also writes which skills to load, and who the work is for.
@@ -80,7 +82,8 @@ One built-in agent per company, called **Worker**. It replaces the Developer, th
 - **Running as a profile**: a task can name a profile (below). The worker then also gets that profile's instructions, model, pinned skills and allowed integrations.
 - **Model**: the task's model if one was set when it was started, else the profile's, else the pinned skill's default, else the company's model for agents, else the `worker` role.
 - **How a run ends**: `finish`, `ask` or `hand_off`, as today. On a job's child task, these go to the coordinator first (see Coordinator).
-- **Escalating**: when a worker finds the work needs a plan (it found eight issues, not one), it calls `escalate`. Its task becomes a job and a coordinator takes over. The worker's findings become the coordinator's first input.
+- **Escalating**: when a worker finds the work needs a plan or needs to go wide (it found eight issues, not one; the question splits into six), it calls `escalate`. Its task becomes a job and a coordinator takes over. The worker's findings become the coordinator's first input. Workers never start other agents themselves.
+- **Long runs**: before each model call, older tool results (search hits, whole pages, command output) are trimmed to a short note of what they held. That way a run that reads a lot keeps a working context without needing a second agent.
 
 ### Profiles: what the company's own agents become
 
@@ -106,7 +109,7 @@ The agent of a **job**: a task with child tasks. It runs on the job's own task i
    - Shows a cost estimate when it's over the company's limit, and waits for the person to approve.
    - Starts the children that can start now.
    - Ends.
-2. **Later runs.** These are woken when a child delivers, asks something, fails, or a person writes on the job. Each one does any of these:
+2. **Later runs.** Children started together are a batch. The coordinator wakes once when the whole batch has delivered, not once per child, because each of its turns is on the planner model. It also wakes as soon as a child asks something or fails, or a person writes on the job. Each run does any of these:
    - Reviews what came back.
    - Answers the child, or sends it back with a reply.
    - Starts the next children.
@@ -131,14 +134,22 @@ The agent of a **job**: a task with child tasks. It runs on the job's own task i
 
 **Repeating jobs.** A job can carry a schedule. Its first successful run saves its plan as a **runbook**: a skill owned by whoever asked for the job, and private like their tasks. Later runs load the runbook and don't plan again unless it fails. If the last run's children are still open when the next one is due, the coordinator carries the open items into the new run instead of skipping it.
 
-### Helpers: the separate loops that stay
+**Research is a job.** In-depth research works like any other job:
+1. The coordinator frames the question with the `research` skill (the decision it's for, what a good answer holds) and splits it into three to six questions.
+2. It starts one worker child per question, as one batch. Each child loads `research`, investigates, and finishes with compressed findings: dated, marked Fact, Estimate or Opinion, with numbered sources. It doesn't hand over everything it read, so the coordinator's context stays small.
+3. The coordinator reads the batch, starts a second round for the gaps that matter (two rounds at most), then writes the brief.
 
-| Helper | Called with | Why it's a separate loop | Change |
-|---|---|---|---|
-| **Browser agent** | `use_browser` | Its own vision model. A screenshot after every step would swamp the caller's context. Web pages are untrusted, so the caller only reads the browser agent's report. Sessions continue between calls | None. How to use it well becomes a skill, `using-the-browser` |
-| **Helpers** | `delegate` | Fresh context for a self-contained question, several at once, returning only a report | Replaces `investigate`. Any worker gets it, not just the Researcher |
+A quick research question ("what's the market saying about Micron's guidance?") is one worker with `wait`, answering in the chat. This replaces the Researcher's sub-researchers (`investigate`).
 
-A helper started with `delegate` gets the research tools, `exa_search`, and read-only access to the sandbox and the company's data sources. It can't write, end the task or delegate further. At most 6 run at once, and 12 per run. Like sub-researchers today, they keep the task's lease and stop when a person presses Send now.
+### The browser agent: the one separate loop
+
+`use_browser` hands a bounded job on a website to the browser agent. It stays its own agent, unchanged, because:
+- it runs on its own vision model;
+- a screenshot after every step would swamp the caller's context;
+- web pages are untrusted, so the caller should only read the browser agent's report;
+- its sessions carry on between calls.
+
+How to use it well becomes a skill, `using-the-browser`.
 
 ## Skills
 
@@ -166,13 +177,13 @@ Built-in skills use the Agent Skills layout (`SKILL.md` with front matter, plus 
 | `company-profile` | Writing the profile | Today |
 | `writing-tasks` | Briefs, titles, who's on it | Today; covers `spawn_worker` and `start_job` briefs |
 | `designing-agents` | Profiles: role, instructions, integrations | Today; renamed `designing-profiles` |
-| `research` | Framing, parallel questions with `delegate`, sourced briefs | Today; switches on `exa_search` |
+| `research` | Framing a question for the decision it serves, investigating one question well, the findings format children report in, writing the brief | Today; switches on `exa_search`. Going wide is a job |
 | `financial-analysis` | Statements, valuation, scenarios | Today |
 | `excel-models` | Models with working formulas, recalculated | Today |
 | `connecting-integrations` | Data sources and logins | Today |
 | `building-pages` | Pages and their refresh jobs | Today |
 | `coding-in-github` | Branch, change, test, PR, as the person | Today; default model `coder` |
-| `coordinating` | The coordinator's playbook: asking first, plan shape, children, review, assembly, gates | New |
+| `coordinating` | The coordinator's playbook: asking first, plan shape, splitting work into batches, children, review, assembly, gates | New |
 | `presentations` | Decks with `python-pptx` from a model's numbers, charts in the company's style | New (scenario 4) |
 | `data-pipelines` | Pulling a site or API into a `run.sh`: history on the drive, diffs against last time, charts, a `SUMMARY:` line | New (scenario 5) |
 | `reconciliation` | Matching against history with fixed rules, sending the rest to people, keeping a ledger | New (scenario 6) |
@@ -219,35 +230,34 @@ Proposals show up as suggestion cards (like profile suggestions today) on the ta
 
 Who gets what. ● always, ○ when a skill switches it on, – never.
 
-| Tool | Chat agent | Worker | Coordinator | Helper |
-|---|---|---|---|---|
-| `do_action` | ● | – | – | – |
-| `find_tasks`, `read_task` | ● | – | ● (its children) | – |
-| `reply_on_task`, `check_back_later` | ● | – | – | – |
-| Profile, onboarding and suggestion tools | ● | – | – | – |
-| `connect_data_source`, `connect_login` | ● | – | – | – |
-| `spawn_worker` | ● | – | – | – |
-| `start_job` | ● | – | – | – |
-| `create_task` (people only, no agent) | ● | – | – | – |
-| `web_search`, `fetch_page`, `market_data`, `x_search`, `reddit_search` | ● | ● | – | ● |
-| `exa_search` | – | ○ | – | ● |
-| `call_api` | ● GET | ● | – | ● GET |
-| `read_integration_guide`, `save_integration_guide` | ● | ● | – | read only |
-| `run_code`, `run_command`, `write_file` | setup only | ● | – | – |
-| `read_file`, `list_files` | setup only | ● | ● (children's files) | ● |
-| `browse`, `browser_login` | setup only | ● | – | – |
-| `use_browser` | – | ● | – | – |
-| `github_api` | ● (theirs) | ● | – | – |
-| `save_page`, `read_page`, `refresh_page`, `share_page` | – | ○ | – | – |
-| `use_skill` | ● | ● | ● | – |
-| `propose_skill` | ● | ● | ● | – |
-| `delegate` | – | ● | – | – |
-| `escalate` | – | ● | – | – |
-| `finish`, `ask`, `post_update` | – | ● | ● | – |
-| `hand_off` | – | ● (to a profile on the task) | – | – |
-| `attach_file`, `save_output`, `set_schedule`, `stop_schedule` | – | ● | ● | – |
-| `start_child`, `message_child`, `cancel_child` | – | – | ● | – |
-| `request_approval` | – | ● | ● | – |
+| Tool | Chat agent | Worker | Coordinator |
+|---|---|---|---|
+| `do_action` | ● | – | – |
+| `find_tasks`, `read_task` | ● | – | ● (its children) |
+| `reply_on_task`, `check_back_later` | ● | – | – |
+| Profile, onboarding and suggestion tools | ● | – | – |
+| `connect_data_source`, `connect_login` | ● | – | – |
+| `spawn_worker` | ● | – | – |
+| `start_job` | ● | – | – |
+| `create_task` (people only, no agent) | ● | – | – |
+| `web_search`, `fetch_page`, `market_data`, `x_search`, `reddit_search` | ● | ● | – |
+| `exa_search` | – | ○ | – |
+| `call_api` | ● GET | ● | – |
+| `read_integration_guide`, `save_integration_guide` | ● | ● | – |
+| `run_code`, `run_command`, `write_file` | setup only | ● | – |
+| `read_file`, `list_files` | setup only | ● | ● (children's files) |
+| `browse`, `browser_login` | setup only | ● | – |
+| `use_browser` | – | ● | – |
+| `github_api` | ● (theirs) | ● | – |
+| `save_page`, `read_page`, `refresh_page`, `share_page` | – | ○ | – |
+| `use_skill` | ● | ● | ● |
+| `propose_skill` | ● | ● | ● |
+| `escalate` | – | ● | – |
+| `finish`, `ask`, `post_update` | – | ● | ● |
+| `hand_off` | – | ● (to a profile on the task) | – |
+| `attach_file`, `save_output`, `set_schedule`, `stop_schedule` | – | ● | ● |
+| `start_child`, `message_child`, `cancel_child` | – | – | ● |
+| `request_approval` | – | ● | ● |
 
 "Setup only": the chat agent keeps its own sandbox and browser for connecting integrations, where it reads docs behind a sign-in. All other code and browser work goes to a worker.
 
@@ -257,9 +267,8 @@ Who gets what. ● always, ○ when a skill switches it on, – never.
 |---|---|---|
 | `spawn_worker` | title, brief, skills, profile?, people?, files?, repeat?, share?, model?, `wait`? | Starts a task for the Worker. With `wait`, it runs inline in the person's sandbox (today's `ask_specialist`, up to 3 minutes). If it needs longer, it becomes the task. Replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist` |
 | `start_job` | title, request, people?, files?, repeat?, share? | Starts a job: a task for the coordinator, with the request as its brief. Replaces `plan_job` |
-| `start_child` | assignee (worker, person or script), title, brief, skills?, profile?, after?, files? | A child task on the job, created for the person the job is for |
+| `start_child` | assignee (worker, person or script), title, brief, skills?, profile?, after?, files? | A child task on the job, created for the person the job is for. Children started in one step are one batch, which wakes the coordinator once when all have delivered |
 | `message_child`, `cancel_child` | child, text | Reply on a child (an answer, or "redo this"), or stop it |
-| `delegate` | question, look_at? | A helper in a fresh context, several at once. Replaces `investigate` |
 | `escalate` | why, what it found | Turns the worker's task into a job. A coordinator takes over |
 | `request_approval` | what, items or file | Asks the person to approve exact content. Returns an approval that later writes must name |
 | `propose_skill` | name, body or an edit, why | A suggestion card for a new skill or an edit |
@@ -288,8 +297,9 @@ Prompts ask agents to get approval before changing other systems. These gates ma
 4. **Memory stocks.**
    - The coordinator asks first: which companies, and what format.
    - It shows the plan with a cost estimate, and starts once the person approves.
-   - One worker child, with `research` and `delegate`, writes the sector view and the shared scenario assumptions to `/vercel/drive/jobs/<job>/assumptions.json`.
-   - Then one worker child per company, in parallel and `after` the first, uses `research`, `financial-analysis` and `excel-models` against those assumptions.
+   - First batch: research children in parallel, one per sector question (DRAM and NAND pricing, HBM, capacity and capex, demand). Each reports findings with sources.
+   - The coordinator writes the sector view and the shared scenario assumptions to `/vercel/drive/jobs/<job>/assumptions.json` from what they found.
+   - Second batch: one worker child per company, in parallel, with `research`, `financial-analysis` and `excel-models`, building each model on those assumptions.
    - Then one worker child with `presentations` builds the deck from the models.
    - The coordinator checks the same scenarios are used everywhere and that the deck's numbers match the models before it reports.
 5. **Kalshi and state rules.**
@@ -320,9 +330,9 @@ Prompts ask agents to get approval before changing other systems. These gates ma
 
 ## Phases
 
-1. **One worker.** The Worker and pinned skills replace the Developer, the Researcher and per-task worker agents. `exa_search` comes with the research skill, and `delegate` replaces `investigate` for every worker. Built-in skills move to `SKILL.md` files, collected at build time like `lib/app-map.json`.
+1. **One worker.** The Worker and pinned skills replace the Developer, the Researcher and per-task worker agents. `exa_search` comes with the research skill. Until jobs exist, the research skill keeps `investigate` too, so briefs don't get worse in between. Old tool results are trimmed in long runs. Built-in skills move to `SKILL.md` files, collected at build time like `lib/app-map.json`.
 2. **One hand-off.** `spawn_worker` (with `wait`) and `escalate` replace `create_task` with agents, `start_coding`, `start_research` and `ask_specialist`.
-3. **Jobs.** Parent and child tasks, children waking the coordinator, `start_job` and `start_child` with worker, person and script children, one report, and runbooks for repeating jobs. `plan_job` goes.
+3. **Jobs.** Parent and child tasks, batches that wake the coordinator once, `start_job` and `start_child` with worker, person and script children, one report, and runbooks for repeating jobs. In-depth research moves to jobs. `plan_job` and `investigate` go.
 4. **Company skills.** The table, the Skills page and its actions, `propose_skill`, and suggestion cards.
 5. **Gates.** Tool effects, `request_approval`, the step check for the browser, cost approval and ledgers.
 6. **Long work leaves the chat turn.** Code, the browser and pages move to workers, except integration setup.
@@ -355,9 +365,8 @@ Where it will live:
 | Path | |
 |---|---|
 | `lib/agents/chief-of-staff.ts` | The chat agent: routing rules, `spawn_worker`, `start_job` |
-| `lib/agents/runner.ts`, `run-steps.ts` | The Worker and the coordinator (same runtime), `escalate`, child events, the gate in `narrated()` |
-| `lib/agents/jobs.ts` | Jobs and children: `start_child`, `message_child`, waking the coordinator, carry-over |
-| `lib/agents/delegate.ts` | Helpers (from `investigate` in `lib/research/tools.ts`) |
+| `lib/agents/runner.ts`, `run-steps.ts` | The Worker and the coordinator (same runtime), `escalate`, trimming old tool results, child events, the gate in `narrated()` |
+| `lib/agents/jobs.ts` | Jobs and children: `start_child`, `message_child`, batches, waking the coordinator, carry-over |
 | `lib/agents/approvals.ts` | `request_approval`, tool effects, the browser step check |
 | `skills/<name>/SKILL.md`, `lib/agents/skills.ts` | Built-in skills and loading. Company skills from the `skills` table |
 | `lib/actions/skills.ts`, `app/(app)/skills/` | Skill actions and the Skills page |
