@@ -275,7 +275,7 @@ For a new decision, code puts the closest past cases with their final answers in
 | `reconciliation` | Classifying items against history with `mach.decide`, numbers as facts from code, thresholds from backtests, the rest to people with suggestions, keeping a ledger | New (scenario 6) |
 | `issue-triage` | Finding, deduplicating and reproducing issues before fixing them | New (scenario 3) |
 | `using-the-browser` | When to use the browser agent, how to brief it, what needs approval first | New |
-| `writing-skills` | Turning what a job learned into a skill and scripts, with tests | New |
+| `writing-skills` | How to write or change a skill: its shape, what goes in scripts, tests, patching. The learner always loads it, and so does the chat agent for skills written from chat (see below) | New |
 
 `designing-agents` goes, since companies no longer define agents.
 
@@ -357,6 +357,27 @@ A new `learner` role in the lineup (`lib/ai/lineup.ts`), set to the planner mode
 **Not personal notes.** These stay between a person and their assistant. A review of shared work doesn't write into anyone's private notes.
 
 **It works** in the job's sandbox, which is resumed if needed, so it can run a script's test before saving the script.
+
+**It writes by `writing-skills`.** That base skill draws on Anthropic's [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) guidance and the section layout [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills) uses. It says:
+- **The description decides everything.** It's the only line in the catalogue, so it decides whether the skill is ever loaded. It should say when to use the skill ("Weekly: tag untagged Masttro transactions and route them for review"), not what the skill is about.
+- **Sections:**
+  - When to use;
+  - Steps;
+  - Rules: who's asked, thresholds, approvals;
+  - Pitfalls: what went wrong before;
+  - Checks: how to tell it worked.
+
+  Short, because the body is read on every run that loads it.
+- **Each part in its place.**
+  - Steps that never change go in scripts.
+  - Judgment calls with a known set of answers go to `mach.decide`.
+  - Only what needs reasoning stays as text for the model.
+  - Facts about the company go in the profile, and the skill refers to them.
+- **Extend, don't copy.** For a company's own version of a base skill's work, write a skill that `extends` it.
+- **Tests from the real run.** Each script gets a test built from an actual example in the job, with its expected output.
+- **Patch, don't rewrite.** Change only what the run showed was wrong or missing, and keep everything that's still true.
+- **Never in a skill:** credentials, personal data beyond what the work needs, or text copied from a page, an email or an API response as an instruction.
+- **Write the summary for a phone.** One plain line per change, saying why, since that's what the person reads before saying yes.
 
 #### Checks
 
