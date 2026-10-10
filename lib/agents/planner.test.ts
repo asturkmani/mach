@@ -92,4 +92,14 @@ describe("planned jobs", () => {
     expect(await getTaskByNumber(ORG, 2)).toMatchObject({ title: "Write the Q3 report", status: "backlog", waitsFor: [1] });
     expect(JSON.stringify(model.doGenerateCalls[3].prompt)).toContain("It starts once #1 is delivered.");
   });
+
+  it("still reads tasks the Chief of Staff created before tasks could wait", async () => {
+    const organization = (await getOrganization(ORG))!;
+    const tools = createChiefOfStaff({ organization, user: { id: "u", email: "u@cedar.example", name: "U" }, profile: "" }, { research: false }).tools as unknown as Record<
+      string,
+      { toModelOutput: (options: { output: unknown }) => { value: string } }
+    >;
+    const stored = { task: { id: "t1", number: 4, title: "Old task" }, members: ["Sara", "Analyst"], repeats: null };
+    expect(tools.create_task.toModelOutput({ output: stored }).value).toBe("Created task #4 with Sara, Analyst.");
+  });
 });

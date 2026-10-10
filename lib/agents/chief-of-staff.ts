@@ -504,7 +504,8 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           "error" in output
             ? `Not created: ${output.error}`
             : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}${
-                output.task.waitsFor.length ? ` It starts once #${output.task.waitsFor.join(" and #")} ${output.task.waitsFor.length > 1 ? "are" : "is"} delivered.` : ""
+                // Tasks created before tasks could wait were stored without it, and old results are replayed.
+                output.task.waitsFor?.length ? ` It starts once #${output.task.waitsFor.join(" and #")} ${output.task.waitsFor.length > 1 ? "are" : "is"} delivered.` : ""
               }`,
       }),
     }),
