@@ -22,8 +22,10 @@ import {
   sandboxUser,
   skillTool,
   type SandboxSession,
+  type SandboxUser,
 } from "@/lib/agents/toolkit";
-import { codingAgent, createAgent, type Agent } from "@/lib/agents/store";
+import { askSpecialist } from "@/lib/agents/specialist";
+import { codingAgent, createAgent, findAgentByName, type Agent } from "@/lib/agents/store";
 import { findFiles, listTaskFiles, type LibraryFile } from "@/lib/files";
 import {
   IntegrationError,
@@ -152,6 +154,7 @@ function workInstructions(context: Context): string {
 - When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
 - Answer quick questions yourself. Create a task only for real work.
 - Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company") with share_task.
+- A question that needs one of the defined agents' expertise (the analyst on a number, the lawyer on a clause) goes to it with ask_specialist rather than you guessing: it answers in a few minutes on a model chosen for that work, or it becomes a task for it. Answer everyday questions yourself.
 - If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
 - For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on create_task. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the agent builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
 - Jobs share a company data drive: datasets one job saves there are available to every other job.
@@ -824,6 +827,53 @@ function workTools(context: Context) {
   } satisfies ToolSet;
 }
 
+type SpecialistOutput = { error: string } | { agent: string; answer: string } | { agent: string; task: number; why: string };
+
+/** Quick questions for the company's agents, answered while you wait, or turned into a task when they need longer. */
+function specialistTools(context: Context, workspace: AgentContext, using: SandboxUser, research: boolean) {
+  const orgId = context.organization.id;
+  const names = (context.agents ?? []).filter((a) => a.kind === "defined" && a.status === "active").map((a) => a.name);
+  return {
+    ask_specialist: tool({
+      description:
+        "Ask one of the company's defined agents a question that needs its expertise, and wait for the answer (a few minutes at most): it works on its own model, with its instructions and the data sources it may use. For questions, not jobs. If it needs longer, it becomes a task for that agent, which reports back.",
+      inputSchema: z.object({
+        agent: z.string().min(1).describe(`Exact name of a defined agent${names.length ? `: ${names.join(", ")}` : ""}.`),
+        question: z.string().min(1).describe("The whole question with everything it needs to know: it can't see your conversation."),
+        title: z.string().min(1).max(100).describe("A task title for it, starting with a verb, in case it needs longer."),
+      }),
+      execute: async ({ agent: name, question, title }): Promise<SpecialistOutput> => {
+        const agent = await findAgentByName(orgId, name);
+        if (!agent || agent.kind !== "defined" || agent.status !== "active") return { error: `There's no active agent called ${name}.` };
+        const asked = await askSpecialist(workspace, using, agent, {
+          question,
+          askedBy: context.person?.name ?? context.user.name,
+          profile: context.profile,
+          research,
+        });
+        if ("answer" in asked) return { agent: agent.name, answer: asked.answer };
+        const task = await createTaskWithTeam(orgId, {
+          title,
+          description: question,
+          agentIds: [agent.id],
+          replyByWhatsApp: context.channel === "whatsapp",
+          by: { name: context.user.name, personId: context.person?.id },
+        });
+        return { agent: agent.name, task: task.number, why: asked.needsTask };
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value:
+          "error" in output
+            ? output.error
+            : "answer" in output
+              ? `${output.agent} says:\n${output.answer}`
+              : `${output.agent} needs longer (${output.why}), so it's now task #${output.task}, which ${output.agent} has started; they'll hear when it's done. Tell them in one line.`,
+      }),
+    }),
+  } satisfies ToolSet;
+}
+
 const ONBOARDING_ONLY = ["set_company_name", "update_section", "complete_onboarding"] as const;
 const AFTER_ONBOARDING_ONLY = ["suggest_profile_update"] as const;
 
@@ -860,6 +910,7 @@ export function createChiefOfStaff(
     })),
     ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),
     ...githubTools(workspace),
+    ...specialistTools(context, workspace, using, options.research !== false),
     ...(options.research === false ? {} : researchTools()),
     use_skill: skillTool(),
   };

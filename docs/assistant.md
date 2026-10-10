@@ -43,6 +43,15 @@ have passed, or earlier at the last start or end of a working day before the win
 afternoon before the weekend), and only once per message from them (`keepAliveDue` in
 `lib/assistant/hours.ts`).
 
+## Asking a specialist
+
+The Chief of Staff runs on a fast, cheaper model and hands expertise to the company's defined agents, each
+on a model chosen for its work (Team → the agent → Model; defaults in `.env.example`). For a question,
+`ask_specialist` runs the agent on the spot (its instructions, the data sources it may use, research and the
+person's sandbox) and waits up to three minutes. If the agent says the question needs real work, or runs
+out of time, it becomes a task for that agent instead, which reports back (and wakes the assistant when
+it's done). Jobs still go to tasks directly (`create_task`, `start_coding`).
+
 ## Code
 
 | File | |
@@ -50,3 +59,4 @@ afternoon before the weekend), and only once per message from them (`keepAliveDu
 | `lib/assistant/hours.ts` | Working and quiet hours, when something may be delivered, when a keep-alive is due |
 | `lib/assistant/store.ts` | Hours, the WhatsApp window, and the `assistant_wakeups` queue |
 | `lib/assistant/wake.ts` | The wake-up turn, run from the cron tick (`app/api/cron/tick`) every minute |
+| `lib/agents/specialist.ts` | `ask_specialist`: a defined agent answering a question while the Chief of Staff waits |
