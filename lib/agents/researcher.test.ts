@@ -4,7 +4,7 @@ import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { setScheduler } from "@/lib/agents/dispatch";
 import { runAgentOnTask } from "@/lib/agents/runner";
 import { setSpecialistModel } from "@/lib/agents/specialist";
-import { agentModel, listAgents, RESEARCH_AGENT, researchAgent } from "@/lib/agents/store";
+import { agentModel, createAgent, listAgents, RESEARCH_AGENT, researchAgent } from "@/lib/agents/store";
 import { createOrganization, getOrganization } from "@/lib/orgs";
 import { getPerson, linkMember } from "@/lib/people";
 import { getSchedule } from "@/lib/schedules";
@@ -78,6 +78,23 @@ describe("the Researcher", () => {
 
     expect((await getTask(ORG, task.id))!.summary).toBe("HBM prices are up 18% since June: the shortage looks mostly priced in.");
     expect((await listMessages(task.id)).map((m) => m.author)).toContain("Researcher");
+  });
+
+  it("searches with Exa as well as the shared research tools; other agents don't", async () => {
+    const person = await sara();
+    const researcher = await researchAgent(ORG);
+    const analyst = await createAgent(ORG, { name: "Analyst" });
+    const toolsOf = async (agentId: string) => {
+      const task = await createTask(ORG, { title: "Look into Micron", people: [person.id], agents: [agentId], createdBy: { personId: person.id } });
+      const model = scriptedModel([[["finish", { summary: "Done.", report: "Done." }]]]);
+      await runAgentOnTask(ORG, task.id, agentId, { model });
+      return (model.doGenerateCalls[0].tools ?? []).map((t) => t.name);
+    };
+    expect(await toolsOf(researcher.id)).toEqual(expect.arrayContaining(["web_search", "exa_search", "x_search", "reddit_search", "market_data", "investigate"]));
+    const shared = await toolsOf(analyst.id);
+    expect(shared).toEqual(expect.arrayContaining(["web_search", "x_search", "market_data"]));
+    expect(shared).not.toContain("exa_search");
+    expect(shared).not.toContain("investigate");
   });
 
   async function chat(steps: Step[]) {

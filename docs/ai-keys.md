@@ -12,8 +12,8 @@ Settings → AI:
   provider's cheapest model, which must be served by the key itself (AI Gateway reports which credential
   served each call), so a key AI Gateway would quietly skip is refused. It's stored encrypted (`ai_keys`, sealed with `MACH_SECRETS_KEY`),
   shown only by its last four characters, and never given to a model, a chat or a sandbox. Typed into the
-  page, never into a chat. An xAI key also pays for the company's X searches (and Reddit searches without a
-  Reddit app), which Mach1 makes on xAI's API directly (docs/research.md).
+  page, never into a chat. An xAI key also pays for the company's X searches when Mach1 has no X API app (and
+  Reddit searches without a Reddit app), which Mach1 makes on xAI's API directly (docs/research.md).
 - **Default models**: the company's own model for the Chief of Staff and for agents (each agent can still
   have its own, on its page). Pick models from a provider you brought a key for; the page says when some
   of the company's models are from a provider without one (those run on Mach1's account).

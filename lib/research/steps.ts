@@ -54,14 +54,14 @@ export async function marketData(_context: AgentContext, input: MarketInput): Pr
 
 export async function xSearch(context: AgentContext, input: XSearch & { savedOnly?: boolean }): Promise<string> {
   "use step";
+  const saved = (await listSources(context.organizationId, { viewer: context.personId ?? null })).filter((s) => s.kind === "x_account");
   let handles = input.handles ?? [];
   if (input.savedOnly) {
-    const saved = (await listSources(context.organizationId, { viewer: context.personId ?? null })).filter((s) => s.kind === "x_account");
     if (!saved.length) return "No X accounts are saved as high signal yet. Search without saved_only, or ask them which accounts they trust.";
     handles = [...handles, ...saved.map((s) => s.handle)];
   }
   try {
-    return await searchX(context.organizationId, { ...input, handles });
+    return await searchX(context.organizationId, { ...input, handles }, new Set(saved.map((s) => s.handle.toLowerCase())));
   } catch (error) {
     console.error("X search failed", error);
     return "X search failed. Try again, or use web_search.";

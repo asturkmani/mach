@@ -24,7 +24,7 @@ import {
 } from "@/lib/agents/run-steps";
 import { askForLoginCode } from "@/lib/agents/browser-steps";
 import { attachSandboxFile, closeSandbox } from "@/lib/agents/sandbox-steps";
-import { investigateTool } from "@/lib/research/tools";
+import { exaTools, investigateTool } from "@/lib/research/tools";
 import {
   browserTools,
   githubTools,
@@ -224,7 +224,7 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
     case "market_data":
       return `Looking up ${[input.symbols].flat().filter(Boolean).join(", ") || clipped(input.query, 30) || "market data"} (${input.action})`;
     case "x_search":
-      return `Searching X: ${clipped(input.query, 40)}`;
+      return `Searching X: ${clipped(input.query, 40) || "the latest posts"}`;
     case "reddit_search":
       return `Searching Reddit: ${clipped(input.query, 40)}`;
     case "investigate":
@@ -307,7 +307,8 @@ export async function runAgentOnTask(
   try {
     // The company's own provider keys ride along with each model call (bring your own key).
     const model = options.model ?? new CompanyModel(organizationId, begun.model);
-    const research = options.research === false ? {} : researchTools(context);
+    // The Researcher also searches with Exa, and so do its sub-researchers.
+    const research = options.research === false ? {} : { ...researchTools(context), ...(begun.researcher ? exaTools() : {}) };
     const agent = new WorkflowAgent({
       model,
       instructions: begun.instructions,

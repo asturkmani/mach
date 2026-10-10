@@ -44,25 +44,37 @@ FinRobot, and report outlines like those in [anthropics/financial-services](http
 ## The tools
 
 Every agent and the Chief of Staff have them (`researchTools` in `lib/agents/toolkit.ts`); only the
-Researcher has `investigate`.
+Researcher has `exa_search` and `investigate` (and its sub-researchers have Exa too).
 
 | Tool | What | Where it comes from |
 | --- | --- | --- |
-| `web_search`, `fetch_page` | The web, filings, news; `source_policy.include_domains` limits a search to chosen sites | AI Gateway (Parallel, Browserbase) |
+| `web_search`, `fetch_page` | Questions about the web, filings, news; `source_policy.include_domains` limits a search to chosen sites | AI Gateway (Parallel, Browserbase) |
+| `exa_search` | Finding things by what they are: companies like a description, people (executives, managers, founders), financial reports, news, research papers; domains and dates | AI Gateway (Exa) |
 | `market_data` | Quotes (stocks, FX, indices, crypto), profile and key numbers, price history with drawdown and volatility, statements, news, holders and insider trades, analysts | Yahoo Finance through [yahoo-finance2](https://github.com/gadicc/yahoo-finance2): free, delayed, unofficial |
-| `x_search` | What's said on X, by anyone or only by chosen or saved accounts, in a date range | xAI's `x_search` tool (Grok searches X and reports the posts with links) |
+| `x_search` | Posts on X by search terms, by chosen or saved accounts, or those accounts' latest; the last week or back to 2006 | X's API through its [TypeScript SDK](https://docs.x.com/xdks/typescript/overview) (the posts, their authors and engagement, most engaged first, saved accounts marked ★), else Grok's `x_search` on xAI's API |
 | `reddit_search` | Reddit threads, in chosen or saved subreddits or by chosen users | Mach1's Reddit app if it has one (scores and top comments), else Grok's web search of reddit.com |
 | `investigate` | One question to a sub-researcher with all the above | The Researcher's own model (`lib/research/tools.ts`) |
 
-**No one signs in.** X goes through xAI's API with the company's own xAI key if an admin added one
-(Settings → AI), else Mach1's `XAI_API_KEY`. That keeps people's X accounts out of it, and X's terms with it;
-a login or cookies would break both. Reddit closed its open JSON to servers in 2026 and approves API apps one
-at a time, so a Reddit app (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`) is optional: without one, searches go
-through Grok's web search. Yahoo Finance needs nothing.
+**Web search: Parallel and Exa.** Both run on AI Gateway, so there's no other account or key, and billing is
+Mach1's AI Gateway credit. Parallel is the everyday `web_search`: it takes the objective in words and returns
+short, cited excerpts, with domain and date filters for saved sites. Exa finds things by what they are, which
+is what due diligence needs: the company behind a description, a manager's background, a filing. Tavily does
+much what Parallel does, isn't on AI Gateway (so it would be another vendor and key), and the published
+comparisons between the three are each vendor's own; add it only if a test on our own questions says so.
 
-**Costs**: web search is a few dollars per thousand searches on AI Gateway; xAI charges per post X search
-reads (about $5 per thousand) plus Grok's tokens; Yahoo Finance is free. A brief with `investigate` runs
-several sub-researchers, so it costs more model calls than a quick answer.
+**No one signs in.** X goes through Mach1's own X API app (`X_BEARER_TOKEN`, an app-only token on X's
+pay-per-use plan): X's search syntax (`$MU (HBM OR guidance)`, `from:` for accounts), recent search for the
+last week and the full archive for anything older, 25 posts a search, no reposts (and no replies unless asked).
+Without the app, or when X's API is down, Grok searches X instead, on the company's own xAI key if an admin
+added one (Settings → AI), else Mach1's `XAI_API_KEY`. Either way people's X accounts stay out of it, and X's
+terms with it; a login or cookies would break both. Reddit closed its open JSON to servers in 2026 and
+approves API apps one at a time, so a Reddit app (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`) is optional:
+without one, searches go through Grok's web search. Yahoo Finance needs nothing.
+
+**Costs**: Parallel about $5 and Exa about $7 per thousand searches on AI Gateway; X's API $0.005 per post read
+(so up to $0.125 a search; reading the same post again within a day is free); Grok about $5 per thousand posts
+its search reads, plus tokens; Yahoo Finance is free. A brief with `investigate` runs several
+sub-researchers, so it costs more than a quick answer.
 
 ## High-signal sources
 
@@ -74,13 +86,16 @@ research; whoever saved one, or an admin for the company's, can change or remove
 How they're used: an agent researching for someone (on a task they asked for, or answering them through the
 Chief of Staff) gets theirs and the company's in its instructions, grouped by kind with the notes, and is told
 to look there first and weigh them higher: `web_search` limited to the saved sites, then `x_search` and
-`reddit_search` with `saved_only`, which fill in the saved accounts, subreddits and users themselves (X takes
-20 accounts a search, so more go in batches). Briefs mark findings from them with ★. Mach1's agents for code
+`reddit_search` with `saved_only`, which fill in the saved accounts, subreddits and users themselves (as many
+accounts as fit in one X query, at most 20, so more go in batches; with no search terms, `x_search` brings
+their latest posts, a digest's starting point). Briefs mark findings from them with ★. Mach1's agents for code
 and integrations don't get them.
 
 ## Set up
 
-- `XAI_API_KEY` for X (and Reddit without an app). Optional: `X_SEARCH_MODEL` (default `grok-4-fast`).
+- `X_BEARER_TOKEN`: an app on X's developer console with pay-per-use credit (its Bearer Token). Nobody signs in.
+- `XAI_API_KEY` for X without that app (and when X's API fails), and for Reddit without a Reddit app.
+  Optional: `X_SEARCH_MODEL` (default `grok-4-fast`).
 - Optional: `RESEARCH_AGENT_MODEL`, a strong reasoning model.
 - Optional: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` and `REDDIT_USER_AGENT` for an approved Reddit app.
 
@@ -90,7 +105,7 @@ and integrations don't get them.
 | --- | --- |
 | `lib/research/sources.ts`, `store.ts` | Saved sources: reading what people type or paste, labels, the prompt listing, storage |
 | `lib/research/market.ts` | Yahoo Finance, trimmed to the numbers that matter |
-| `lib/research/x.ts`, `reddit.ts` | X search through xAI, Reddit through its API or Grok's web search |
+| `lib/research/x.ts`, `grok.ts`, `reddit.ts` | X through its API or Grok, Grok's search tools on xAI's API, Reddit through its API or Grok |
 | `lib/research/steps.ts`, `tools.ts` | The tools (durable steps on tasks), and `investigate` |
 | `lib/actions/research.ts`, `app/(app)/research/` | `source.add`, `source.update`, `source.remove`, `source.list`, and the Research screen |
 | `lib/agents/store.ts` (`researchAgent`), `lib/agents/chief-of-staff.ts` (`start_research`) | The Researcher, and handing research to it |

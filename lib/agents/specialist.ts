@@ -4,12 +4,13 @@ import { stepCountIs, ToolLoopAgent, type LanguageModel } from "ai";
 
 import type { AgentContext } from "@/lib/agents/prompts";
 import { companyModel } from "@/lib/ai/company-model";
-import { agentModel, CODING_AGENT, INTEGRATIONS_AGENT, type Agent } from "@/lib/agents/store";
+import { agentModel, CODING_AGENT, INTEGRATIONS_AGENT, RESEARCH_AGENT, type Agent } from "@/lib/agents/store";
 import { integrationTools, researchTools, sandboxTools, skillTool, type SandboxUser } from "@/lib/agents/toolkit";
 import { listIntegrations } from "@/lib/integrations";
 import type { CompanyModels } from "@/lib/orgs";
 import { listSources } from "@/lib/research/store";
 import { sourcesBrief } from "@/lib/research/sources";
+import { exaTools } from "@/lib/research/tools";
 
 // A quick question for one of the company's agents, answered while the
 // Chief of Staff waits: the agent works on its own model (one chosen for its
@@ -65,6 +66,7 @@ ${input.profile}
 </company_profile>${sources.length ? `\n\n${sourcesBrief(sources, input.askedBy)}` : ""}`,
     tools: {
       ...(input.research === false ? {} : researchTools(context)),
+      ...(input.research === false || agent.builtin !== RESEARCH_AGENT ? {} : exaTools()),
       ...integrationTools(context, using, allowed),
       ...sandboxTools(context, using),
       use_skill: skillTool(),

@@ -32,6 +32,9 @@ importers:
       '@workos-inc/node':
         specifier: ^10.14.0
         version: 10.14.0
+      '@xdevplatform/xdk':
+        specifier: 0.6.6
+        version: 0.6.6
       ai:
         specifier: ^7.0.130
         version: 7.0.130(zod@4.6.5)
@@ -2487,6 +2490,15 @@ packages:
   '@workos-inc/node@10.14.0':
     resolution: {integrity: sha512-SnY9OHTzTyOmgJQj9+/6x116m+d+zJoQw5e8teNWKUuGe8FOKngVdBXRvZgdFxaL+3UfQbMlp95V67t43VYOWQ==}
     engines: {node: '>=22.11.0'}
+
+  '@xdevplatform/xdk@0.6.6':
+    resolution: {integrity: sha512-ced4iHSz08eQe1L0N3UWVvJyfGnmGU0CRjecoXpr27dVIyQvc637Pxm3cdP4G85PwhHn5IGVJ1DJF2YD9zWfAg==}
+    engines: {node: '>=16.14'}
+    peerDependencies:
+      node-fetch: ^3.3.0
+    peerDependenciesMeta:
+      node-fetch:
+        optional: true
 
   '@xhmikosr/archive-type@8.1.0':
     resolution: {integrity: sha512-EXOjEbnZFE5c/nFMf4FOrEURVanzHpnkPYmnmr78u02/8hAhE0FMq8p9TK1IM0/bFr5VcyBUY0gfLm8f7dKy+Q==}
@@ -8669,6 +8681,8 @@ snapshots:
 
   '@workos-inc/node@10.14.0': {}
 
+  '@xdevplatform/xdk@0.6.6': {}
+
   '@xhmikosr/archive-type@8.1.0':
     dependencies:
       file-type: 21.3.4
@@ -9989,7 +10003,7 @@ snapshots:
 
   ext-list@2.2.2:
     dependencies:
-      mime-db: 1.52.0
+      mime-db: 1.54.0
 
   ext-name@5.0.0:
     dependencies:

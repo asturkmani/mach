@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { REDDIT_SORTS, REDDIT_TIMES } from "@/lib/research/options";
-import { grokSearch, NO_XAI_KEY, xaiKey } from "@/lib/research/x";
+import { grokSearch, NO_XAI_KEY, xaiKey } from "@/lib/research/grok";
 
 // Searching Reddit without anyone signing in. Reddit closed its open JSON to
 // servers in 2026 and approves API apps one by one, so there are two ways:

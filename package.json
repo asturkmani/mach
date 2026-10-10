@@ -24,6 +24,7 @@
     "@workflow/serde": "5.0.0",
     "@workos-inc/authkit-nextjs": "^4.4.0",
     "@workos-inc/node": "^10.14.0",
+    "@xdevplatform/xdk": "0.6.6",
     "ai": "^7.0.130",
     "croner": "^10.0.1",
     "cronstrue": "^3.30.0",

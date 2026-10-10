@@ -1,3 +1,4 @@
+import { ApiError } from "@xdevplatform/xdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createOrganization } from "@/lib/orgs";
@@ -6,11 +7,12 @@ import { linkMember } from "@/lib/people";
 import { doAction } from "@/test/do-action";
 import { useTestDb } from "@/test/db";
 
+import { setXaiFetch } from "./grok";
 import { setMarketClient } from "./market";
 import { setRedditFetch } from "./reddit";
 import { listSources } from "./store";
 import { insightTools } from "./tools";
-import { setXaiFetch } from "./x";
+import { setXApi, type XApi } from "./x";
 
 const ORG = "org_cedar";
 
@@ -96,17 +98,77 @@ describe("the research tools", () => {
   beforeEach(async () => {
     await useTestDb();
     vi.stubEnv("XAI_API_KEY", "xai-test");
+    vi.stubEnv("X_BEARER_TOKEN", "");
     vi.stubEnv("REDDIT_CLIENT_ID", "");
     vi.stubEnv("REDDIT_CLIENT_SECRET", "");
   });
   afterEach(() => {
+    setXApi(null);
     setXaiFetch(null);
     setRedditFetch(null);
     setMarketClient(null);
     vi.unstubAllEnvs();
   });
 
-  it("searches X through Grok, only the saved accounts when asked, in batches of twenty", async () => {
+  it("searches X through X's API: the posts most engaged first, saved accounts marked", async () => {
+    const { sara } = await team();
+    await doAction(sara, "source.add", { source: "@DeItaone" });
+    const asked: { query: string; options: Parameters<XApi>[1] }[] = [];
+    setXApi(async (query, options) => {
+      asked.push({ query, options });
+      return {
+        data: [
+          { id: "1", authorId: "u1", createdAt: "2026-10-09T14:00:00Z", text: "Minutes read hawkish.", publicMetrics: { likeCount: 40, retweetCount: 5, replyCount: 2, quoteCount: 0 } },
+          { id: "2", authorId: "u2", createdAt: "2026-10-09T15:00:00Z", text: "short", notePost: { text: "Fed minutes: two dissents on cuts, $TLT lower." }, publicMetrics: { likeCount: 900, repostCount: 120, replyCount: 60, quoteCount: 10 } },
+        ],
+        includes: {
+          users: [
+            { id: "u1", username: "zerohedge", name: "zerohedge", publicMetrics: { followersCount: 2_100_000 } },
+            { id: "u2", username: "DeItaone", name: "Walter Bloomberg", verified: true, publicMetrics: { followersCount: 950_000 } },
+          ],
+        },
+      };
+    });
+
+    const found = await tools(sara.personId).x_search({ query: "Fed minutes", saved_only: true, handles: ["@zerohedge"] });
+    expect(asked[0].query).toBe("(Fed minutes) (from:zerohedge OR from:DeItaone) -is:retweet -is:reply");
+    expect(asked[0].options).toMatchObject({ archive: false, sortOrder: "relevancy", maxResults: 25 });
+    expect(found).toContain("the last 7 days, 2 found, most engaged first");
+    // The most engaged post leads, its long text in full, its author marked as a saved account.
+    expect(found.indexOf("@DeItaone")).toBeLessThan(found.indexOf("@zerohedge (zerohedge"));
+    expect(found).toContain("- @DeItaone (Walter Bloomberg, verified, 950.0K followers) ★ · 2026-10-09 · 900 likes, 120 reposts, 60 replies");
+    expect(found).toContain("Fed minutes: two dissents on cuts, $TLT lower.");
+    expect(found).toContain("https://x.com/DeItaone/status/2");
+
+    // Older than a week: X's archive. No terms: the accounts' latest posts.
+    await tools(sara.personId).x_search({ handles: ["DeItaone"], from_date: "2026-01-01", sort: "recency", replies: true });
+    expect(asked[1].query).toBe("(from:DeItaone) -is:retweet");
+    expect(asked[1].options).toMatchObject({ archive: true, startTime: "2026-01-01T00:00:00.000Z", sortOrder: "recency" });
+
+    // Many accounts: as many as fit in a query of X's length, one search after another.
+    const many = Array.from({ length: 25 }, (_, i) => `a_rather_long_${i}`);
+    await tools(sara.personId).x_search({ query: "AI capex", handles: many });
+    const searched = asked.slice(2).map((a) => a.query.match(/from:/g)!.length);
+    expect(searched.reduce((a, b) => a + b)).toBe(25);
+    expect(asked.slice(2).every((a) => a.query.length <= 512)).toBe(true);
+  });
+
+  it("explains a search X can't read, and falls back to Grok when X's API fails", async () => {
+    const { sara } = await team();
+    setXApi(async () => {
+      throw new ApiError("Invalid query", 400, "Bad Request", new Headers());
+    });
+    expect(await tools(sara.personId).x_search({ query: "((" })).toContain("X couldn't read the search");
+
+    setXApi(async () => {
+      throw new ApiError("Service Unavailable", 503, "Service Unavailable", new Headers());
+    });
+    const { fetcher } = recorder(() => grokReply("Grok's read of the posts."));
+    setXaiFetch(fetcher);
+    expect(await tools(sara.personId).x_search({ query: "Fed" })).toBe("Grok's read of the posts.");
+  });
+
+  it("searches X through Grok without an X API app, only the saved accounts when asked, in batches of twenty", async () => {
     const { sara } = await team();
     await doAction(sara, "source.add", { source: "@DeItaone" });
     const { calls, fetcher } = recorder(() => grokReply("@DeItaone, 2026-10-09: \"Fed minutes hawkish\".", ["https://x.com/DeItaone/status/1"]));
@@ -130,7 +192,8 @@ describe("the research tools", () => {
   it("says what to do when X search isn't set up, or nothing is saved", async () => {
     const { sara } = await team();
     vi.stubEnv("XAI_API_KEY", "");
-    expect(await tools(sara.personId).x_search({ query: "anything" })).toContain("XAI_API_KEY");
+    expect(await tools(sara.personId).x_search({ query: "anything" })).toContain("Mach1 needs X_BEARER_TOKEN (an X API app) or XAI_API_KEY");
+    expect(await tools(sara.personId).x_search({})).toContain("Give search terms, or the accounts");
     vi.stubEnv("XAI_API_KEY", "xai-test");
     expect(await tools(sara.personId).x_search({ query: "anything", saved_only: true })).toContain("No X accounts are saved");
   });

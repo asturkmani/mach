@@ -1,5 +1,5 @@
 import { WorkflowAgent } from "@ai-sdk/workflow";
-import { isStepCount, ToolLoopAgent, tool, type LanguageModel, type ToolSet } from "ai";
+import { gateway, isStepCount, ToolLoopAgent, tool, type LanguageModel, type ToolSet } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "@/lib/agents/prompts";
@@ -32,13 +32,18 @@ export function insightTools(context: AgentContext) {
     }),
     x_search: tool({
       description:
-        "Search X (Twitter): what investors, analysts, founders and companies are saying, breaking news, sentiment. Grok searches X and reports the posts with their links (no sign-in needed). saved_only looks only at the X accounts saved as high signal; handles names others. Each search costs money: one well-aimed query beats several.",
+        "Search X (Twitter): what investors, analysts, founders and companies are saying, breaking news, sentiment. Returns the posts with their authors, engagement and links, most engaged first: the last 7 days, or from from_date back to 2006. saved_only looks only at the X accounts saved as high signal; handles names others; with no query you get those accounts' latest posts. Every post read costs money: one well-aimed search beats several.",
       inputSchema: z.object({
-        query: z.string().min(1).describe("What to find, in words, e.g. 'reactions to Micron's guidance and HBM pricing'."),
+        query: z
+          .string()
+          .optional()
+          .describe('Search terms, not a sentence: keywords, "exact phrases", OR, $cashtags, #hashtags, e.g. \'$MU (HBM OR guidance)\'. Leave out for the accounts\' latest posts.'),
         handles: z.array(z.string()).max(20).optional().describe("Only posts from these accounts, e.g. ['DeItaone']."),
         saved_only: z.boolean().optional().describe("Only the X accounts saved as high signal (with any handles given)."),
-        from_date: day.optional(),
+        from_date: day.optional().describe("YYYY-MM-DD. Older than a week searches X's archive."),
         to_date: day.optional(),
+        sort: z.enum(["relevancy", "recency"]).optional().describe("Default relevancy; recency for the latest."),
+        replies: z.boolean().optional().describe("Include replies (left out by default)."),
       }),
       execute: ({ saved_only, from_date, to_date, ...input }) => xSearch(context, { ...input, savedOnly: saved_only, fromDate: from_date, toDate: to_date }),
     }),
@@ -58,11 +63,22 @@ export function insightTools(context: AgentContext) {
   } satisfies ToolSet;
 }
 
+/**
+ * The Researcher's second web search: Exa, through AI Gateway (no key of our
+ * own; about $7 per thousand searches). Where Parallel's web_search answers a
+ * question from the web, Exa finds things by what they are: companies, people,
+ * financial reports, news, research papers.
+ */
+export const exaTools = () =>
+  ({
+    exa_search: gateway.tools.exaSearch({ numResults: 8, contents: { highlights: { maxCharacters: 1200 } } }),
+  }) satisfies ToolSet;
+
 export function investigatorInstructions(highSignal: string): string {
   return `You investigate one question for the Researcher, who is writing a brief and runs several investigations like yours at once. You never talk to people: your last message goes back to the Researcher.
 
 How to work:
-- Plan two to four searches, and run independent ones together. Use the right tool: web_search for the web (filings, company sites, news, industry sources), market_data for prices, valuation and financials, x_search for what people on X say, reddit_search for Reddit. Read the two to four best sources in full with fetch_page.
+- Plan two to four searches, and run independent ones together. Use the right tool: web_search for questions about the web (filings, company sites, news, industry sources); exa_search, if you have it, to find things by what they are (category company for companies like a description, people for executives, managers and founders, financial report for filings and results, news, research paper); market_data for prices, valuation and financials; x_search for what people on X say (search terms, not sentences); reddit_search for Reddit. Read the two to four best sources in full with fetch_page.
 - Start with the high-signal sources below, if there are any that fit, then look wider.
 - Prefer primary sources (filings, company releases, official data) over news, and news over commentary. Note the date of every figure.
 - Stop when you can answer, or after about eight searches. Don't pad.
