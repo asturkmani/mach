@@ -4,7 +4,8 @@ import { refresh } from "next/cache";
 
 import { searchTasks as search, updateTask, type Priority, type Task, type TaskStatus } from "@/lib/tasks";
 import { PRIORITIES, TASK_STATUSES } from "@/lib/task-words";
-import { requireAppContext } from "@/lib/session";
+import { attachFileAs, OperationError } from "@/lib/operations";
+import { actorOf, requireAppContext } from "@/lib/session";
 import { attachToTask, detachFromTask, discardUploads, readUpload } from "@/lib/files";
 import {
   addToTask,
@@ -264,16 +265,14 @@ export async function unarchiveAction(taskId: string): Promise<TaskActionResult>
 
 /** Attaches a company file to a job as an input. */
 export async function attachFileAction(taskId: string, fileId: string): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
+  const actor = actorOf(await requireAppContext());
   return attempt(async () => {
-    const task = await getTask(organizationId, taskId);
-    if (!task) throw new WorkError("That task no longer exists.");
     try {
-      await attachToTask(organizationId, taskId, fileId, "input");
+      await attachFileAs(actor, taskId, fileId);
     } catch (error) {
-      throw new WorkError(error instanceof Error ? error.message : "Couldn't attach that file.");
+      if (error instanceof OperationError) throw new WorkError(error.message);
+      throw error;
     }
-    await addMessage(taskId, { author: by.name, personId: by.personId, kind: "event", body: "Attached a file from the library." });
   });
 }
 

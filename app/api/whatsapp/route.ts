@@ -34,6 +34,10 @@ export async function POST(request: Request) {
     media: Number(params.NumMedia ?? 0),
     mediaUrl: params.MediaUrl0,
     mediaType: params.MediaContentType0,
+    attachments: Array.from({ length: Number(params.NumMedia ?? 0) }, (_, i) => ({
+      url: params[`MediaUrl${i}`],
+      type: params[`MediaContentType${i}`] ?? "",
+    })).filter((a) => a.url),
   };
   after(() => handleWhatsApp(message).catch((error) => console.error("WhatsApp reply failed", error)));
   return empty();

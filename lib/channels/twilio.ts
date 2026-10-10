@@ -82,6 +82,24 @@ export async function sendWhatsApp(to: string, text: string): Promise<void> {
   }
 }
 
+/** Sends one file on WhatsApp, from a link Twilio fetches (lib/file-links.ts), with an optional caption. */
+export async function sendWhatsAppFile(to: string, mediaUrl: string, caption = ""): Promise<void> {
+  const sid = process.env.TWILIO_ACCOUNT_SID!;
+  const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
+  const from = process.env.TWILIO_WHATSAPP_FROM!;
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      From: from.startsWith("whatsapp:") ? from : `whatsapp:${from}`,
+      To: to.startsWith("whatsapp:") ? to : `whatsapp:${to}`,
+      MediaUrl: mediaUrl,
+      ...(caption ? { Body: whatsappText(caption).slice(0, 1000) } : {}),
+    }),
+  });
+  if (!response.ok) throw new Error(`Twilio refused the file (${response.status}): ${(await response.text()).slice(0, 300)}`);
+}
+
 /**
  * Marks their message read (blue ticks) and shows "typing…" in their chat:
  * Twilio's typing indicator (public beta), which WhatsApp shows until the

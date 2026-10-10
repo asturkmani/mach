@@ -3,7 +3,9 @@ import "server-only";
 import { catchUpConversation, chiefOfStaffTurn } from "@/lib/agents/cos-turn";
 import { recordWhatsAppIn } from "@/lib/assistant/store";
 import { appUrl } from "@/lib/app-url";
-import { replyToEmail } from "@/lib/channels/agentmail";
+import { fetchEmailAttachment, replyToEmail } from "@/lib/channels/agentmail";
+import { keepIncomingFiles, nameFor, type IncomingFile } from "@/lib/channels/inbound-files";
+import { MAX_FILE_BYTES } from "@/lib/files";
 import { findByEmail, findByPhone } from "@/lib/channels/senders";
 import { completeWhatsAppLink, LINK_MESSAGE } from "@/lib/channels/whatsapp-links";
 import { fetchTwilioMedia, keepTyping, sendWhatsApp } from "@/lib/channels/twilio";
@@ -28,6 +30,8 @@ export type WhatsAppMessage = {
   /** The first attachment, which is a voice note when its type is audio. */
   mediaUrl?: string;
   mediaType?: string;
+  /** Every attachment (Twilio's MediaUrlN and MediaContentTypeN). */
+  attachments?: { url: string; type: string }[];
 };
 
 /** A voice note, as words; null when it can't be heard. */
@@ -71,15 +75,26 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
   const notes: string[] = [];
   if (spoken) notes.push(`${spoken}\n\n[Sent as a voice note and transcribed: names and numbers may be off, so check anything that matters before acting on it.]`);
   else if (voice) notes.push("[They sent a voice note that couldn't be transcribed. Ask them to try again or type it.]");
-  const others = message.media - (voice ? 1 : 0);
-  if (others > 0) {
-    notes.push(`[They sent ${others} ${voice ? "more " : ""}attachment${others === 1 ? "" : "s"} by WhatsApp, which you can't open here. Ask them to attach it on a task in Mach1 if it matters.]`);
+  // Everything else they sent (photos, PDFs, spreadsheets…) goes into their files, and to you with the message.
+  const incoming: IncomingFile[] = [];
+  const failed: number[] = [];
+  const attachments = (message.attachments ?? (message.mediaUrl ? [{ url: message.mediaUrl, type: message.mediaType ?? "" }] : [])).slice(voice ? 1 : 0);
+  for (const [i, file] of attachments.entries()) {
+    try {
+      const bytes = Buffer.from(await fetchTwilioMedia(file.url, MAX_FILE_BYTES));
+      incoming.push({ name: nameFor(file.type, i), contentType: file.type || "application/octet-stream", bytes });
+    } catch (error) {
+      console.error("Couldn't fetch a WhatsApp attachment", (error as Error).message);
+      failed.push(i);
+    }
   }
-  const text = [message.body.trim(), ...notes].filter(Boolean).join("\n\n");
+  if (failed.length) notes.push(`[${failed.length} of the files they sent couldn't be fetched (too big, or WhatsApp didn't hand it over). Ask them to send it again or add it in Mach1.]`);
+  const files = await keepIncomingFiles(context.organization.id, context.person.id, incoming);
+  const text = [message.body.trim(), ...notes].filter(Boolean).join("\n\n") || (files.length ? "[They sent the attached file without a message.]" : "");
   if (!text) return stopTyping();
   let reply: string;
   try {
-    reply = await chiefOfStaffTurn(context, text, "whatsapp", { model: options.model, research: options.research });
+    reply = await chiefOfStaffTurn(context, text, "whatsapp", { model: options.model, research: options.research, files });
   } catch (error) {
     console.error("WhatsApp turn failed", error);
     reply = trouble();
@@ -99,7 +114,7 @@ export type ReceivedEmail = {
   text?: string;
   extracted_text?: string;
   preview?: string;
-  attachments?: { filename?: string }[];
+  attachments?: { attachment_id?: string; filename?: string; content_type?: string; size?: number }[];
 };
 
 export async function handleEmail(email: ReceivedEmail, options: TurnOptions = {}): Promise<void> {
@@ -110,18 +125,31 @@ export async function handleEmail(email: ReceivedEmail, options: TurnOptions = {
   if (!context) return;
   // extracted_text is the new part of the email, without the quoted thread below it.
   const body = (email.extracted_text || email.text || email.preview || "").trim();
-  const files = (email.attachments ?? []).map((a) => a.filename).filter(Boolean);
+  // Attachments go into their files, and to you with the message.
+  const incoming: IncomingFile[] = [];
+  const missed: string[] = [];
+  for (const attachment of email.attachments ?? []) {
+    if (!attachment.attachment_id) continue;
+    try {
+      const fetched = await fetchEmailAttachment(email.inbox_id, email.message_id, attachment.attachment_id, MAX_FILE_BYTES);
+      incoming.push({ name: fetched.filename, contentType: fetched.contentType, bytes: fetched.bytes });
+    } catch (error) {
+      console.error("Couldn't fetch an email attachment", (error as Error).message);
+      missed.push(attachment.filename ?? "an attachment");
+    }
+  }
+  const files = await keepIncomingFiles(context.organization.id, context.person.id, incoming);
   const text = [
     email.subject ? `Subject: ${email.subject}` : "",
     body,
-    files.length ? `[Attached: ${files.join(", ")}. You can't open email attachments here; ask them to attach files on a task in Mach1.]` : "",
+    missed.length ? `[Couldn't fetch: ${missed.join(", ")} (too big, or the mail service didn't hand it over). Ask them to add it in Mach1.]` : "",
   ]
     .filter(Boolean)
-    .join("\n\n");
+    .join("\n\n") || (files.length ? "[They sent the attached files without a message.]" : "");
   if (!text) return;
   let reply: string;
   try {
-    reply = await chiefOfStaffTurn(context, text, "email", options);
+    reply = await chiefOfStaffTurn(context, text, "email", { ...options, files });
   } catch (error) {
     console.error("Email turn failed", error);
     reply = trouble();

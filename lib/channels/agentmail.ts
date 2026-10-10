@@ -78,6 +78,25 @@ export async function replyToEmail(inbox: string, messageId: string, text: strin
   });
 }
 
+/** One attachment of a received email: its name, type and bytes (fetched through AgentMail's short-lived download link). */
+export async function fetchEmailAttachment(
+  inbox: string,
+  messageId: string,
+  attachmentId: string,
+  maxBytes: number,
+): Promise<{ filename: string; contentType: string; bytes: Buffer }> {
+  const attachment = await call<{ download_url: string; filename?: string; content_type?: string; size: number }>(
+    `/inboxes/${encodeURIComponent(inbox)}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    { method: "GET" },
+  );
+  if (attachment.size > maxBytes) throw new Error(`${attachment.filename ?? "The attachment"} is too big.`);
+  const response = await fetch(attachment.download_url, { signal: AbortSignal.timeout(60_000) });
+  if (!response.ok) throw new Error(`AgentMail wouldn't give the attachment (${response.status}).`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > maxBytes) throw new Error(`${attachment.filename ?? "The attachment"} is too big.`);
+  return { filename: attachment.filename || "attachment", contentType: attachment.content_type || "application/octet-stream", bytes };
+}
+
 /** Registers the webhook AgentMail posts incoming email to. Returns its signing secret. */
 export async function createWebhook(url: string): Promise<{ id: string; secret: string }> {
   const webhook = await call<{ webhook_id: string; secret: string }>("/webhooks", {

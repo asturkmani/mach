@@ -9,7 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // installable app's own files (its manifest, service worker, icons and offline
 // screen) load before sign-in.
 
-const PUBLIC = ["/sign-in", "/callback", "/api/cron/tick", "/api/whatsapp", "/api/email"];
+const PUBLIC = ["/sign-in", "/callback", "/api/cron/tick", "/api/whatsapp", "/api/email", "/api/files"];
 
 /**
  * The one address people should use (CANONICAL_HOST, e.g. trymach1.app): a

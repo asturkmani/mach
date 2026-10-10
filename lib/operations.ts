@@ -4,7 +4,7 @@ import { workos } from "@/lib/workos";
 
 
 import { listAgents, updateAgent, type AgentStatus } from "@/lib/agents/store";
-import { listLibrary, setFileVisibility } from "@/lib/files";
+import { attachToTask, listLibrary, setFileVisibility } from "@/lib/files";
 import { disconnectGitHub } from "@/lib/github";
 import { deleteIntegration, getIntegration, IntegrationError, testIntegration, updateIntegration } from "@/lib/integrations";
 import { setRole, type Role } from "@/lib/members";
@@ -24,6 +24,7 @@ import {
   type PersonPatch,
 } from "@/lib/people";
 import { personalSandboxName, sandboxes } from "@/lib/sandbox";
+import { addMessage, canSeeTask } from "@/lib/tasks";
 import { rerunScript, WorkError } from "@/lib/work";
 
 // What people can do to the company's things, with who may do it, in one
@@ -193,6 +194,26 @@ export async function setFileVisibilityAs(actor: Actor, fileId: string, visibili
   if (!file) throw new OperationError("That file doesn't exist.");
   if (file.ownerPersonId !== actor.personId && !actor.isAdmin) throw new OperationError("Only its owner, or an admin, can change who sees it.");
   await setFileVisibility(actor.organizationId, fileId, visibility);
+}
+
+/** A library file this person can see (theirs, the company's, or on a task they can see), with its latest version. */
+export async function visibleFile(actor: Actor, match: { id?: string; name?: string }) {
+  const files = await listLibrary(actor.organizationId, { limit: 1000, viewer: actor.personId });
+  const file = files.find((f) => (match.id ? f.id === match.id : f.name.trim().toLowerCase() === match.name?.trim().toLowerCase()));
+  if (!file) throw new OperationError(match.name ? `There's no file called ${match.name}.` : "That file doesn't exist.");
+  return file;
+}
+
+/** Puts a library file on a task as one of its inputs (a task and a file they can both see). */
+export async function attachFileAs(actor: Actor, taskId: string, fileId: string): Promise<void> {
+  if (!(await canSeeTask(actor.organizationId, taskId, actor.personId))) throw new OperationError("That task doesn't exist.");
+  await visibleFile(actor, { id: fileId });
+  try {
+    await attachToTask(actor.organizationId, taskId, fileId, "input");
+  } catch (error) {
+    throw new OperationError(error instanceof Error ? error.message : "Couldn't attach that file.");
+  }
+  await addMessage(taskId, { author: actor.name, personId: actor.personId, kind: "event", body: "Attached a file from the library." });
 }
 
 async function pageFor(actor: Actor, slug: string) {

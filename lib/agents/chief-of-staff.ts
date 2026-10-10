@@ -209,7 +209,7 @@ function appInstructions(context: Context): string {
   );
   return `The app: you can do from chat everything ${name} can do on Mach1's screens, as them and with their permissions (${
     context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
-  }). Tasks: create_task, update_task, reply_on_task, share_task. Team: save_person, team_access. Agents: create_agent, update_agent. Files and pages: share_file, share_page, manage_page. Integrations: connect_data_source, connect_login, update_integration. Settings: set_company_models, save_my_hours, update_personal_notes. When a tool refuses, say why in a line.
+  }). Tasks: create_task, update_task, reply_on_task, share_task. Team: save_person, team_access. Agents: create_agent, update_agent. Files and pages: send_file, attach_file, share_file, share_page, manage_page (files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message). Integrations: connect_data_source, connect_login, update_integration. Settings: set_company_models, save_my_hours, update_personal_notes. When a tool refuses, say why in a line.
 Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
 ${appMapLines()}
 
@@ -957,7 +957,7 @@ export function createChiefOfStaff(
     ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),
     ...githubTools(workspace),
     ...specialistTools(context, workspace, using, options.research !== false),
-    ...appTools(actorFor(context)),
+    ...appTools(actorFor(context), { whatsapp: context.channel === "whatsapp" ? context.person?.whatsapp : null }),
     ...(options.research === false ? {} : researchTools()),
     use_skill: skillTool(),
   };

@@ -7,7 +7,10 @@ import { findAgentByName, listAgents } from "@/lib/agents/store";
 import { appUrl } from "@/lib/app-url";
 import { listLibrary } from "@/lib/files";
 import { getIntegration } from "@/lib/integrations";
+import { sendWhatsAppFile } from "@/lib/channels/twilio";
+import { fileLinkToken } from "@/lib/file-links";
 import {
+  attachFileAs,
   deletePageAs,
   deleteIntegrationAs,
   invitePersonAs,
@@ -21,6 +24,7 @@ import {
   testIntegrationAs,
   updateAgentAs,
   updateIntegrationAs,
+  visibleFile,
   type Actor,
 } from "@/lib/operations";
 import { listPeople } from "@/lib/people";
@@ -56,7 +60,7 @@ async function attempt(work: () => Promise<string>): Promise<string> {
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-export function appTools(actor: Actor | null): ToolSet {
+export function appTools(actor: Actor | null, { whatsapp }: { whatsapp?: string | null } = {}): ToolSet {
   if (!actor) return {};
   const orgId = actor.organizationId;
   const by = { name: actor.name, personId: actor.personId };
@@ -212,6 +216,34 @@ export function appTools(actor: Actor | null): ToolSet {
           if (!found) throw new OperationError(`There's no file called ${file}.`);
           await setFileVisibilityAs(actor, found.id, withCompany ? "company" : "private");
           return withCompany ? `${found.name} is shared with the company.` : `${found.name} is private.`;
+        }),
+    }),
+
+    attach_file: tool({
+      description: "Put one of the company's files (from Files, or one they just sent you) on a task as an input, so its agent works from it.",
+      inputSchema: z.object({ number: z.number().int().positive(), file: z.string().describe("Its exact name in Files.") }),
+      execute: ({ number, file }) =>
+        attempt(async () => {
+          const task = await taskNumbered(number);
+          const found = await visibleFile(actor, { name: file });
+          await attachFileAs(actor, task.id, found.id);
+          return `Attached ${found.name} to #${task.number}.`;
+        }),
+    }),
+
+    send_file: tool({
+      description: whatsapp
+        ? "Send one of the company's files to the person you're talking to, here on WhatsApp (its latest version), with an optional caption. Use it when they ask for a file, a report or a model."
+        : "Get a download link to one of the company's files (its latest version) to give the person you're talking to.",
+      inputSchema: z.object({ file: z.string().describe("Its exact name in Files."), caption: z.string().optional() }),
+      execute: ({ file, caption }) =>
+        attempt(async () => {
+          const found = await visibleFile(actor, { name: file });
+          const latest = found.versions[0];
+          if (!latest) throw new OperationError(`${found.name} has no saved version yet.`);
+          if (!whatsapp) return `Download link: ${appUrl(`/files/${latest.id}`)}`;
+          await sendWhatsAppFile(`+${whatsapp}`, appUrl(`/api/files/${fileLinkToken(orgId, latest.id)}`), caption);
+          return `Sent ${found.name} on WhatsApp.`;
         }),
     }),
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createAgentUIStream, createIdGenerator, type UIMessage } from "ai";
+import { createAgentUIStream, createIdGenerator, type FileUIPart, type UIMessage } from "ai";
 
 import { createChiefOfStaff, workspaceOf, type Channel } from "@/lib/agents/chief-of-staff";
 import { forModel, restoreOriginals } from "@/lib/agents/chat-attachments";
@@ -134,7 +134,7 @@ export async function chiefOfStaffTurn(
   context: ChiefOfStaffContext,
   text: string,
   channel: Channel,
-  options: { model?: LanguageModel; research?: boolean } = {},
+  options: { model?: LanguageModel; research?: boolean; files?: FileUIPart[] } = {},
 ): Promise<string> {
   const { id } = await getOrCreateChat<UIMessage>(context.organization.id, context.user.id);
   // One reply at a time: a second message sent quickly waits for the first reply, then sees it.
@@ -153,12 +153,13 @@ async function answer(
   chat: Chat<UIMessage>,
   text: string,
   channel: Channel,
-  options: { model?: LanguageModel; research?: boolean },
+  options: { model?: LanguageModel; research?: boolean; files?: FileUIPart[] },
 ): Promise<string> {
   const question: UIMessage = {
     id: generateMessageId(),
     role: "user",
-    parts: [{ type: "text", text }],
+    // Files they sent (already in their library) go with the words, as in the chat panel.
+    parts: [{ type: "text", text }, ...(options.files ?? [])],
     metadata: { channel },
   };
   // The model sees the latest messages in full and a summary of the rest.
