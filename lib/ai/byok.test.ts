@@ -55,6 +55,8 @@ describe("bring your own key", () => {
     // The provider's own reason is shown, without the key.
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { message: "Your credit balance is too low (key sk-ant-api03-cedar-own-key-1234567890-WXYZ)" } }, { status: 400 })));
     await expect(saveAiKey(ORG, "anthropic", KEY, null)).rejects.toThrow("The provider said 400 when checking the key: Your credit balance is too low (key [the key])");
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { message: "This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header." } }, { status: 400 })));
+    await expect(saveAiKey(ORG, "anthropic", KEY, null)).rejects.toThrow("This key isn't tied to a workspace");
     await expect(saveAiKey(ORG, "openai", "short", null)).rejects.toThrow("doesn't look like");
     expect((await listAiKeys(ORG)).map((k) => k.provider)).toEqual(["anthropic"]);
 

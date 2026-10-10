@@ -53,6 +53,12 @@ async function checkKey(provider: string, apiKey: string): Promise<void> {
   }
   if (response.ok) return;
   const reason = providerMessage(await response.text().catch(() => ""), apiKey);
+  // Anthropic's organisation-wide keys need a workspace named on every request, which AI Gateway can't pass.
+  if (/not scoped to a workspace/i.test(reason)) {
+    throw new AiKeyError(
+      "This key isn't tied to a workspace. In the Anthropic console, open Settings → Workspaces, pick a workspace (Default is fine), create the key there and paste that one.",
+    );
+  }
   if (response.status === 401 || response.status === 403) throw new AiKeyError(`The provider didn't accept that key${reason ? `: ${reason}` : "."}`);
   throw new AiKeyError(`The provider said ${response.status} when checking the key${reason ? `: ${reason}` : "."}`);
 }
@@ -66,7 +72,7 @@ function providerMessage(body: string, apiKey: string): string {
   } catch {
     message = body;
   }
-  return message.split(apiKey).join("[the key]").replace(/\s+/g, " ").trim().slice(0, 200);
+  return message.split(apiKey).join("[the key]").replace(/\s+/g, " ").trim().slice(0, 400);
 }
 
 type Attempt = { credentialType?: string; success?: boolean; error?: string };
