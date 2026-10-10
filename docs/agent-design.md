@@ -313,7 +313,8 @@ One call per review, with the digest as the state and these questions:
 
 | Question | Type |
 |---|---|
-| What, if anything, should be learned? Nothing / update a system skill / update a workflow skill / a new skill | Choice |
+| What, if anything, should be learned? Nothing / update a system skill / update a workflow skill / a new skill / update the company profile | Choice |
+| The run surfaced a fact about the company (an entity, a priority, who handles what) | Noul |
 | A person corrected how the work was done | Noul (yes or no) |
 | The run departed from the skill it was given | Noul |
 | A script was written or rewritten and worked | Noul |
@@ -335,7 +336,14 @@ A new `learner` role in the lineup (`lib/ai/lineup.ts`), set to the planner mode
 
 **It reads** the full run: the thread, the skills and scripts that were used, what changed in the scripts, test results, `NOTES.md`, and where the run left the skill. It also sees the gate's answers, and the proposals the skill's owner has declined before.
 
-**It decides** one or more of: nothing; update a system skill; update a workflow skill; save or fix a script; or write a new skill. Every line it adds or changes has to cite something that happened in the run: a message, a step, or a script result.
+**It decides** one or more of: nothing; update a system skill; update a workflow skill; save or fix a script; write a new skill; or update the company profile. Every line it adds or changes has to cite something that happened in the run: a message, a step, or a script result.
+
+**Skill or profile.**
+- A fact about the company goes in the profile: a new entity, a changed priority, who looks after what. Every agent reads it on every run.
+- How a piece of work is done goes in a skill.
+- When both are true ("Rita now handles the Daher Family Trust"), the fact goes in the profile, and the skill points to the profile instead of repeating it.
+
+**Not personal notes.** These stay between a person and their assistant. A review of shared work doesn't write into anyone's private notes.
 
 **It works** in the job's sandbox, which is resumed if needed, so it can run a script's test before saving the script.
 
@@ -355,6 +363,7 @@ Code then classifies the change by which parts of the skill it touches. The lear
 | A workflow skill, refinement only: clearer steps, an example, a fixed script that passes its test | Automatically. It's listed in the owner's weekly digest from their Chief of Staff, and "undo" rolls it back |
 | A workflow skill, policy: who is asked or told, what is written outside Mach1, approvals, thresholds, connections, pre-approvals, which means anything in the front matter or the People, Rules or Approvals sections | The skill's owner, asked by their Chief of Staff |
 | A new workflow skill | Its owner, once. Later changes follow the rows above |
+| The company profile | A person, always: today's profile suggestion card, from the person the job was for. Every agent reads the profile on every run, so it never changes silently |
 
 **Asking the owner.** It works like any wake-up: in their working hours, on WhatsApp when the window is open, and also as a suggestion card in Needs you. The card shows the change and the line from the run behind it. For example: "Last week Rita said the Daher Family Trust is hers too. Add that to Masttro tagging?" A yes applies it. A no is recorded, so the learner doesn't propose it again. For a company-wide skill, the owner or an admin decides.
 
@@ -567,7 +576,7 @@ The six scenarios above, plus one for learning. Each is run against a test compa
 
 ## Open questions
 
-- **A company memory** that workers can write to, like Claude Code Projects' `MEMORY.md`, for facts that aren't procedures ("the release moved to May"). For now the profile and skills cover it.
+- **A company memory** that workers can write to, like Claude Code Projects' `MEMORY.md`, for facts that aren't procedures ("the release moved to May"). For now the learner proposes them for the profile, and skills cover the rest.
 - **People outside the company** (scenario 6 with an outside accountant). This needs outbound email, or an approved WhatsApp template, neither of which Mach1 sends today.
 - **TypeSafe's data terms.** Digests hold business data, such as Masttro transactions. Check how TypeSafe retains and uses what it's sent before turning the gate on. Until then, or for a company that says no, the `background` model fallback answers instead.
 - **Jev is new** (September 2026). Pin the version, watch the gate's eval set, and keep the fallback working. How the AI SDK calls typed questions through AI Gateway still needs checking.
