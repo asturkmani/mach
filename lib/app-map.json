@@ -39,7 +39,7 @@
     "path": "/research",
     "title": "Research",
     "where": "Left menu → Research",
-    "what": "The sources you trust most (websites, X accounts, subreddits, Reddit users), which the Researcher looks at first: yours and the company's, with adding, sharing and removing them; and the Researcher's recent work."
+    "what": "The sources you trust most (websites, X accounts, subreddits, Reddit users), which research looks at first: yours and the company's, with adding, sharing and removing them; and recent research."
   },
   {
     "path": "/settings",
@@ -69,7 +69,7 @@
     "path": "/settings/integrations",
     "title": "Settings → Integrations",
     "where": "Company menu → Settings → Integrations",
-    "what": "The company's data sources and website logins: credentials are entered here (never in a chat), plus which agents and people may use each, and testing them."
+    "what": "The company's data sources and website logins: credentials are entered here (never in a chat), plus whose work may use each (every agent can), and testing them."
   },
   {
     "path": "/tasks/{number}",

@@ -2,7 +2,8 @@ import "server-only";
 
 import { loginCodeFrom, sealLoginCode } from "@/lib/agents/browser-steps";
 import { agentToWake, dispatchRun, dispatchScheduled, startFollowers, startIfReady } from "@/lib/agents/dispatch";
-import { createWorker, findAgentByName, listAgents, updateAgent, type Agent } from "@/lib/agents/store";
+import { knownSkills } from "@/lib/agents/skills";
+import { findAgentByName, listAgents, updateAgent, workerAgent, type Agent } from "@/lib/agents/store";
 import { attachToTask, listTaskFiles, MAX_FILE_BYTES, saveVersion } from "@/lib/files";
 import { rememberTimezone } from "@/lib/orgs";
 import { recordMentions } from "@/lib/task-mentions";
@@ -93,8 +94,12 @@ export async function createTaskWithTeam(
     status?: TaskStatus;
     personIds?: string[];
     agentIds?: string[];
-    /** Adds a new worker agent with this role ("" for a general worker). */
+    /** Puts the Worker on it, for this kind of work ("" for any). */
     workerRole?: string;
+    /** Skills its agent reads before it starts (lib/agents/skills.ts). Unknown names are left out. */
+    skills?: string[];
+    /** The model it runs on, if not the default. */
+    model?: string;
     /** Library files the job starts from. */
     inputFileIds?: string[];
     /** Makes it a recurring job. Its first run starts now. */
@@ -115,10 +120,11 @@ export async function createTaskWithTeam(
   const waiting = before.some((t) => t!.status !== "review" && t!.status !== "done");
   const own = await ownIds(organizationId, input);
   const agentIds = [...own.agentIds];
-  if (input.workerRole !== undefined) agentIds.push((await createWorker(organizationId, input.workerRole)).id);
+  if (input.workerRole !== undefined) agentIds.push((await workerAgent(organizationId)).id);
+  const role = input.workerRole?.trim();
   const task = await createTask(organizationId, {
     title: input.title,
-    description: input.description,
+    description: [role ? `Kind of work: ${role}` : "", input.description?.trim() ?? ""].filter(Boolean).join("\n\n"),
     priority: input.priority,
     status: waiting ? "backlog" : (input.status ?? "ready"),
     createdBy: { personId: input.by.personId },
@@ -127,6 +133,8 @@ export async function createTaskWithTeam(
     replyByWhatsApp: input.replyByWhatsApp,
     visibility: input.visibility ?? (input.by.personId ? "private" : "company"),
     waitsFor,
+    skills: knownSkills(input.skills),
+    model: input.model,
   });
   for (const fileId of input.inputFileIds ?? []) await attachToTask(organizationId, task.id, fileId, "input");
   await addMessage(task.id, {
@@ -322,7 +330,7 @@ export async function addToTask(
     throw new WorkError("That person or agent isn't in this company.");
   }
   let agentId = member.agentId;
-  if (member.workerRole !== undefined) agentId = (await createWorker(organizationId, member.workerRole)).id;
+  if (member.workerRole !== undefined) agentId = (await workerAgent(organizationId)).id;
   if (!member.personId && !agentId) throw new WorkError("Pick someone to add.");
   await addMember(task.id, member.personId ? { personId: member.personId } : { agentId });
   const updated = (await getTask(organizationId, task.id))!;

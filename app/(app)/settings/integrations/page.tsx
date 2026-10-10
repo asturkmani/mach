@@ -1,10 +1,9 @@
 import { Integrations, type IntegrationView } from "@/components/integrations";
-import { listAgents } from "@/lib/agents/store";
 import { listIntegrations, recentCalls, type ApiConfig, type LoginConfig } from "@/lib/integrations";
 import { listPeople } from "@/lib/people";
 import { requireAppContext } from "@/lib/session";
 
-// @map Settings → Integrations | Company menu → Settings → Integrations | The company's data sources and website logins: credentials are entered here (never in a chat), plus which agents and people may use each, and testing them.
+// @map Settings → Integrations | Company menu → Settings → Integrations | The company's data sources and website logins: credentials are entered here (never in a chat), plus whose work may use each (every agent can), and testing them.
 /** How requests are signed, by name only (header and query names, the token step's host): never values. */
 function signing(config: ApiConfig): string {
   const parts = [
@@ -24,7 +23,7 @@ function signing(config: ApiConfig): string {
 // Settings → Integrations: data sources and website logins agents can use.
 export default async function IntegrationsSettingsPage() {
   const { organization, isAdmin } = await requireAppContext();
-  const [integrations, agents, people] = await Promise.all([listIntegrations(organization.id), listAgents(organization.id), listPeople(organization.id)]);
+  const [integrations, people] = await Promise.all([listIntegrations(organization.id), listPeople(organization.id)]);
   const views: IntegrationView[] = await Promise.all(
     integrations.map(async (i) => ({
       id: i.id,
@@ -37,7 +36,6 @@ export default async function IntegrationsSettingsPage() {
       signing: i.kind === "api" ? signing(i.config as ApiConfig) : "",
       fields: i.config.fields,
       access: i.access,
-      agentIds: i.agentIds,
       personIds: i.personIds,
       guide: i.guide,
       status: i.status,
@@ -65,7 +63,6 @@ export default async function IntegrationsSettingsPage() {
       </p>
       <Integrations
         integrations={views}
-        agents={agents.filter((a) => a.status === "active").map((a) => ({ id: a.id, name: a.name }))}
         people={people.map((p) => ({ id: p.id, name: p.name }))}
         canChoosePeople={isAdmin}
       />

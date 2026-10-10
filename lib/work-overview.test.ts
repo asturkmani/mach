@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { chiefOfStaffInstructions, createChiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { setScheduler } from "@/lib/agents/dispatch";
-import { createAgent, createWorker, listAgents } from "@/lib/agents/store";
+import { createAgent, listAgents } from "@/lib/agents/store";
 import { getOrganization, createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
 import { saveSchedule } from "@/lib/schedules";
@@ -19,7 +19,7 @@ async function setUp() {
   const analyst = await createAgent(ORG, { name: "Analyst", role: "Financial analysis" });
   const review = await createTask(ORG, { title: "Review Micron earnings", people: [ahmed.id], agents: [analyst.id], status: "ready" });
   const tagging = await createTask(ORG, { title: "Tag cash transactions", people: [ahmed.id], status: "waiting", summary: "Which account is the Apple dividend in?" });
-  const refresher = await createWorker(ORG, "Family wealth refresh");
+  const refresher = await createAgent(ORG, { kind: "worker", name: "Family wealth refresh worker", role: "Family wealth refresh" });
   const refresh = await createTask(ORG, { title: "Refresh page: Family wealth", agents: [refresher.id], status: "done" });
   await saveSchedule(refresh.id, { cron: "0 7 * * 1-5", timezone: "Europe/London", mode: "script", quiet: true });
   return { ahmed, analyst, review, tagging, refresher, refresh };

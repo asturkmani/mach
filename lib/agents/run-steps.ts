@@ -1,4 +1,5 @@
-import { agentModel, getAgent, RESEARCH_AGENT } from "@/lib/agents/store";
+import { knownSkills, toolsOf } from "@/lib/agents/skills";
+import { agentModel, builtinSkills, getAgent } from "@/lib/agents/store";
 import { driveStats, listDrive } from "@/lib/drive";
 import { allowedFor, listIntegrations } from "@/lib/integrations";
 import { contentTypeFor, isText, listTaskFiles, readVersion, saveVersion } from "@/lib/files";
@@ -67,8 +68,10 @@ export type BegunRun =
       images: BriefImage[];
       /** The people's messages this run answers: they get its reaction (👀, then how it ended). */
       answering: string[];
-      /** The Researcher: it sends questions to sub-researchers (investigate). */
-      researcher: boolean;
+      /** The skills pinned to the task (or implied by an older built-in agent), already in its instructions. */
+      skills: string[];
+      /** The tools those skills switch on (e.g. exa_search, investigate). */
+      skillTools: string[];
       /** The research sources saved as high signal for whoever it works for, and the company's, for its prompts. */
       highSignal: string;
     };
@@ -103,7 +106,8 @@ export async function beginRun(
   }
 
   const context: RunContext = { organizationId, taskId: task.id, agentId: agent.id, agentName: agent.name };
-  const model = agentModel(agent, organization.models);
+  const skills = knownSkills([...task.skills, ...builtinSkills(agent)]);
+  const model = task.model || agentModel(agent, organization.models, skills);
   if (!(await claimRun(organizationId, task.id, agent.id))) return { ok: false, outcome: { type: "busy" } };
 
   const [profile, messages, files, schedule, drive, integrations] = await Promise.all([
@@ -112,7 +116,7 @@ export async function beginRun(
     briefFiles(organizationId, task.id),
     getSchedule(task.id),
     briefDrive(organizationId),
-    listIntegrations(organizationId, { agentId: agent.id }),
+    listIntegrations(organizationId),
   ]);
   const others = agentsOn(task).filter((m) => m.id !== agent.id);
   const images = await newImages(organizationId, messages, agent.id);
@@ -137,15 +141,15 @@ export async function beginRun(
   ]);
   if (forPerson) context.personId = forPerson.id;
   // Only the integrations the person it works for may use (and this agent).
-  const usable = integrations.filter((i) => allowedFor(i, agent.id, forPerson?.id));
+  const usable = integrations.filter((i) => allowedFor(i, forPerson?.id));
   const workingFor = forPerson && {
     name: forPerson.name,
     about: personAbout(forPerson),
     github: github?.status === "connected" ? { login: github.login } : null,
     connectUrl: appUrl("/connect/github"),
   };
-  // Mach1's own agents for code and integrations don't research; every other agent may.
-  const highSignal = agent.builtin && agent.builtin !== RESEARCH_AGENT ? "" : sourcesBrief(sources, forPerson?.name);
+  // Work on code or on connecting a system doesn't research; every other piece of work may.
+  const highSignal = skills.some((s) => s === "coding-in-github" || s === "connecting-integrations") ? "" : sourcesBrief(sources, forPerson?.name);
   return {
     ok: true,
     context,
@@ -154,6 +158,7 @@ export async function beginRun(
       organization,
       agent,
       profile,
+      skills,
       brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations: usable, workingFor, highSignal }),
     }),
     prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
@@ -162,7 +167,8 @@ export async function beginRun(
     logins: usable.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
     images,
     answering,
-    researcher: agent.builtin === RESEARCH_AGENT,
+    skills,
+    skillTools: toolsOf(skills),
     highSignal,
   };
 }

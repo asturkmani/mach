@@ -3,15 +3,15 @@
 Agents work with the company's other systems in two ways:
 
 - **Data sources** (kind `api`): an HTTP API, such as a portfolio system's read-only API. Agents call it with the `call_api` tool, or straight from code in their job's sandbox.
-- **Website logins** (kind `login`): an account on a website with no usable API, used by chosen agents through a headless Chromium in the job's sandbox. Example: an agent that enters data in Masttro's web app.
+- **Website logins** (kind `login`): an account on a website with no usable API, used through a headless Chromium in the job's sandbox. Example: entering data in Masttro's web app.
 
-Both are company-wide, and each can be limited to chosen people (admins choose, in Settings → Integrations → Whose work): then only their assistant, and the work it does for them, can use it. An agent on a task uses it only if both the agent and the person the run is for are allowed. A person's own accounts (their GitHub) are not integrations: each person connects theirs, and it's used only for their own work; see [github.md](github.md). Each can be limited to chosen agents, so the company can connect Masttro's API as a data source every analyst reads from, and give Masttro's web login only to the one data-entry agent.
+Both are company-wide: every agent can use every integration. Each can be limited to chosen people (admins choose, in Settings → Integrations → Whose work): then only their assistant, and the work it does for them, can use it, so a run uses it only if the person it's for is allowed. A person's own accounts (their GitHub) are not integrations: each person connects theirs, and it's used only for their own work; see [github.md](github.md).
 
-Everything is in **Settings → Integrations**: status, who can use it, access, credentials, the guide agents keep, and recent `call_api` activity.
+Everything is in **Settings → Integrations**: status, whose work may use it, access, credentials, the guide agents keep, and recent `call_api` activity.
 
 ## Connecting one
 
-Tell the Chief of Staff, e.g. "Connect Masttro as a data source, the API docs are at …" or "Set up a login for app.masttro.com for the data entry agent". It sets the integration up itself, in the chat: it never creates an agent or a task for this.
+Tell the Chief of Staff, e.g. "Connect Masttro as a data source, the API docs are at …" or "Set up a login for app.masttro.com". It sets the integration up itself, in the chat: it never creates an agent or a task for this.
 
 It reads the docs first. When `fetch_page` can't read them (a JavaScript page, or docs behind a sign-in), it uses the browser in its own sandbox:
 

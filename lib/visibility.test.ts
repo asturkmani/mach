@@ -120,8 +120,8 @@ describe("private and company work", () => {
     expect(await listIntegrations(ORG, { personId: omar.id })).toEqual([]);
     await expect(callIntegration(ORG, "masttro", { path: "/positions" }, { personId: omar.id })).rejects.toThrow(/don't have access/);
     // A sandbox working for Omar isn't connected to it; one working for Sara is.
-    expect((await sandboxPolicy(ORG, null, {}, omar.id)).sources).toEqual([]);
-    expect((await sandboxPolicy(ORG, null, {}, sara.id)).sources).toEqual(["masttro"]);
+    expect((await sandboxPolicy(ORG, {}, omar.id)).sources).toEqual([]);
+    expect((await sandboxPolicy(ORG, {}, sara.id)).sources).toEqual(["masttro"]);
   });
 
   it("hands what someone shared to an admin when they leave, keeping their private things private", async () => {

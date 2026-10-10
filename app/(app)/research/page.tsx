@@ -4,21 +4,21 @@ import { PageBody, Section } from "@/components/kit";
 import { PageHeader } from "@/components/page-header";
 import { AddSourceForm, AskResearcher, SourceTable } from "@/components/research-sources";
 import { When } from "@/components/ui";
-import { findBuiltinAgent, RESEARCH_AGENT } from "@/lib/agents/store";
+import { RESEARCH_AGENT } from "@/lib/agents/store";
 import { listSources } from "@/lib/research/store";
 import { sourceLabel, sourceUrl } from "@/lib/research/sources";
 import { requireAppContext } from "@/lib/session";
 import { STATUS_WORDS } from "@/lib/task-words";
-import { listAgentTasks } from "@/lib/tasks";
+import { listSkillTasks } from "@/lib/tasks";
 
-// @map Research | Left menu → Research | The sources you trust most (websites, X accounts, subreddits, Reddit users), which the Researcher looks at first: yours and the company's, with adding, sharing and removing them; and the Researcher's recent work.
+// @map Research | Left menu → Research | The sources you trust most (websites, X accounts, subreddits, Reddit users), which research looks at first: yours and the company's, with adding, sharing and removing them; and recent research.
 export default async function ResearchPage() {
   const { organization, person, isAdmin } = await requireAppContext();
-  const [sources, researcher] = await Promise.all([
+  const [sources, research] = await Promise.all([
     listSources(organization.id, { viewer: person.id }),
-    findBuiltinAgent(organization.id, RESEARCH_AGENT),
+    listSkillTasks(organization.id, "research", { viewer: person.id, builtin: RESEARCH_AGENT }),
   ]);
-  const tasks = researcher ? (await listAgentTasks(organization.id, researcher.id, { viewer: person.id })).slice(0, 12) : [];
+  const tasks = research.slice(0, 12);
 
   return (
     <>
@@ -32,7 +32,7 @@ export default async function ResearchPage() {
           addLabel="Add source"
           description={
             <>
-              Where the Researcher looks first, and what it weighs highest. Yours are just yours unless you share them; the company&apos;s count in
+              Where research looks first, and what it weighs highest. Yours are just yours unless you share them; the company&apos;s count in
               everyone&apos;s research. You can also tell your Chief of Staff, e.g. &ldquo;save @DeItaone as high signal for macro news&rdquo;.
             </>
           }
@@ -59,11 +59,11 @@ export default async function ResearchPage() {
         </Section>
 
         <section>
-          <h2 className="label mb-3">The Researcher&apos;s recent work</h2>
+          <h2 className="label mb-3">Recent research</h2>
           {tasks.length === 0 ? (
             <p className="text-sm text-faint">
               Nothing yet. Ask your Chief of Staff for research (&ldquo;a brief on Micron&apos;s HBM outlook&rdquo;, &ldquo;what are people saying about the
-              Fed?&rdquo;) and the Researcher takes it on.
+              Fed?&rdquo;) and it&apos;s done for you.
             </p>
           ) : (
             <ul className="space-y-2">

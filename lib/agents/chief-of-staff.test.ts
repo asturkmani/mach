@@ -132,7 +132,7 @@ describe("Chief of Staff", () => {
     expect(modelOf(createChiefOfStaff({ organization: { ...organization, models: { chiefOfStaff: "openai/gpt-6.1-sol" } }, user, profile: "" }, { research: false }))).toBe("openai/gpt-6.1-sol");
   });
 
-  it("turns a request into a task with a worker agent, which runs and reports back", async () => {
+  it("turns a request into a task for the Worker, which runs and reports back", async () => {
     const organization = { ...(await setUpOrg()), onboardingCompletedAt: new Date() };
     const person = (await listPeople(ORG))[0];
     const runs: Promise<void>[] = [];
@@ -166,12 +166,13 @@ describe("Chief of Staff", () => {
     const task = (await getTaskByNumber(ORG, 1))!;
     expect(task.members.map((m) => [m.type, m.name])).toEqual([
       ["person", "Ahmed"],
-      ["agent", "Financial analysis worker"],
+      ["agent", "Worker"],
     ]);
+    expect(task.description).toMatch(/^Kind of work: Financial analysis\n\n/);
     expect(task).toMatchObject({ status: "review", summary: "Model ready: revenue grows to $100M. Share it?" });
     expect((await listTaskFiles(ORG, task.id)).map((f) => f.name)).toEqual(["model.csv"]);
     expect((await listInbox(ORG, person.id)).map((t) => t.number)).toEqual([1]);
-    expect(JSON.stringify(model.doGenerateCalls.at(-1)!.prompt)).toContain("Created task #1 with Ahmed, Financial analysis worker.");
+    expect(JSON.stringify(model.doGenerateCalls.at(-1)!.prompt)).toContain("Created task #1 with Ahmed, Worker.");
   });
 
   it("only offers profile edits that fit the moment, and suggests changes after onboarding", async () => {

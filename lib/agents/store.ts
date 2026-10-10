@@ -1,12 +1,16 @@
 import "server-only";
 
+import { modelOf } from "@/lib/agents/skills";
 import { roleModel } from "@/lib/ai/lineup";
 import { getDb } from "@/lib/db";
 import type { CompanyModels } from "@/lib/orgs";
 
-// The organization's agents, apart from the Chief of Staff. Defined agents have
-// a standing profile and get similar work again and again; worker agents are
-// made for a single task and archived when it closes.
+// The organization's agents, apart from the Chief of Staff. The Worker is
+// Mach1's one agent for any piece of work: what makes a task research or
+// coding is the skills it pins (docs/agent-design.md). Defined agents are the
+// company's own, with a standing profile. Worker agents made for one task, and
+// the built-in Developer and Researcher, are how it worked before: their open
+// tasks carry on.
 
 export type AgentKind = "defined" | "worker";
 export type AgentStatus = "active" | "paused" | "archived";
@@ -101,10 +105,12 @@ function cleanModel(model: string | undefined): string | null {
 
 /**
  * The model an agent runs on: its own, else the company's default for
- * agents, else Mach1's for its role (the Developer codes; lib/ai/lineup.ts).
+ * agents, else Mach1's for the work (the role of the first skill that names
+ * one, e.g. coding-in-github runs on the coder; lib/ai/lineup.ts).
  */
-export function agentModel(agent: Pick<Agent, "model" | "builtin">, company: CompanyModels = {}): string {
-  return agent.model || company.agents || roleModel(agent.builtin === CODING_AGENT ? "coder" : "worker");
+export function agentModel(agent: Pick<Agent, "model" | "builtin">, company: CompanyModels = {}, skills: readonly string[] = []): string {
+  const role = modelOf([...skills, ...builtinSkills(agent)]);
+  return agent.model || company.agents || roleModel(role ?? "worker");
 }
 
 export async function createAgent(organizationId: string, input: AgentInput & { kind?: AgentKind }): Promise<Agent> {
@@ -127,9 +133,38 @@ export async function createAgent(organizationId: string, input: AgentInput & { 
   return toAgent(row);
 }
 
+export const WORKER_AGENT = "worker";
 export const INTEGRATIONS_AGENT = "integrations";
 export const CODING_AGENT = "coding";
 export const RESEARCH_AGENT = "research";
+
+/**
+ * The skills Mach1's older built-in agents always read: the Developer was the
+ * coding skill, the Researcher the research skill. Their open tasks carry on
+ * as the same work.
+ */
+export function builtinSkills(agent: Pick<Agent, "builtin">): string[] {
+  switch (agent.builtin) {
+    case CODING_AGENT:
+      return ["coding-in-github"];
+    case RESEARCH_AGENT:
+      return ["research"];
+    case INTEGRATIONS_AGENT:
+      return ["connecting-integrations"];
+    default:
+      return [];
+  }
+}
+
+/** Mach1's Worker: the agent for any piece of work, made the first time it's needed. */
+export function workerAgent(organizationId: string): Promise<Agent> {
+  return builtinAgent(organizationId, WORKER_AGENT, {
+    name: "Worker",
+    role: "Does the work, with the skills each task needs",
+    description:
+      "Mach1's agent for any piece of work: research and briefs, analysis and models, code changes in GitHub, data pulls and pipelines, documents and decks, and work on websites. Each task says which skills it needs, and it reads them before it starts.",
+  });
+}
 
 /** One of the agents Mach1 runs itself, if the company has it yet (not archived). */
 export async function findBuiltinAgent(organizationId: string, builtin: string): Promise<Agent | null> {
@@ -156,65 +191,6 @@ async function builtinAgent(organizationId: string, builtin: string, profile: Ag
   const agent = await createAgent(organizationId, { ...profile, name });
   await getDb().query("update agents set builtin = $2 where id = $1", [agent.id, builtin]);
   return { ...agent, builtin };
-}
-
-/** The company's Integrations agent: it connects the company's systems, each on its own task. */
-export function integrationsAgent(organizationId: string): Promise<Agent> {
-  return builtinAgent(organizationId, INTEGRATIONS_AGENT, {
-    name: "Integrations",
-    role: "Connecting the company's systems",
-    description:
-      "Connects the company's other systems (banking, portfolio, accounting and other platforms) so every agent can use them: works out what's possible, does the research, sets up the connection and doesn't stop until it works.",
-  });
-}
-
-/**
- * The company's Developer agent, for code changes people ask for: it works in
- * their GitHub repositories, as the person who asked (their own GitHub, never
- * anyone else's). Its playbook is the coding-in-github skill.
- */
-export function codingAgent(organizationId: string): Promise<Agent> {
-  return builtinAgent(organizationId, CODING_AGENT, {
-    name: "Developer",
-    role: "Changes code in GitHub repositories",
-    description:
-      "Makes code changes people ask for in their GitHub repositories, as the person who asked: clones the repository, works on a branch, runs its checks, pushes and opens a pull request, then reports what changed with the link. Merges only when told to.",
-    instructions: "Load the coding-in-github skill before you start, and follow it.",
-  });
-}
-
-/**
- * The company's Researcher: anything the company needs to know (companies and
- * markets, people and organisations, products and vendors, topics and events),
- * from the web, filings, market data, X and Reddit, starting with the sources
- * each person saved as high signal. Its playbook is the research skill.
- */
-export function researchAgent(organizationId: string): Promise<Agent> {
-  return builtinAgent(organizationId, RESEARCH_AGENT, {
-    name: "Researcher",
-    role: "Research and insight",
-    description:
-      "Looks into anything the company needs to know (companies and markets, people and organisations, products and vendors, topics and events) for the decision or work it's for: plans the questions, investigates them in parallel across the web, filings, market data, X and Reddit (starting with the sources people saved as high signal), and delivers a sourced brief that leads with the insight and says what would change it.",
-    instructions: "Load the research skill before you start, and follow it.",
-  });
-}
-
-/** A throwaway agent for one task, named after its role ("Research worker", then "Research worker 2"). */
-export async function createWorker(organizationId: string, role = ""): Promise<Agent> {
-  const base = role.trim() ? `${role.trim().replace(/\s+worker$/i, "")} worker` : "Worker";
-  const [{ taken }] = await getDb().query<{ taken: string[] }>(
-    `select coalesce(array_agg(lower(name)), '{}') as taken from agents
-     where organization_id = $1 and status <> 'archived' and lower(name) like lower($2) || '%'`,
-    [organizationId, base],
-  );
-  let name = base;
-  for (let n = 2; taken.includes(name.toLowerCase()); n++) name = `${base} ${n}`;
-  return createAgent(organizationId, {
-    kind: "worker",
-    name,
-    role: role.trim() || "General worker",
-    description: "A general worker made for one task. It does that task and nothing else.",
-  });
 }
 
 export async function updateAgent(

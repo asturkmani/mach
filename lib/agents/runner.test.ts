@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { agentToWake, dispatchRun, setScheduler } from "@/lib/agents/dispatch";
 import { MAX_AGENT_TURNS, normalizeOptions, runAgentChain, runAgentOnTask, taskBrief } from "@/lib/agents/runner";
-import { createAgent, createWorker } from "@/lib/agents/store";
+import { createAgent } from "@/lib/agents/store";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
 import { listTaskFiles } from "@/lib/files";
@@ -95,7 +95,7 @@ describe("agent runs", () => {
 
   it("shows the agent everything on the task, including other agents' work", async () => {
     const { ahmed, analyst, task } = await setUp();
-    const researcher = await createWorker(ORG, "Research");
+    const researcher = await createAgent(ORG, { kind: "worker", name: "Research worker", role: "Research" });
     await addMessage(task.id, { author: "Ahmed", personId: ahmed.id, body: "Focus on HBM." });
     await addMessage(task.id, { author: researcher.name, agentId: researcher.id, kind: "result", body: "HBM is 20% of revenue." });
 
@@ -111,7 +111,7 @@ describe("agent runs", () => {
 
   it("hands off to another agent on the task, which runs next", async () => {
     const { analyst, task } = await setUp();
-    const writer = await createWorker(ORG, "Writing");
+    const writer = await createAgent(ORG, { kind: "worker", name: "Writing worker", role: "Writing" });
     const { addMember } = await import("@/lib/tasks");
     await addMember(task.id, { agentId: writer.id });
 
@@ -240,7 +240,7 @@ describe("agent runs", () => {
 
   it("picks who to wake after a person replies", async () => {
     const { analyst, task } = await setUp();
-    const writer = await createWorker(ORG, "Writing");
+    const writer = await createAgent(ORG, { kind: "worker", name: "Writing worker", role: "Writing" });
     const { addMember } = await import("@/lib/tasks");
     await addMember(task.id, { agentId: writer.id });
     await addMessage(task.id, { author: writer.name, agentId: writer.id, kind: "ask", body: "Tone?" });

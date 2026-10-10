@@ -41,7 +41,7 @@ company brought an Anthropic key, else OpenAI on Mach1's account:
 | Role | Claude (Anthropic key) | OpenAI |
 | --- | --- | --- |
 | Chief of Staff (`chat`) | Haiku 5.5, no thinking | GPT-6 Luna Fast, low reasoning |
-| Agents, Developer, browser (`worker`, `coder`, `browser`) | Sonnet 5.5, medium thinking | GPT-6.1 Sol, medium (browser: GPT-6 Astra) |
+| Agents, skills that need code (`model: coder`), browser (`worker`, `coder`, `browser`) | Sonnet 5.5, medium thinking | GPT-6.1 Sol, medium (browser: GPT-6 Astra) |
 | Planning big jobs (`planner`) | Opus 5.5, high | GPT-6 Astra, high |
 | Summaries, page ideas (`background`) | Haiku 5.5 | GPT-6 Luna |
 

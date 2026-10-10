@@ -53,7 +53,6 @@ describe("website logins", () => {
     await createOrganization({ id: ORG, name: "Cedar Legacy" });
     const ahmed = await linkMember(ORG, { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" });
     const clerk = await createAgent(ORG, { name: "Masttro data entry", role: "Data entry" });
-    const analyst = await createAgent(ORG, { name: "Analyst" });
     const login = await saveIntegration(ORG, {
       kind: "login",
       name: "Masttro (web)",
@@ -68,11 +67,10 @@ describe("website logins", () => {
         ],
       },
       access: "write",
-      agentIds: [clerk.id],
     });
     await saveCredentials(ORG, login.id, { username: "ahmed@cedar.example", password: PASSWORD });
-    // Only the chosen agent sees it.
-    expect((await listIntegrations(ORG, { agentId: analyst.id })).map((i) => i.slug)).toEqual([]);
+    // Every agent may use it.
+    expect((await listIntegrations(ORG)).map((i) => i.slug)).toEqual(["masttro-web"]);
 
     const task = await createTask(ORG, { title: "Enter Q3 valuations in Masttro", people: [ahmed.id], agents: [clerk.id] });
     const { sandboxes, seen } = masttroSandboxes();

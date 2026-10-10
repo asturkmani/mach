@@ -4,7 +4,8 @@ import { stepCountIs, ToolLoopAgent, type LanguageModel } from "ai";
 
 import type { AgentContext } from "@/lib/agents/prompts";
 import { companyModel } from "@/lib/ai/company-model";
-import { agentModel, CODING_AGENT, INTEGRATIONS_AGENT, RESEARCH_AGENT, type Agent } from "@/lib/agents/store";
+import { knownSkills, pinnedSkills, toolsOf } from "@/lib/agents/skills";
+import { agentModel, builtinSkills, type Agent } from "@/lib/agents/store";
 import { integrationTools, researchTools, sandboxTools, skillTool, type SandboxUser } from "@/lib/agents/toolkit";
 import { listIntegrations } from "@/lib/integrations";
 import type { CompanyModels } from "@/lib/orgs";
@@ -42,15 +43,18 @@ export async function askSpecialist(
     about?: string;
     profile: string;
     research?: boolean;
+    /** Skills for this question (e.g. research), read before it starts. */
+    skills?: string[];
   },
   { budgetMs = BUDGET_MS }: { budgetMs?: number } = {},
 ): Promise<SpecialistAnswer> {
-  const model = testModel ?? agentModel(agent, company);
+  const skills = knownSkills([...(input.skills ?? []), ...builtinSkills(agent)]);
+  const model = testModel ?? agentModel(agent, company, skills);
   if (!model) return { needsTask: `${agent.name} has no model set.` };
   const context: AgentContext = { ...workspace, agentId: agent.id, agentName: agent.name };
   const [integrations, sources] = await Promise.all([
-    listIntegrations(workspace.organizationId, { agentId: agent.id, personId: workspace.personId }),
-    agent.builtin === CODING_AGENT || agent.builtin === INTEGRATIONS_AGENT ? [] : listSources(workspace.organizationId, { viewer: workspace.personId }),
+    listIntegrations(workspace.organizationId, { personId: workspace.personId }),
+    skills.some((s) => s === "coding-in-github" || s === "connecting-integrations") ? [] : listSources(workspace.organizationId, { viewer: workspace.personId }),
   ]);
   const allowed = {
     sources: integrations.filter((i) => i.kind === "api").map((i) => i.slug),
@@ -70,10 +74,12 @@ Today's date: ${new Date().toISOString().slice(0, 10)}.
 
 <company_profile>
 ${input.profile}
-</company_profile>${sources.length ? `\n\n${sourcesBrief(sources, input.askedBy)}` : ""}`,
+</company_profile>${sources.length ? `\n\n${sourcesBrief(sources, input.askedBy)}` : ""}${
+      skills.length ? `\n\n<skills>\nFollow these skills (already loaded):\n\n${pinnedSkills(skills)}\n</skills>` : ""
+    }`,
     tools: {
       ...(input.research === false ? {} : researchTools(context)),
-      ...(input.research === false || agent.builtin !== RESEARCH_AGENT ? {} : exaTools()),
+      ...(input.research === false || !toolsOf(skills).includes("exa_search") ? {} : exaTools()),
       ...integrationTools(context, using, allowed),
       ...sandboxTools(context, using),
       use_skill: skillTool(),

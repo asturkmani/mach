@@ -4,7 +4,6 @@ import { z } from "zod";
 
 import { agentFor, agentRef, defineAction, fileFor, fileRef, integrationFor, personFor, personRef } from "@/lib/actions/define";
 import { MEMORY_LIMIT, savePersonalMemory } from "@/lib/agents/conversation";
-import { listAgents } from "@/lib/agents/store";
 import { appUrl } from "@/lib/app-url";
 import { saveAssistantHours } from "@/lib/assistant/store";
 import { agentmailConfigured, createInbox, ensureEmailWebhook } from "@/lib/channels/agentmail";
@@ -199,30 +198,17 @@ export const companyActions = [
   // ---- Integrations (credentials are never set here: Settings → Integrations)
   defineAction({
     name: "integration.update",
-    description: 'Change an integration: which agents may use it (names, or ["all"]), whose work may (people, or ["all"]; admins), read or write access, or turn it off or on.',
+    description: 'Change an integration: whose work may use it (people, or ["all"]; admins), read or write access, or turn it off or on. Every agent may use it.',
     input: z.object({
       integration: z.string().describe("Its slug (or id)."),
-      agents: z.array(z.string()).optional(),
       people: z.array(z.string()).optional(),
       access: z.enum(["read", "write"]).optional(),
       enabled: z.boolean().optional(),
     }),
-    run: async ({ actor }, { integration, agents, people, access, enabled }) => {
+    run: async ({ actor }, { integration, people, access, enabled }) => {
       const found = await integrationFor(actor, integration);
-      let agentIds: string[] | null | undefined;
-      if (agents) {
-        const own = await listAgents(actor.organizationId);
-        agentIds = all(agents)
-          ? null
-          : agents.map((name) => {
-              const agent = own.find((a) => a.id === name || a.name.trim().toLowerCase() === name.trim().toLowerCase());
-              if (!agent) throw new OperationError(`There's no agent called ${name}.`);
-              return agent.id;
-            });
-      }
       const personIds = people ? (all(people) ? null : await Promise.all(people.map(async (name) => (await personFor(actor, name)).id))) : undefined;
       await updateIntegrationAs(actor, found.id, {
-        ...(agentIds !== undefined ? { agentIds } : {}),
         ...(personIds !== undefined ? { personIds } : {}),
         ...(access ? { access } : {}),
         ...(enabled !== undefined ? { disabled: !enabled } : {}),

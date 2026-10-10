@@ -77,8 +77,6 @@ export type Integration = {
   description: string;
   config: ApiConfig | LoginConfig;
   access: "read" | "write";
-  /** null: every agent. */
-  agentIds: string[] | null;
   /** The people whose work may use it (their assistant, and runs for them); null is everyone. */
   personIds: string[] | null;
   guide: string;
@@ -100,7 +98,6 @@ type Row = {
   description: string;
   config: ApiConfig | LoginConfig;
   access: "read" | "write";
-  agent_ids: string[] | null;
   person_ids: string[] | null;
   guide: string;
   status: IntegrationStatus;
@@ -112,7 +109,7 @@ type Row = {
   created_at: Date;
 };
 
-const COLUMNS = `id, kind, slug, name, description, config, access, agent_ids, person_ids, guide, status, status_detail,
+const COLUMNS = `id, kind, slug, name, description, config, access, person_ids, guide, status, status_detail,
   secrets is not null as has_credentials, session is not null as has_session, last_checked_at, last_used_at, created_at`;
 
 const toIntegration = (r: Row): Integration => ({
@@ -123,7 +120,6 @@ const toIntegration = (r: Row): Integration => ({
   description: r.description,
   config: r.config,
   access: r.access,
-  agentIds: r.agent_ids,
   personIds: r.person_ids,
   guide: r.guide,
   status: r.status,
@@ -144,23 +140,24 @@ export const slugify = (name: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 40) || "integration";
 
-/** Whether an agent may use an integration (null agent: a person, or the Chief of Staff). */
-/** Whether this agent, working for this person, may use it: both must be allowed (a missing one doesn't limit). */
-export const allowedFor = (integration: Pick<Integration, "agentIds" | "personIds">, agentId?: string | null, personId?: string | null) =>
-  (!agentId || !integration.agentIds || integration.agentIds.includes(agentId)) &&
-  (!personId || !integration.personIds || integration.personIds.includes(personId));
+/**
+ * Whether work for this person may use it. Every agent in the company may use every integration; an
+ * admin can limit one to chosen people's work (their assistant, and runs for them). No person: no limit.
+ */
+export const allowedFor = (integration: Pick<Integration, "personIds">, personId?: string | null) =>
+  !personId || !integration.personIds || integration.personIds.includes(personId);
 
 // ---------------------------------------------------------------------------
 // Reading
 
 export async function listIntegrations(
   organizationId: string,
-  { agentId, personId }: { agentId?: string | null; personId?: string | null } = {},
+  { personId }: { personId?: string | null } = {},
 ): Promise<Integration[]> {
   const rows = await getDb().query<Row>(`select ${COLUMNS} from integrations where organization_id = $1 order by name`, [
     organizationId,
   ]);
-  return rows.map(toIntegration).filter((i) => allowedFor(i, agentId, personId));
+  return rows.map(toIntegration).filter((i) => allowedFor(i, personId));
 }
 
 export async function getIntegration(organizationId: string, slugOrId: string): Promise<Integration | null> {
@@ -222,7 +219,6 @@ export type IntegrationInput = {
   description?: string;
   config: ApiConfig | LoginConfig;
   access?: "read" | "write";
-  agentIds?: string[] | null;
   guide?: string;
   personId?: string;
 };
@@ -280,14 +276,13 @@ export async function saveIntegration(organizationId: string, input: Integration
   const slug = slugify(input.slug || name);
   const config = normalizeConfig(input.kind, input.config);
   const [row] = await getDb().query<Row>(
-    `insert into integrations (organization_id, kind, slug, name, description, config, access, agent_ids, guide, created_by_person_id)
-     values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::uuid[], $9, $10)
+    `insert into integrations (organization_id, kind, slug, name, description, config, access, guide, created_by_person_id)
+     values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
      on conflict (organization_id, slug) do update set
        kind = excluded.kind, name = excluded.name,
        description = case when $5 = '' then integrations.description else excluded.description end,
        config = excluded.config, access = excluded.access,
-       agent_ids = case when $11 then excluded.agent_ids else integrations.agent_ids end,
-       guide = case when $9 = '' then integrations.guide else excluded.guide end,
+       guide = case when $8 = '' then integrations.guide else excluded.guide end,
        session = null, session_expires_at = null, updated_at = now()
      returning ${COLUMNS}`,
     [
@@ -298,10 +293,8 @@ export async function saveIntegration(organizationId: string, input: Integration
       input.description?.trim() ?? "",
       JSON.stringify(config),
       input.access ?? "read",
-      input.agentIds ?? null,
       input.guide?.trim() ?? "",
       input.personId ?? null,
-      input.agentIds !== undefined,
     ],
   );
   return toIntegration(row);
@@ -312,7 +305,6 @@ export async function updateIntegration(
   id: string,
   patch: Partial<{
     access: "read" | "write";
-    agentIds: string[] | null;
     personIds: string[] | null;
     guide: string;
     description: string;
@@ -326,7 +318,6 @@ export async function updateIntegration(
     set.push(sql.replace("?", `$${params.length}`));
   };
   if (patch.access) add("access = ?", patch.access);
-  if (patch.agentIds !== undefined) add("agent_ids = ?::uuid[]", patch.agentIds);
   if (patch.personIds !== undefined) add("person_ids = ?::uuid[]", patch.personIds);
   if (patch.guide !== undefined) add("guide = ?", patch.guide.trim());
   if (patch.description !== undefined) add("description = ?", patch.description.trim());
@@ -566,7 +557,7 @@ export async function callIntegration(
 ): Promise<CallResult> {
   const integration = await getIntegration(organizationId, slugOrId);
   if (!integration || integration.kind !== "api") throw new IntegrationError(`There's no data source called ${slugOrId}.`);
-  if (!allowedFor(integration, caller.agentId, caller.personId)) throw new IntegrationError(`You don't have access to ${integration.name}.`);
+  if (!allowedFor(integration, caller.personId)) throw new IntegrationError(`You don't have access to ${integration.name}.`);
   if (integration.status === "disabled") throw new IntegrationError(`${integration.name} is turned off.`);
   if (integration.status === "needs_credentials") throw new IntegrationError(`${integration.name}'s credentials haven't been entered yet.`);
   const config = integration.config as ApiConfig;
@@ -689,13 +680,12 @@ export async function knownSecrets(organizationId: string): Promise<string[]> {
  */
 export async function sandboxPolicy(
   organizationId: string,
-  agentId: string | null,
   /** Headers for more hosts: the GitHub of the person a task run is for. */
   extra: Record<string, Record<string, string>> = {},
   /** The person the work is for: only data sources they may use are connected. */
   personId?: string | null,
 ): Promise<{ policy: NetworkPolicy; sources: string[] }> {
-  const sources = (await listIntegrations(organizationId, { agentId, personId })).filter(
+  const sources = (await listIntegrations(organizationId, { personId })).filter(
     (i) => i.kind === "api" && i.status !== "disabled" && i.hasCredentials,
   );
   const allow: Record<string, NetworkPolicyRule[]> = {};

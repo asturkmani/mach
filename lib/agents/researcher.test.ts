@@ -4,7 +4,7 @@ import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { setScheduler } from "@/lib/agents/dispatch";
 import { runAgentOnTask } from "@/lib/agents/runner";
 import { setSpecialistModel } from "@/lib/agents/specialist";
-import { agentModel, createAgent, listAgents, RESEARCH_AGENT, researchAgent } from "@/lib/agents/store";
+import { agentModel, createAgent, listAgents, WORKER_AGENT, workerAgent } from "@/lib/agents/store";
 import { createOrganization, getOrganization } from "@/lib/orgs";
 import { getPerson, linkMember, updatePerson } from "@/lib/people";
 import { getSchedule } from "@/lib/schedules";
@@ -25,7 +25,7 @@ async function sara() {
   return person;
 }
 
-describe("the Researcher", () => {
+describe("research: the Worker with the research skill", () => {
   beforeEach(async () => {
     setScheduler(() => {}); // runs are started by hand here
     await useTestDb();
@@ -36,22 +36,23 @@ describe("the Researcher", () => {
     vi.unstubAllEnvs();
   });
 
-  it("is made once, on the company's model for agents' work", async () => {
+  it("is done by one Worker, made once, on the company's model for agents' work", async () => {
     await createOrganization({ id: ORG, name: "Cedar Legacy" });
-    const researcher = await researchAgent(ORG);
-    expect(researcher).toMatchObject({ name: "Researcher", builtin: RESEARCH_AGENT, kind: "defined" });
-    expect((await researchAgent(ORG)).id).toBe(researcher.id);
-    expect(agentModel(researcher)).toBe("mach1/worker");
+    const worker = await workerAgent(ORG);
+    expect(worker).toMatchObject({ name: "Worker", builtin: WORKER_AGENT, kind: "defined" });
+    expect((await workerAgent(ORG)).id).toBe(worker.id);
+    expect(agentModel(worker, {}, ["research"])).toBe("mach1/worker");
   });
 
   it("starts from the saved sources and sends questions to sub-researchers", async () => {
     const person = await sara();
-    const researcher = await researchAgent(ORG);
+    const researcher = await workerAgent(ORG);
     const task = await createTask(ORG, {
       title: "Brief on Micron's HBM outlook",
       description: "Is the HBM shortage priced in? For a decision on our MU position.",
       people: [person.id],
       agents: [researcher.id],
+      skills: ["research"],
       createdBy: { personId: person.id },
     });
     const steps: Step[] = [
@@ -64,7 +65,8 @@ describe("the Researcher", () => {
     expect(await runAgentOnTask(ORG, task.id, researcher.id, { model, research: false })).toEqual({ type: "finished" });
 
     const [lead, investigator] = model.doGenerateCalls.map((call) => JSON.stringify(call.prompt));
-    expect(lead).toContain("Load the research skill before you start");
+    expect(lead).toContain("This task pins these skills. They're already loaded");
+    expect(lead).toContain('<skill name=\\"research\\">');
     // It knows who it's working for, and the company, without being told.
     expect(lead).toContain("This run is for Sara (Chief Investment Officer; the public portfolio)");
     expect(lead).toContain("<company_profile>");
@@ -79,21 +81,26 @@ describe("the Researcher", () => {
     expect(JSON.stringify(model.doGenerateCalls[2].prompt)).toContain("HBM contract prices up 18% since June");
 
     expect((await getTask(ORG, task.id))!.summary).toBe("HBM prices are up 18% since June: the shortage looks mostly priced in.");
-    expect((await listMessages(task.id)).map((m) => m.author)).toContain("Researcher");
+    expect((await listMessages(task.id)).map((m) => m.author)).toContain("Worker");
   });
 
-  it("searches with Exa as well as the shared research tools; other agents don't", async () => {
+  it("searches with Exa and sends out sub-researchers once the research skill is pinned or loaded; otherwise not", async () => {
     const person = await sara();
-    const researcher = await researchAgent(ORG);
+    const worker = await workerAgent(ORG);
     const analyst = await createAgent(ORG, { name: "Analyst" });
-    const toolsOf = async (agentId: string) => {
-      const task = await createTask(ORG, { title: "Look into Micron", people: [person.id], agents: [agentId], createdBy: { personId: person.id } });
-      const model = scriptedModel([[["finish", { summary: "Done.", report: "Done." }]]]);
+    const toolsOf = async (agentId: string, skills: string[] = [], steps: Step[] = [[["finish", { summary: "Done.", report: "Done." }]]]) => {
+      const task = await createTask(ORG, { title: "Look into Micron", people: [person.id], agents: [agentId], skills, createdBy: { personId: person.id } });
+      const model = scriptedModel(steps);
       await runAgentOnTask(ORG, task.id, agentId, { model });
-      return (model.doGenerateCalls[0].tools ?? []).map((t) => t.name);
+      return model.doGenerateCalls.map((call) => (call.tools ?? []).map((t) => t.name));
     };
-    expect(await toolsOf(researcher.id)).toEqual(expect.arrayContaining(["web_search", "exa_search", "x_search", "reddit_search", "market_data", "investigate"]));
-    const shared = await toolsOf(analyst.id);
+    const [pinned] = await toolsOf(worker.id, ["research"]);
+    expect(pinned).toEqual(expect.arrayContaining(["web_search", "exa_search", "x_search", "reddit_search", "market_data", "investigate"]));
+    // Loading the skill mid-run switches its tools on from the next step.
+    const [before, after] = await toolsOf(worker.id, [], [[["use_skill", { name: "research" }]], [["finish", { summary: "Done.", report: "Done." }]]]);
+    expect(before).not.toContain("exa_search");
+    expect(after).toEqual(expect.arrayContaining(["exa_search", "investigate"]));
+    const [shared] = await toolsOf(analyst.id);
     expect(shared).toEqual(expect.arrayContaining(["web_search", "x_search", "market_data"]));
     expect(shared).not.toContain("exa_search");
     expect(shared).not.toContain("investigate");
@@ -127,10 +134,11 @@ describe("the Researcher", () => {
       ],
       "Done.",
     ]);
-    expect(told).toContain("Researcher says:");
+    expect(told).toContain("Worker says:");
     expect(told).toContain("hawkish Fed minutes");
     const asked = JSON.stringify(specialist.doGenerateCalls[0].prompt);
-    expect(asked).toContain("You are Researcher, Research and insight");
+    expect(asked).toContain("You are Worker, Does the work");
+    expect(asked).toContain('<skill name=\\"research\\">');
     expect(asked).toContain("asking you a question for Sara (Chief Investment Officer; the public portfolio)");
     expect(asked).toContain("Why: Deciding whether to trim our TLT position before Friday");
     expect(asked).toContain("<company_profile>");
@@ -156,7 +164,7 @@ describe("the Researcher", () => {
       ],
       "Done.",
     ]);
-    expect(told).toContain("Started task #1: Researcher is on it");
+    expect(told).toContain("Started task #1: Worker is on it");
     expect(told).toContain("Repeats:");
     const task = (await getTaskByNumber(ORG, 1))!;
     expect(task).toMatchObject({ title: "Weekly digest on AI semis", visibility: "private" });
@@ -170,7 +178,8 @@ describe("the Researcher", () => {
         "What they want back: Five bullets and anything that changes the view",
       ].join("\n\n"),
     );
-    expect(task.members.map((m) => m.name)).toEqual(["Sara", "Researcher"]);
+    expect(task.members.map((m) => m.name)).toEqual(["Sara", "Worker"]);
+    expect(task.skills).toEqual(["research"]);
     expect(await getSchedule(task.id)).toMatchObject({ mode: "agent", timezone: "Europe/London" });
   });
 });

@@ -1,7 +1,7 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createAgent, createWorker, listAgents } from "@/lib/agents/store";
+import { createAgent, listAgents, workerAgent } from "@/lib/agents/store";
 import { createOrganization } from "@/lib/orgs";
 import { linkMember, savePerson } from "@/lib/people";
 import {
@@ -132,19 +132,19 @@ describe("agents", () => {
     await useTestDb();
   });
 
-  it("names workers after their role and keeps names unique", async () => {
+  it("keeps names unique, and makes the one Worker once, around a name already taken", async () => {
     await setUp();
     await createAgent(ORG, { name: "Sales", role: "Outbound sales" });
     await expect(createAgent(ORG, { name: "sales" })).rejects.toThrow(/already an agent/);
 
-    const first = await createWorker(ORG, "Research");
-    const second = await createWorker(ORG, "Research worker");
-    const general = await createWorker(ORG);
-    expect([first.name, second.name, general.name]).toEqual(["Research worker", "Research worker 2", "Worker"]);
+    // A worker agent from before, made for one task, already has the name.
+    await createAgent(ORG, { kind: "worker", name: "Worker" });
+    const worker = await workerAgent(ORG);
+    expect(worker.name).toBe("Worker 2");
+    expect((await workerAgent(ORG)).id).toBe(worker.id);
     expect((await listAgents(ORG)).map((a) => [a.kind, a.name])).toEqual([
       ["defined", "Sales"],
-      ["worker", "Research worker"],
-      ["worker", "Research worker 2"],
+      ["defined", "Worker 2"],
       ["worker", "Worker"],
     ]);
   });

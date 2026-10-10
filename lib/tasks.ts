@@ -72,6 +72,10 @@ export type Task = {
   visibility: TaskVisibility;
   /** The numbers of the tasks it starts after: it waits in backlog until each is in review or done. */
   waitsFor: number[];
+  /** Skills pinned to it: its agent reads them in full before it starts (lib/agents/skills.ts). */
+  skills: string[];
+  /** The model chosen for it when it was started (an AI Gateway id or a role, mach1/coder), or null for the default. */
+  model: string | null;
   /** Who @-mentioned the person this list is for, when that's why it needs them. */
   mentionedBy?: string | null;
   createdAt: Date;
@@ -133,6 +137,8 @@ type TaskRow = {
   reply_by_whatsapp: boolean;
   visibility: TaskVisibility;
   waits_for: number[];
+  skills: string[] | null;
+  model: string | null;
   mentioned_by?: string | null;
   created_at: Date;
   updated_at: Date;
@@ -156,7 +162,8 @@ const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary,
   t.run_started_at, t.run_began_at, t.run_activity, t.agent_turns, t.memory, t.sandbox_name, t.archived_at,
   exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats, t.pending_login,
   t.reply_by_whatsapp, t.visibility, t.created_at, t.updated_at, t.closed_at,
-  array(select d.number from tasks d where d.id = any(t.waits_for) order by d.number) as waits_for`;
+  array(select d.number from tasks d where d.id = any(t.waits_for) order by d.number) as waits_for,
+  t.skills, t.model`;
 
 /** Sorts urgent first, then high, medium, low. */
 export const PRIORITY_ORDER = `case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`;
@@ -194,6 +201,8 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     replyByWhatsApp: row.reply_by_whatsapp,
     visibility: row.visibility,
     waitsFor: row.waits_for ?? [],
+    skills: row.skills ?? [],
+    model: row.model ?? null,
     mentionedBy: row.mentioned_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -457,6 +466,23 @@ export async function listAgentTasks(organizationId: string, agentId: string, { 
   return withMembers(rows);
 }
 
+/** Tasks that pin a skill (e.g. research), or are worked by the agent that used to stand for it (the Researcher). */
+export async function listSkillTasks(
+  organizationId: string,
+  skill: string,
+  { viewer, builtin }: Viewer & { builtin?: string } = {},
+): Promise<Task[]> {
+  const rows = await getDb().query<TaskRow>(
+    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1
+       and ($2 = any(t.skills) or ($4::text is not null and exists (
+         select 1 from task_members m join agents a on a.id = m.agent_id where m.task_id = t.id and a.builtin = $4)))
+       and ($3::uuid is null or ${visibleTo("$3")})
+     order by (t.status in ('done', 'cancelled')), t.updated_at desc limit 50`,
+    [organizationId, skill, viewer ?? null, builtin ?? null],
+  );
+  return withMembers(rows);
+}
+
 export async function listMessages(taskId: string): Promise<TaskMessage[]> {
   const rows = await getDb().query<{
     id: string;
@@ -540,6 +566,10 @@ export type NewTask = {
   visibility?: TaskVisibility;
   /** Ids of the tasks it starts after. */
   waitsFor?: string[];
+  /** Skills its agent reads before it starts. */
+  skills?: string[];
+  /** The model it runs on, if not the default. */
+  model?: string;
 };
 
 export async function createTask(organizationId: string, input: NewTask): Promise<Task> {
@@ -552,9 +582,10 @@ export async function createTask(organizationId: string, input: NewTask): Promis
     try {
       const [row] = await db.query<{ id: string }>(
         `insert into tasks (organization_id, number, kind, title, description, summary, status, priority, options,
-                            payload, created_by_person_id, created_by_agent_id, reply_by_whatsapp, visibility, waits_for)
+                            payload, created_by_person_id, created_by_agent_id, reply_by_whatsapp, visibility, waits_for,
+                            skills, model)
          values ($1, (select coalesce(max(number), 0) + 1 from tasks where organization_id = $1), $2, $3, $4, $5, $6,
-                 $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14::uuid[])
+                 $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14::uuid[], $15::text[], $16)
          returning id`,
         [
           organizationId,
@@ -571,6 +602,8 @@ export async function createTask(organizationId: string, input: NewTask): Promis
           input.replyByWhatsApp ?? false,
           input.visibility ?? "company",
           input.waitsFor ?? [],
+          [...new Set(input.skills ?? [])],
+          input.model ?? null,
         ],
       );
       id = row.id;

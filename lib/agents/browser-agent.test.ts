@@ -189,7 +189,6 @@ describe("the browser agent", () => {
       slug: "masttro-web",
       config: { loginUrl: "https://app.masttro.example/login", domains: [], fields: [{ name: "username", label: "Username", secret: false }, { name: "password", label: "Password" }] },
       access: "write",
-      agentIds: [clerk.id],
     });
     await saveCredentials(ORG, login.id, { username: "ahmed@cedar.example", password: "pw" });
     const { sandboxes, site } = await ledgerSandboxes();
@@ -236,14 +235,13 @@ describe("the browser agent", () => {
   });
 
   it("for the Chief of Staff, takes the code from the chat's code card and signs in, in the same session", async () => {
-    const { clerk, ahmed } = await setUp();
+    const { ahmed } = await setUp();
     const login = await saveIntegration(ORG, {
       kind: "login",
       name: "Masttro (web)",
       slug: "masttro-web",
       config: { loginUrl: "https://app.masttro.example/login", domains: [], fields: [{ name: "username", label: "Username", secret: false }, { name: "password", label: "Password" }] },
       access: "write",
-      agentIds: [clerk.id],
     });
     await saveCredentials(ORG, login.id, { username: "ahmed@cedar.example", password: "pw" });
     const { sandboxes, site } = await ledgerSandboxes();

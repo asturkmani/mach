@@ -5,7 +5,7 @@ import { setScheduler } from "@/lib/agents/dispatch";
 import { githubRequest } from "@/lib/agents/github-steps";
 import { taskBrief } from "@/lib/agents/prompts";
 import { workingForId } from "@/lib/agents/run-steps";
-import { CODING_AGENT, listAgents } from "@/lib/agents/store";
+import { listAgents, WORKER_AGENT } from "@/lib/agents/store";
 import { getDb } from "@/lib/db";
 import { knownSecrets, sandboxPolicy } from "@/lib/integrations";
 import { createOrganization, getOrganization } from "@/lib/orgs";
@@ -108,7 +108,7 @@ describe("each person's own GitHub", () => {
     const signing = githubSigning("ghu_sara_token");
     expect(signing["github.com"].Authorization).toBe(`Basic ${Buffer.from("x-access-token:ghu_sara_token").toString("base64")}`);
     expect(signing["api.github.com"].Authorization).toBe("Bearer ghu_sara_token");
-    const { policy } = await sandboxPolicy(ORG, null, signing);
+    const { policy } = await sandboxPolicy(ORG, signing);
     expect(policy).toEqual({
       allow: {
         "github.com": [{ transform: [{ headers: signing["github.com"] }] }],
@@ -117,7 +117,7 @@ describe("each person's own GitHub", () => {
         "*": [],
       },
     });
-    expect((await sandboxPolicy(ORG, null)).policy).toBe("allow-all");
+    expect((await sandboxPolicy(ORG)).policy).toBe("allow-all");
   });
 
   it("works for whoever wrote the message a run answers, else the last to comment, else who asked", () => {
@@ -162,7 +162,7 @@ describe("each person's own GitHub", () => {
     expect(requests).toHaveLength(1);
   });
 
-  it("starts a code change from WhatsApp as the person asking, with the Developer agent", async () => {
+  it("starts a code change from WhatsApp as the person asking, with the Worker and the coding skill", async () => {
     const organization = { ...(await getOrganization(ORG))!, onboardingCompletedAt: new Date() };
     const user = { id: "user_sara", email: "sara@cedar.example", name: "Sara Haddad" };
     const person = (await getPerson(ORG, me))!;
@@ -182,12 +182,13 @@ describe("each person's own GitHub", () => {
     expect(await getTaskByNumber(ORG, 1)).toBeNull();
 
     await saveGitHubConnection(ORG, me, tokens("ghu_sara_token"), sara);
-    expect(await ask({ login: "sara-h", status: "connected" })).toContain("Started task #1: Developer is on it as @sara-h");
+    expect(await ask({ login: "sara-h", status: "connected" })).toContain("Started task #1: Worker is on it as @sara-h");
     const task = (await getTaskByNumber(ORG, 1))!;
     expect(task).toMatchObject({ title: "Fix the typo on the pricing page", createdByPersonId: me, replyByWhatsApp: true });
     expect(task.description).toContain("Repository: cedar/site");
-    expect(task.members.map((m) => m.name)).toEqual(["Sara Haddad", "Developer"]);
-    expect((await listAgents(ORG)).find((a) => a.name === "Developer")?.builtin).toBe(CODING_AGENT);
+    expect(task.members.map((m) => m.name)).toEqual(["Sara Haddad", "Worker"]);
+    expect(task.skills).toEqual(["coding-in-github"]);
+    expect((await listAgents(ORG)).find((a) => a.name === "Worker")?.builtin).toBe(WORKER_AGENT);
   });
 });
 

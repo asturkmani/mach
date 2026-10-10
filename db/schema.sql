@@ -575,3 +575,11 @@ create table if not exists research_sources (
 );
 create unique index if not exists research_sources_unique
   on research_sources (organization_id, coalesce(owner_person_id::text, ''), kind, lower(handle));
+
+-- One worker, many skills (docs/agent-design.md): a task names the skills its agent reads before it starts,
+-- and the model chosen for it, instead of a worker agent made per task or a built-in agent per kind of work.
+alter table tasks add column if not exists skills text[] not null default '{}';
+alter table tasks add column if not exists model text;
+
+-- Every agent in the company may use every integration now; only the limit to chosen people's work stays.
+alter table integrations drop column if exists agent_ids;

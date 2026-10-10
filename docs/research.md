@@ -1,6 +1,6 @@
 # Research
 
-The Researcher is a built-in agent for anything the company needs to know: companies and markets, people and
+Research is the Worker with the `research` skill, for anything the company needs to know: companies and markets, people and
 organisations (due diligence), products and vendors, topics and events, and investments (it has market
 data). It reads the web and filings, market data, X and Reddit, starts with the sources each person trusts
 most, and delivers a brief, written for the decision it's for, that leads with the insight and sources every
@@ -13,13 +13,13 @@ Like everything in Mach1, it's asked for in chat (the panel, WhatsApp or email).
 | They ask | It does |
 | --- | --- |
 | A price, a number, what one account is saying | Answers itself (`market_data`, `x_search`, `web_search`) |
-| A question that needs judgment across sources ("what's the market saying about Micron's guidance?") | `start_research` with depth quick: the Researcher answers in the chat within a few minutes, or it becomes a task if it needs longer |
-| Real research ("a brief on…", "compare these vendors", due diligence on someone, a primer) | `start_research` with depth brief: a task the Researcher works on and reports back from, on WhatsApp too |
-| A regular digest ("every Monday, what my sources say about AI chips") | A brief with `repeat`: a recurring task, the Researcher doing each run |
+| A question that needs judgment across sources ("what's the market saying about Micron's guidance?") | `start_research` with depth quick: the Worker, with the research skill, answers in the chat within a few minutes, or it becomes a task if it needs longer |
+| Real research ("a brief on…", "compare these vendors", due diligence on someone, a primer) | `start_research` with depth brief: a task for the Worker with the research skill pinned, reporting back, on WhatsApp too |
+| A regular digest ("every Monday, what my sources say about AI chips") | A brief with `repeat`: a recurring task, the Worker doing each run |
 
 ## What it knows
 
-Research is only as good as its brief, and the Researcher can't see the chat. So:
+Research is only as good as its brief, and the Worker can't see the chat. So:
 
 - **It gets by itself**: the company profile (what the company does, its goals, how it works), who it's
   working for with their role and what they look after (from the Team page), their saved sources and the
@@ -27,7 +27,7 @@ Research is only as good as its brief, and the Researcher can't see the chat. So
 - **The Chief of Staff hands over the rest**, as `start_research`'s fields, which become the task's
   description (or the quick question): the question, **Why** (the decision or work it's for, required),
   **What matters** (what they already know or think, constraints, names, tickers and links from the chat,
-  sources to use or avoid) and **What they want back**. Its instructions say to brief the Researcher like a
+  sources to use or avoid) and **What they want back**. Its instructions say to brief the Worker like a
   good manager would, and to pass on only what the research needs: the chat itself and the Chief of Staff's
   private notes about the person stay with the Chief of Staff.
 - The `research` skill starts from that brief: research for their decision, not the topic in general.
@@ -35,18 +35,18 @@ Research is only as good as its brief, and the Researcher can't see the chat. So
 Any task agent now sees who it's working for with their role, and any specialist the Chief of Staff asks
 learns the asker's role too.
 
-The Researcher is made the first time it's needed (like the Developer) and then appears with the other
-agents, so `create_task` and `ask_specialist` can name it too. Its model: its own (Team → Researcher), else
+There is no separate Researcher: the one Worker does research when a task pins the `research` skill (as
+`start_research` does), or when it loads the skill itself mid-run. Its model: its own (Team → Worker), else
 the company's default for agents, else Mach1's model for agents' work (`lib/ai/lineup.ts`): Claude Sonnet with
 the company's Anthropic key, else OpenAI's.
 
 ## How it works
 
-Its playbook is the `research` skill (`lib/agents/skills.ts`), which any agent can load:
+Its playbook is the `research` skill (`skills/research/SKILL.md`), which any agent can load:
 
 1. **Frame**: restate the question as a brief (the decision it informs, the scope, what a good answer holds)
    and split it into three to six questions.
-2. **Gather**: high-signal sources first, then wider. The Researcher sends each question to a sub-researcher
+2. **Gather**: high-signal sources first, then wider. The Worker sends each question to a sub-researcher
    with `investigate`, several at once; each searches, reads the best sources and comes back with dated
    findings labelled Fact, Estimate or Opinion and numbered sources. It follows up on the gaps, two or three
    rounds at most. Numbers are calculated in its sandbox, not in its head.
@@ -63,8 +63,9 @@ FinRobot, and report outlines like those in [anthropics/financial-services](http
 
 ## The tools
 
-Every agent and the Chief of Staff have them (`researchTools` in `lib/agents/toolkit.ts`); only the
-Researcher has `exa_search` and `investigate` (and its sub-researchers have Exa too).
+Every agent and the Chief of Staff have them (`researchTools` in `lib/agents/toolkit.ts`). `exa_search` and
+`investigate` belong to the `research` skill: a run has them once the skill is pinned to its task or loaded
+with `use_skill` (and its sub-researchers have Exa too).
 
 | Tool | What | Where it comes from |
 | --- | --- | --- |
@@ -73,7 +74,7 @@ Researcher has `exa_search` and `investigate` (and its sub-researchers have Exa 
 | `market_data` | Quotes (stocks, FX, indices, crypto), profile and key numbers, price history with drawdown and volatility, statements, news, holders and insider trades, analysts | Yahoo Finance through [yahoo-finance2](https://github.com/gadicc/yahoo-finance2): free, delayed, unofficial |
 | `x_search` | Posts on X by search terms, by chosen or saved accounts, or those accounts' latest; the last week or back to 2006 | X's API through its [TypeScript SDK](https://docs.x.com/xdks/typescript/overview) (the posts, their authors and engagement, most engaged first, saved accounts marked ★), else Grok's `x_search` on xAI's API |
 | `reddit_search` | Reddit threads, in chosen or saved subreddits or by chosen users | Mach1's Reddit app if it has one (scores and top comments), else Grok's web search of reddit.com |
-| `investigate` | One question to a sub-researcher with all the above | The Researcher's own model (`lib/research/tools.ts`) |
+| `investigate` | One question to a sub-researcher with all the above | The run's own model (`lib/research/tools.ts`) |
 
 **Web search: Parallel and Exa.** Both run on AI Gateway, so there's no other account or key, and billing is
 Mach1's AI Gateway credit. Parallel is the everyday `web_search`: it takes the objective in words and returns
@@ -127,4 +128,4 @@ and integrations don't get them.
 | `lib/research/x.ts`, `grok.ts`, `reddit.ts` | X through its API or Grok, Grok's search tools on xAI's API, Reddit through its API or Grok |
 | `lib/research/steps.ts`, `tools.ts` | The tools (durable steps on tasks), and `investigate` |
 | `lib/actions/research.ts`, `app/(app)/research/` | `source.add`, `source.update`, `source.remove`, `source.list`, and the Research screen |
-| `lib/agents/store.ts` (`researchAgent`), `lib/agents/chief-of-staff.ts` (`start_research`) | The Researcher, and handing research to it |
+| `lib/agents/store.ts` (`workerAgent`), `lib/agents/chief-of-staff.ts` (`start_research`) | The Worker, and handing research to it |

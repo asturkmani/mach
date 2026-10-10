@@ -8,7 +8,7 @@ import { linkMember, savePerson } from "@/lib/people";
 import { addMessage, getTask, listMessages } from "@/lib/tasks";
 import { useTestDb } from "@/test/db";
 import { addToTask, archiveTask, createTaskWithTeam, replyToTask, setStatus, unarchiveTask } from "@/lib/work";
-import { createWorker, getAgent } from "@/lib/agents/store";
+import { getAgent, workerAgent } from "@/lib/agents/store";
 import { setSandboxProvider } from "@/lib/sandbox";
 import { listInbox, markMentionsSeen, setSandboxName } from "@/lib/tasks";
 import { fakeSandboxes } from "@/test/fake-sandbox";
@@ -112,7 +112,7 @@ describe("work on tasks", () => {
 
   it("keeps a done job's sandbox and agents, and retires them only when it's archived", async () => {
     const { ahmed, by } = await seed();
-    const worker = await createWorker(ORG, "Research");
+    const worker = await createAgent(ORG, { kind: "worker", name: "Research worker", role: "Research" });
     const scheduled: (() => Promise<void>)[] = [];
     setScheduler((work) => scheduled.push(work));
     const task = await createTaskWithTeam(ORG, { title: "Backtest rules ABC", agentIds: [worker.id], by });
@@ -139,6 +139,25 @@ describe("work on tasks", () => {
     expect((await getAgent(ORG, worker.id))!.status).toBe("active");
     expect((await getTask(ORG, task.id))!.archivedAt).toBeNull();
     setSandboxProvider(null);
+  });
+
+  it("puts the one Worker on work with the skills it needs, and never archives it with a job", async () => {
+    const { by } = await seed();
+    setScheduler(() => {});
+    const task = await createTaskWithTeam(ORG, {
+      title: "Model Micron's 2027 EPS",
+      description: "Bull, base and bear.",
+      workerRole: "Financial analysis",
+      skills: ["excel-models", "financial-analysis", "no-such-skill"],
+      by,
+    });
+    const worker = await workerAgent(ORG);
+    expect(task.members.map((m) => m.name)).toContain("Worker");
+    expect(task.skills).toEqual(["excel-models", "financial-analysis"]);
+    expect(task.description).toBe("Kind of work: Financial analysis\n\nBull, base and bear.");
+
+    await archiveTask(ORG, task.id, by);
+    expect((await getAgent(ORG, worker.id))!.status).toBe("active");
   });
 
   it("adds @-mentioned people and agents: people see it in their Needs you, agents are woken", async () => {

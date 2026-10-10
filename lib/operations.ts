@@ -3,7 +3,7 @@ import "server-only";
 import { workos } from "@/lib/workos";
 
 
-import { listAgents, updateAgent, type AgentStatus } from "@/lib/agents/store";
+import { updateAgent, type AgentStatus } from "@/lib/agents/store";
 import { attachToTask, listLibrary, setFileVisibility } from "@/lib/files";
 import { disconnectGitHub } from "@/lib/github";
 import { deleteIntegration, getIntegration, IntegrationError, testIntegration, updateIntegration } from "@/lib/integrations";
@@ -256,24 +256,20 @@ export async function deletePageAs(actor: Actor, slug: string): Promise<void> {
 
 // ---- Integrations -----------------------------------------------------------
 
-/** Changes an integration: its access, which agents may use it, whose work may (admins), or turns it off. */
+/** Changes an integration: its access, whose work may use it (admins), or turns it off. Every agent may use it. */
 export async function updateIntegrationAs(
   actor: Actor,
   id: string,
-  patch: { access?: "read" | "write"; agentIds?: string[] | null; personIds?: string[] | null; disabled?: boolean },
+  patch: { access?: "read" | "write"; personIds?: string[] | null; disabled?: boolean },
 ): Promise<void> {
   if (patch.personIds !== undefined) adminOnly(actor, "choose whose work may use an integration");
   if (!(await getIntegration(actor.organizationId, id))) throw new OperationError("That integration doesn't exist.");
-  let { agentIds, personIds } = patch;
-  if (agentIds) {
-    const own = new Set((await listAgents(actor.organizationId)).map((a) => a.id));
-    agentIds = agentIds.filter((a) => own.has(a));
-  }
+  let { personIds } = patch;
   if (personIds) {
     const own = new Set((await listPeople(actor.organizationId)).map((p) => p.id));
     personIds = personIds.filter((p) => own.has(p));
   }
-  await asOperation(() => updateIntegration(actor.organizationId, id, { ...patch, agentIds, personIds }));
+  await asOperation(() => updateIntegration(actor.organizationId, id, { ...patch, personIds }));
 }
 
 export async function testIntegrationAs(actor: Actor, id: string) {

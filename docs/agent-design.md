@@ -108,7 +108,7 @@ One built-in agent per company, called **Worker**. It works on a task in the age
 
 - **Skills.** The skills pinned to the task are loaded before it starts, and their scripts are copied into the sandbox. It can load more at any point with `use_skill`.
 - **Integrations.** It may use every integration of the company that the person it works for may use. Anything it would change outside Mach1 still needs an approval (see Gates in code).
-- **Model.** The model set on the task when it was started, else the default of the first pinned skill, else the company's model for agents, else the `worker` role.
+- **Model.** The model set on the task when it was started, else the Worker's own (Team → Worker), else the company's model for agents, else the default of the first pinned skill that has one (e.g. `coder`), else the `worker` role. A company that picks one model for agents' work gets it everywhere, as today.
 - **Ending a run.** `finish` or `ask`, as today. On a job's child task, these go to the coordinator first.
 - **Escalating.** When the work needs a plan or needs to go wide (it found eight issues, not one, or the question splits into six), it calls `escalate`. Its task becomes a job, a coordinator takes over, and what the worker found becomes the coordinator's first input. A worker never starts another agent itself.
 - **Long runs.** Before each model call, older tool results (search hits, whole pages, command output) are trimmed to a short note of what they held. A run that reads a lot keeps a working context without needing a second agent.

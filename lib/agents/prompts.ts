@@ -1,5 +1,5 @@
 import type { Agent } from "@/lib/agents/store";
-import { skillList } from "@/lib/agents/skills";
+import { pinnedSkills, skillList } from "@/lib/agents/skills";
 import type { DriveFile } from "@/lib/drive";
 import type { ApiConfig, Integration, LoginConfig } from "@/lib/integrations";
 import type { Organization } from "@/lib/orgs";
@@ -246,12 +246,16 @@ export function agentInstructions({
   agent,
   profile,
   brief,
+  skills = [],
 }: {
   organization: Organization;
   agent: Agent;
   profile: string;
   brief: string;
+  /** Skills pinned to the task: their full text goes in now, so the agent follows them without loading them. */
+  skills?: string[];
 }): string {
+  const pinned = pinnedSkills(skills);
   const who =
     agent.kind === "worker"
       ? `You are ${agent.name}, a general worker agent at ${organization.name}${agent.role ? ` (${agent.role})` : ""}. You were made for this one task: do it well and nothing else.`
@@ -312,7 +316,7 @@ How to write it. People see your task as one row among many in their inbox and u
 
 Skills you can load with use_skill:
 ${skillList()}
-
+${pinned ? `\n<skills>\nThis task pins these skills. They're already loaded: follow them.\n\n${pinned}\n</skills>\n` : ""}
 Today's date: ${today}.${organization.timezone ? ` Company timezone: ${organization.timezone}.` : ""}
 
 <company_profile>

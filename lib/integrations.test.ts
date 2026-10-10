@@ -8,8 +8,6 @@ import { useTestDb } from "@/test/db";
 import {
   callIntegration,
   fill,
-  getIntegration,
-  IntegrationError,
   listIntegrations,
   recentCalls,
   sandboxPolicy,
@@ -69,7 +67,7 @@ describe("integrations", () => {
 
   it("checks a data source's setup", async () => {
     const saved = await saveIntegration(ORG, { kind: "api", name: "Masttro", config: masttro() });
-    expect(saved).toMatchObject({ slug: "masttro", status: "needs_credentials", hasCredentials: false, access: "read", agentIds: null });
+    expect(saved).toMatchObject({ slug: "masttro", status: "needs_credentials", hasCredentials: false, access: "read", personIds: null });
     expect(saved.config).toMatchObject({ baseUrl: "https://api.masttro.example/v1", domains: ["api.masttro.example"] });
     await expect(
       saveIntegration(ORG, { kind: "api", name: "Bad", config: masttro({ headers: { Authorization: "Bearer {{apikey}}" } }) }),
@@ -149,38 +147,25 @@ describe("integrations", () => {
     expect(header(requests[1].init, "Authorization")).toBe("Bearer tok-123456");
   });
 
-  it("gives each agent's sandbox the sources it may use, read-only enforced at the network layer", async () => {
-    const analyst = await createAgent(ORG, { name: "Analyst" });
-    const clerk = await createAgent(ORG, { name: "Data entry" });
+  it("gives every agent's sandbox the company's sources, read-only enforced at the network layer", async () => {
     const open = await saveIntegration(ORG, { kind: "api", name: "Masttro", config: masttro() });
-    const limited = await saveIntegration(ORG, {
+    const ledger = await saveIntegration(ORG, {
       kind: "api",
       name: "Ledger",
       config: masttro({ baseUrl: "https://ledger.example", headers: { "X-Api-Key": "{{apiKey}}" } }),
       access: "write",
-      agentIds: [clerk.id],
     });
     await saveCredentials(ORG, open.id, { apiKey: KEY });
-    await saveCredentials(ORG, limited.id, { apiKey: "ledger-key-123" });
+    await saveCredentials(ORG, ledger.id, { apiKey: "ledger-key-123" });
 
-    const forAnalyst = await sandboxPolicy(ORG, analyst.id);
-    expect(forAnalyst.sources).toEqual(["masttro"]);
-    expect(forAnalyst.policy).toEqual({
-      allow: {
-        "api.masttro.example": [
-          { match: { method: ["GET", "HEAD"] }, transform: [{ headers: { Authorization: `Bearer ${KEY}` } }] },
-          { response: { statusCode: 403, contentType: "text/plain", body: "Mach1: Masttro is read-only, so only GET requests are allowed." } },
-        ],
-        "*": [],
-      },
-    });
-    const forClerk = await sandboxPolicy(ORG, clerk.id);
-    expect(forClerk.sources).toEqual(["ledger", "masttro"]);
-    expect((forClerk.policy as { allow: Record<string, unknown> }).allow["ledger.example"]).toEqual([
-      { transform: [{ headers: { "X-Api-Key": "ledger-key-123" } }] },
+    const { sources, policy } = await sandboxPolicy(ORG);
+    expect(sources).toEqual(["ledger", "masttro"]);
+    const allow = (policy as { allow: Record<string, unknown> }).allow;
+    expect(allow["api.masttro.example"]).toEqual([
+      { match: { method: ["GET", "HEAD"] }, transform: [{ headers: { Authorization: `Bearer ${KEY}` } }] },
+      { response: { statusCode: 403, contentType: "text/plain", body: "Mach1: Masttro is read-only, so only GET requests are allowed." } },
     ]);
-    expect((await listIntegrations(ORG, { agentId: analyst.id })).map((i) => i.slug)).toEqual(["masttro"]);
-    await expect(callIntegration(ORG, "ledger", { path: "/" }, { agentId: analyst.id })).rejects.toBeInstanceOf(IntegrationError);
-    expect((await getIntegration(ORG, "ledger"))?.agentIds).toEqual([clerk.id]);
+    expect(allow["ledger.example"]).toEqual([{ transform: [{ headers: { "X-Api-Key": "ledger-key-123" } }] }]);
+    expect((await listIntegrations(ORG)).map((i) => i.slug)).toEqual(["ledger", "masttro"]);
   });
 });

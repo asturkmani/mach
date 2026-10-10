@@ -243,12 +243,7 @@ function driveNote({ saved, problems }: { saved: string[]; problems: string[] })
  */
 async function connectSources(context: AgentContext, sandbox: JobSandbox): Promise<{ sources: string[]; github: string | null }> {
   const github = await runGitHub(context);
-  const { policy, sources } = await sandboxPolicy(
-    context.organizationId,
-    context.agentId,
-    github ? githubSigning(github.token) : {},
-    context.personId,
-  );
+  const { policy, sources } = await sandboxPolicy(context.organizationId, github ? githubSigning(github.token) : {}, context.personId);
   await sandbox.setNetworkPolicy(policy);
   // So the browser accepts the proxy that signs those requests (older templates lack the helper), and
   // commits are signed as the person the run is for.

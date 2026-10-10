@@ -33,7 +33,6 @@ export type IntegrationView = {
   signing: string;
   fields: CredentialField[];
   access: "read" | "write";
-  agentIds: string[] | null;
   /** The people whose work may use it; null is everyone. */
   personIds: string[] | null;
   guide: string;
@@ -49,12 +48,10 @@ type Named = { id: string; name: string };
 
 export function Integrations({
   integrations,
-  agents,
   people,
   canChoosePeople,
 }: {
   integrations: IntegrationView[];
-  agents: Named[];
   people: Named[];
   /** Admins decide which people may use each integration. */
   canChoosePeople: boolean;
@@ -73,7 +70,7 @@ export function Integrations({
   return (
     <div className="space-y-5">
       {integrations.map((integration) => (
-        <IntegrationCard key={integration.id} integration={integration} agents={agents} people={people} canChoosePeople={canChoosePeople} />
+        <IntegrationCard key={integration.id} integration={integration} people={people} canChoosePeople={canChoosePeople} />
       ))}
     </div>
   );
@@ -81,19 +78,16 @@ export function Integrations({
 
 function IntegrationCard({
   integration: i,
-  agents,
   people,
   canChoosePeople,
 }: {
   integration: IntegrationView;
-  agents: Named[];
   people: Named[];
   canChoosePeople: boolean;
 }) {
   const { toast } = useShell();
   const [pending, start] = useTransition();
   const [credentials, setCredentials] = useState(!i.hasCredentials);
-  const [choosing, setChoosing] = useState(false);
   const act = (work: () => Promise<{ error?: string; status?: IntegrationStatus; detail?: string }>, done?: string) =>
     start(async () => {
       const result = await work();
@@ -101,7 +95,6 @@ function IntegrationCard({
       if (result.status) toast(`${i.name}: ${result.status === "connected" ? "connected" : (result.detail ?? result.status)}`);
       else if (done) toast(done);
     });
-  const who = i.agentIds ? agents.filter((a) => i.agentIds!.includes(a.id)).map((a) => a.name) : null;
   const [choosingPeople, setChoosingPeople] = useState(false);
   const whoPeople = i.personIds ? people.filter((p) => i.personIds!.includes(p.id)).map((p) => p.name) : null;
   const togglePerson = (id: string) => {
@@ -109,12 +102,6 @@ function IntegrationCard({
     if (current.has(id)) current.delete(id);
     else current.add(id);
     act(() => updateIntegrationAction(i.id, { personIds: [...current] }));
-  };
-  const toggleAgent = (id: string) => {
-    const current = new Set(i.agentIds ?? []);
-    if (current.has(id)) current.delete(id);
-    else current.add(id);
-    act(() => updateIntegrationAction(i.id, { agentIds: current.size ? [...current] : null }));
   };
 
   return (
@@ -195,32 +182,6 @@ function IntegrationCard({
             </dd>
           </>
         )}
-        <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">Who can use it</dt>
-        <dd>
-          <button onClick={() => setChoosing(!choosing)} className="flex items-center gap-1 text-left hover:text-ink">
-            <span>{who ? (who.length ? who.join(", ") : "No agents") : "Every agent"}</span>
-            <ChevronRight size={13} className={`text-faint transition-transform ${choosing ? "rotate-90" : ""}`} />
-          </button>
-          {choosing && (
-            <div className="mt-2 space-y-1.5">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={!i.agentIds}
-                  onChange={() => act(() => updateIntegrationAction(i.id, { agentIds: i.agentIds ? null : [] }))}
-                />
-                Every agent
-              </label>
-              {i.agentIds &&
-                agents.map((a) => (
-                  <label key={a.id} className="flex items-center gap-2 pl-5 text-sm">
-                    <input type="checkbox" checked={i.agentIds!.includes(a.id)} onChange={() => toggleAgent(a.id)} />
-                    {a.name}
-                  </label>
-                ))}
-            </div>
-          )}
-        </dd>
         <dt className="label mt-2 pt-0.5 first:mt-0 sm:mt-0">Whose work</dt>
         <dd>
           {canChoosePeople ? (

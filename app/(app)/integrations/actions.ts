@@ -46,7 +46,7 @@ export async function testIntegrationAction(id: string): Promise<IntegrationResu
 
 export async function updateIntegrationAction(
   id: string,
-  patch: { access?: "read" | "write"; agentIds?: string[] | null; personIds?: string[] | null; disabled?: boolean },
+  patch: { access?: "read" | "write"; personIds?: string[] | null; disabled?: boolean },
 ): Promise<IntegrationResult> {
   const actor = actorOf(await requireAppContext());
   return attempt(async () => updateIntegrationAs(actor, id, patch));

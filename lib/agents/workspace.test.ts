@@ -86,7 +86,6 @@ describe("the Chief of Staff's workspace", () => {
         ],
       },
       access: "read",
-      agentIds: [],
     });
     await saveCredentials(ORG, docs.id, { username: "ahmed@cedar.example", password: PASSWORD });
     const { sandboxes, seen } = masttroDocs();

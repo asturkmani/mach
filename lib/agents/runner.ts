@@ -26,6 +26,8 @@ import {
 import { askForLoginCode } from "@/lib/agents/browser-steps";
 import { attachSandboxFile, closeSandbox } from "@/lib/agents/sandbox-steps";
 import { exaTools, investigateTool } from "@/lib/research/tools";
+import { SKILL_TOOLS, toolsOf } from "@/lib/agents/skills";
+import { trimToolResults } from "@/lib/agents/trim";
 import {
   browserTools,
   githubTools,
@@ -83,7 +85,7 @@ const reportFields = {
     .describe("The steps done so far, one per line, oldest first, at most six lines. Send the whole list."),
 };
 
-type RunState = SandboxSession & { outcome?: RunOutcome };
+type RunState = SandboxSession & { outcome?: RunOutcome; loaded?: Set<string> };
 
 /** The tools of an agent on a task: delivering files, reporting, asking, handing off and scheduling. */
 function taskTools(
@@ -308,12 +310,10 @@ export async function runAgentOnTask(
   try {
     // The company's own provider keys ride along with each model call (bring your own key).
     const model = options.model ?? new CompanyModel(organizationId, begun.model);
-    // The Researcher also searches with Exa, and so do its sub-researchers.
-    const research = options.research === false ? {} : { ...researchTools(context), ...(begun.researcher ? exaTools() : {}) };
-    const agent = new WorkflowAgent({
-      model,
-      instructions: begun.instructions,
-      tools: narrated(context, {
+    const research = options.research === false ? {} : { ...researchTools(context), ...exaTools() };
+    // Skills loaded during the run switch on their tools from the next step (pinned ones from the start).
+    state.loaded = new Set(begun.skills);
+    const tools = narrated(context, {
         ...taskTools(context, begun.otherAgents, using, end),
         ...sandboxTools(context, using),
         ...integrationTools(context, using, { sources: begun.sources, logins: begun.logins }),
@@ -325,30 +325,37 @@ export async function runAgentOnTask(
         }, { durable: true, heartbeat: () => keepLease(context, "Using the browser") }),
         ...githubTools(context),
         ...research,
-        // The Researcher sends questions to sub-researchers, on its own model, each with the research tools.
-        ...(begun.researcher
-          ? {
-              investigate: investigateTool(context, {
-                model,
-                research,
-                highSignal: begun.highSignal,
-                durable: true,
-                heartbeat: () => keepLease(context, "Investigating"),
-              }),
-            }
-          : {}),
-        use_skill: skillTool(),
-      }, interrupt),
+        // Research sends questions to sub-researchers, on the same model, each with the research tools.
+        investigate: investigateTool(context, {
+          model,
+          research,
+          highSignal: begun.highSignal,
+          durable: true,
+          heartbeat: () => keepLease(context, "Investigating"),
+        }),
+        use_skill: skillTool(undefined, (name) => state.loaded?.add(name)),
+      }, interrupt);
+    // Tools a skill switches on stay off until one of its skills is pinned or loaded.
+    const activeTools = () => {
+      const on = new Set(toolsOf([...(state.loaded ?? [])]));
+      return Object.keys(tools).filter((name) => !SKILL_TOOLS.has(name) || on.has(name));
+    };
+    const agent = new WorkflowAgent({
+      model,
+      instructions: begun.instructions,
+      // No activeTools here: it would fix the set for the whole run. prepareStep picks them before every step.
+      tools,
       // A run also ends when a tool ended it (e.g. a sign-in that asked for a code).
       stopWhen: [isStepCount(40), hasToolCall("ask", "finish", "hand_off"), () => state.outcome !== undefined],
       // Long runs keep their lease fresh before each model call (and say they're thinking), and stop
       // there if a person pressed Send now.
-      prepareStep: async () => {
+      prepareStep: async ({ messages }) => {
         if (await keepLease(context, "Thinking")) {
           interrupt();
           throw new Interrupted();
         }
-        return undefined;
+        const trimmed = trimToolResults(messages);
+        return { activeTools: activeTools(), ...(trimmed === messages ? {} : { messages: trimmed }) };
       },
     });
     const result = await agent.generate({ prompt: withImages(begun.prompt, begun.images) });

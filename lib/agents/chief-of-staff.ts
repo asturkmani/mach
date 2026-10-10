@@ -18,7 +18,7 @@ import { appMapLines } from "@/lib/app-map";
 import { invitePersonAs, OperationError, type Actor } from "@/lib/operations";
 import { personAbout, personLine, type AgentContext } from "@/lib/agents/prompts";
 import { appUrl } from "@/lib/app-url";
-import { skillList } from "@/lib/agents/skills";
+import { SKILLS, skillList } from "@/lib/agents/skills";
 import {
   browserTools,
   githubTools,
@@ -32,7 +32,7 @@ import {
 } from "@/lib/agents/toolkit";
 import { askSpecialist } from "@/lib/agents/specialist";
 import { companyModel } from "@/lib/ai/company-model";
-import { codingAgent, createAgent, findAgentByName, researchAgent, type Agent } from "@/lib/agents/store";
+import { createAgent, findAgentByName, workerAgent, type Agent } from "@/lib/agents/store";
 import { findFiles, listTaskFiles, type LibraryFile } from "@/lib/files";
 import {
   IntegrationError,
@@ -163,7 +163,7 @@ function workInstructions(context: Context): string {
   const integrationLines = integrations.map(
     (i) =>
       `- ${i.slug}: ${i.name} (${i.kind === "api" ? "data source" : "login"}, ${i.access === "read" ? "read-only" : "read and write"}, ${i.status.replace("_", " ")}${
-        i.agentIds ? `, ${i.agentIds.length} agent${i.agentIds.length === 1 ? "" : "s"} only` : ", every agent"
+        i.personIds ? `, ${i.personIds.length} ${i.personIds.length === 1 ? "person's" : "people's"} work only` : ""
       })${i.description ? `: ${i.description}` : ""}`,
   );
   const agentLines = agents
@@ -177,7 +177,7 @@ function workInstructions(context: Context): string {
       return `- ${f.name} (v${v.version}${v.taskNumber ? `, from #${v.taskNumber}` : ""})`;
     });
   return `Tasks and agents:
-- When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
+- When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or else the Worker (workerRole says what kind of work) with the skills the work needs pinned (skills). The agent starts straight away and reports back to their inbox; tell them that in one line.
 - Answer quick questions yourself. Create a task only for real work.
 - Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company"): task.set_visibility.
 - A big job (several steps or agents, several deliverables, days of work) gets planned first with plan_job (acknowledge first: it takes a minute or two). If the plan has things to ask first, ask them in one message and wait. Otherwise create its steps as tasks with create_task, each with its agent or a workerRole, and later steps with after set to the numbers of the tasks they need: they start by themselves as those are delivered. Then tell them the plan in a few lines with the task numbers. Everyday requests: just create the task.
@@ -192,19 +192,19 @@ ${agentLines.join("\n") || "(none yet)"}
 The company's work right now (live, as of this message). You see all of it: everyone's tasks, every agent and every scheduled job. When someone asks what's going on, how something is going, or what an agent found, answer from here, and use read_task for the detail (its summary, progress, thread and results) rather than guessing. find_tasks searches all work, finished included. To steer work (tell an agent to change course, answer its question, add a detail), use reply_on_task: it posts on the task as the person you're talking to, which wakes or queues its agent. Only post what they asked you to.
 ${workOverview({ openTasks, agents, jobs })}
 
-Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and set it up yourself, in this chat: read the docs (with your browser if they need a sign-in), then connect_data_source; they enter credentials in the cards the tools show, never in the chat. Never create an agent or a task to set up an integration. Answer quick questions from a connected data source with call_api. For a website with no API, or changes its API can't make (data entry in Masttro, say), connect a login with connect_login for the agents who'll do that work (a defined agent for that recurring work); they sign in with the browser in their sandbox, and sign-in codes come to the people on the job.
+Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and set it up yourself, in this chat: read the docs (with your browser if they need a sign-in), then connect_data_source; they enter credentials in the cards the tools show, never in the chat. Never create an agent or a task to set up an integration. Answer quick questions from a connected data source with call_api. For a website with no API, or changes its API can't make (data entry in Masttro, say), connect a login with connect_login; every agent can use it, signing in with the browser in its sandbox, and sign-in codes come to the people on the job.
 
 Your sandbox: like every agent, you have a Linux sandbox for the company with a browser in it. Use browse to read pages fetch_page can't (JavaScript apps, pages behind one of the company's logins), and run_code to work through what you saved (an API spec, say). For anything interactive on a website (checking something inside a signed-in app, testing a login, a quick change people asked for), hand it to the browser agent with use_browser: it sees the page, signs in with the company's logins and reports back with screenshots. It's for quick things while you set things up or answer a question; real work still goes to a task.
 ${integrationLines.join("\n") || "(none yet)"}
 
 Code and GitHub: each person connects their own GitHub (Settings → Account), and work in GitHub always runs as the person who asked, never anyone else. ${githubLine(context)}
-- For a code change in a repository ("fix the typo on the pricing page", "add a field to the signup form"), call start_coding with what they want and the repository if they named it. The Developer agent clones it, works on a branch, runs its checks, pushes and opens a pull request, then reports back with the link (on WhatsApp too, when they asked there). Don't write code in chat.
+- For a code change in a repository ("fix the typo on the pricing page", "add a field to the signup form"), call start_coding with what they want and the repository if they named it. The Worker, with the coding-in-github skill, clones it, works on a branch, runs its checks, pushes and opens a pull request, then reports back with the link (on WhatsApp too, when they asked there). Don't write code in chat.
 - Follow-ups on that work ("also make the button blue", "merge it") go to its task with reply_on_task. Merging happens only when they say so.
 - Quick questions about their GitHub (their open pull requests, a repository's recent commits, an issue) answer yourself with github_api, which acts as them.
 
-Research: the Researcher looks into anything the company needs to know (companies and markets, people and organisations, products and vendors, topics and events) across the web, filings, market data, X and Reddit, starting with the sources each person saved as high signal.
+Research: the Worker, with the research skill, looks into anything the company needs to know (companies and markets, people and organisations, products and vendors, topics and events) across the web, filings, market data, X and Reddit, starting with the sources each person saved as high signal.
 - Everyday lookups answer yourself: a price or a quick number (market_data), what one account or a few are saying (x_search), a fact (web_search).
-- A question that needs judgment across several sources ("what's the market saying about Micron's guidance?", "is this vendor any good?") goes to start_research with depth quick: the Researcher answers here in a few minutes. Real research ("a brief on…", "dig into…", "compare…", due diligence, a primer) is depth brief: a task it reports back on with a written, sourced brief. A regular digest ("every Monday, what my sources say about AI chips") is a brief with repeat.
+- A question that needs judgment across several sources ("what's the market saying about Micron's guidance?", "is this vendor any good?") goes to start_research with depth quick: it answers here in a few minutes. Real research ("a brief on…", "dig into…", "compare…", due diligence, a primer) is depth brief: a task it reports back on with a written, sourced brief. A regular digest ("every Monday, what my sources say about AI chips") is a brief with repeat.
 - Brief it like a good manager: it gets the company profile and who it's for (their name and role) by itself, but it can't see this conversation. Say why they want it (the decision or work it's for), what matters that it can't know (what they already know or think, constraints, names, tickers or links they gave, sources to use or avoid) and what they want back. Pass on only what the research needs, nothing personal it doesn't.
 - High-signal sources: when someone says a website, an X account, a subreddit or a Reddit user is worth following, or to look at it first, save it with do_action source.add, with why in the note (theirs unless they say it's for everyone). source.list shows them; the Research screen has them too.
 
@@ -447,7 +447,11 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
         workerRole: z
           .string()
           .optional()
-          .describe("Add a new worker agent with this role, e.g. 'Financial analysis', when no defined agent fits."),
+          .describe("Put the Worker on it for this kind of work, e.g. 'Financial analysis', when no defined agent fits."),
+        skills: z
+          .array(z.enum(SKILLS.map((s) => s.name) as [string, ...string[]]))
+          .optional()
+          .describe("Skills the work needs (e.g. research, excel-models, presentations, data-pipelines): its agent reads them before it starts."),
         files: z.array(z.string()).optional().describe("Exact names of company files the job should start from."),
         shareWithCompany: z
           .boolean()
@@ -466,7 +470,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           .optional()
           .describe("Numbers of tasks it needs first (a planned job's later steps): it waits, then starts by itself once each is delivered."),
       }),
-      execute: async ({ title, description, priority, people, agents, workerRole, files, repeat, shareWithCompany, after }) => {
+      execute: async ({ title, description, priority, people, agents, workerRole, skills, files, repeat, shareWithCompany, after }) => {
         try {
           const found = await findFiles(orgId, files ?? [], { viewer: context.person?.id });
           const missing = (files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
@@ -482,6 +486,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             personIds: team.people.map((p) => p.id),
             agentIds: team.agents.map((a) => a.id),
             workerRole,
+            skills,
             inputFileIds: found.map((f) => f.id),
             schedule: repeat,
             visibility: shareWithCompany ? "company" : "private",
@@ -511,7 +516,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
     }),
     start_coding: tool({
       description:
-        "Start a code change in a GitHub repository, done by the Developer agent as the person you're talking to (with their own GitHub): a task it works on straight away, ending in a pull request. They're on it and hear back when it's ready.",
+        "Start a code change in a GitHub repository, done by the Worker with the coding-in-github skill as the person you're talking to (with their own GitHub): a task it works on straight away, ending in a pull request. They're on it and hear back when it's ready.",
       inputSchema: z.object({
         title: z.string().min(1).max(100).describe("The change, starting with a verb, e.g. 'Fix the typo on the pricing page'."),
         request: z.string().min(1).describe("What they want, in their words plus anything you know: where, why, what done looks like."),
@@ -523,11 +528,12 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
         if (github?.status !== "connected") {
           return { error: `${context.person.name} needs to connect their GitHub first: ${appUrl("/connect/github")}` };
         }
-        const developer = await codingAgent(orgId);
+        const developer = await workerAgent(orgId);
         const task = await createTaskWithTeam(orgId, {
           title,
           description: [request.trim(), repository ? `Repository: ${repository.trim()}` : ""].filter(Boolean).join("\n\n"),
           agentIds: [developer.id],
+          skills: ["coding-in-github"],
           replyByWhatsApp: context.channel === "whatsapp",
           by,
         });
@@ -543,7 +549,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
     }),
     start_research: tool({
       description:
-        "Hand research to the Researcher (companies, markets, people, products, topics, events): it searches the web, filings, market data, X and Reddit, starting with the sources the person you're talking to saved as high signal. It gets the company profile and who it's for by itself; everything else from this conversation it only knows from what you pass here. quick: it answers here in a few minutes (or it becomes a task if it needs longer). brief: a task where it investigates in depth and reports back with a sourced brief, on WhatsApp too when they asked there.",
+        "Hand research to the Worker with the research skill (companies, markets, people, products, topics, events): it searches the web, filings, market data, X and Reddit, starting with the sources the person you're talking to saved as high signal. It gets the company profile and who it's for by itself; everything else from this conversation it only knows from what you pass here. quick: it answers here in a few minutes (or it becomes a task if it needs longer). brief: a task where it investigates in depth and reports back with a sourced brief, on WhatsApp too when they asked there.",
       inputSchema: z.object({
         title: z.string().min(1).max(100).describe("Starting with a verb, e.g. 'Research Micron's HBM outlook'."),
         question: z.string().min(1).describe("What to find out, in a sentence or two."),
@@ -557,7 +563,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           .string()
           .optional()
           .describe(
-            "What matters that the Researcher can't see: what they already know or think, constraints (budget, region, time frame), names, tickers and links from the conversation, sources to use or avoid. Only what the research needs.",
+            "What matters that the research can't see: what they already know or think, constraints (budget, region, time frame), names, tickers and links from the conversation, sources to use or avoid. Only what the research needs.",
           ),
         deliverable: z.string().optional().describe("What they want back, e.g. 'a one-page brief', 'a table of five vendors', 'yes or no, with the reasons'."),
         depth: z.enum(["quick", "brief"]).describe("quick: a question answered in minutes. brief: in-depth research delivered as a written brief."),
@@ -572,7 +578,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
       }),
       execute: async ({ title, depth, shareWithCompany, repeat, ...asked }): Promise<ResearchOutput> => {
         if (!context.person) return { error: "Only a signed-in team member can start research." };
-        const researcher = await researchAgent(orgId);
+        const researcher = await workerAgent(orgId);
         const request = researchRequest(asked, context.person);
         // A quick question is answered while you wait; one that needs longer becomes a task, as a brief does.
         let why: string | undefined;
@@ -583,6 +589,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             about: personAbout(context.person),
             profile: context.profile,
             research: research.enabled,
+            skills: ["research"],
           });
           if ("answer" in answered) return { agent: researcher.name, answer: answered.answer };
           why = answered.needsTask;
@@ -592,6 +599,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             title,
             description: request,
             agentIds: [researcher.id],
+            skills: ["research"],
             replyByWhatsApp: context.channel === "whatsapp",
             visibility: shareWithCompany ? "company" : "private",
             schedule: repeat ? { ...repeat, mode: "agent" } : undefined,
@@ -756,12 +764,10 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
         testPath: z.string().optional().describe("A cheap GET that succeeds when the credentials work."),
         docsUrl: z.string().optional(),
         access: z.enum(["read", "write"]).optional().describe("read (the default): agents can only GET."),
-        agents: z.array(z.string()).optional().describe("Exact names of the only agents allowed; leave out for every agent."),
         guide: z.string().optional().describe("Markdown for agents: main endpoints and parameters, paging, limits, field meanings."),
       }),
-      execute: async ({ agents: agentNames, ...input }) => {
+      execute: async (input) => {
         try {
-          const team = agentNames ? await resolveTeam(orgId, { agents: agentNames }) : null;
           const config: ApiConfig = {
             baseUrl: input.baseUrl,
             domains: input.domains ?? [],
@@ -779,7 +785,6 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             description: input.description,
             config,
             access: input.access,
-            agentIds: team ? team.agents.map((a) => a.id) : undefined,
             guide: input.guide,
             personId: context.person?.id,
           });
@@ -813,7 +818,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
     }),
     connect_login: tool({
       description:
-        "Connect (or reconfigure) a website account used in a sandbox's browser: by you (e.g. to read API docs behind a sign-in) and by the agents you name, for sites without an API or changes the API can't make. Shows the person a secure card for the username, password and, optionally, an authenticator setup key. Never put credentials in this call.",
+        "Connect (or reconfigure) a website account used in a sandbox's browser, by you (e.g. to read API docs behind a sign-in) and by every agent, for sites without an API or changes the API can't make. Shows the person a secure card for the username, password and, optionally, an authenticator setup key. Never put credentials in this call.",
       inputSchema: z.object({
         name: z.string().min(1).max(60).describe("e.g. Masttro (web)"),
         slug: z.string().optional().describe("Short handle, e.g. masttro-web. Reuse it to reconfigure."),
@@ -826,19 +831,14 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           .array(z.string())
           .optional()
           .describe("Every other site this account opens, e.g. a help centre on its own domain that signs in through it (masttro.zendesk.com)."),
-        agents: z
-          .array(z.string())
-          .optional()
-          .describe("Exact names of the agents allowed to use it besides you. Leave out when only you need it."),
         selectors: z
           .object({ username: z.string().optional(), password: z.string().optional(), submit: z.string().optional(), code: z.string().optional() })
           .optional()
           .describe("CSS selectors for the sign-in form, only if the usual ones won't find it."),
         guide: z.string().optional().describe("Markdown for agents: where things are on the site, how to enter data, what to avoid."),
       }),
-      execute: async ({ agents: agentNames, ...input }) => {
+      execute: async (input) => {
         try {
-          const team = await resolveTeam(orgId, { agents: agentNames ?? [] });
           const config: LoginConfig = {
             loginUrl: input.loginUrl,
             checkUrl: input.checkUrl,
@@ -861,7 +861,6 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             description: input.description,
             config,
             access: "write",
-            agentIds: team.agents.map((a) => a.id),
             guide: input.guide,
             personId: context.person?.id,
           });
@@ -876,7 +875,6 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
               status: integration.status,
               kind: "login" as const,
             },
-            agents: team.agents.map((a) => a.name),
           };
         } catch (error) {
           if (error instanceof IntegrationError || error instanceof WorkError) return { error: error.message };
@@ -888,7 +886,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
         value:
           "error" in output
             ? `Not saved: ${output.error}`
-            : `Saved ${output.integration.name} (${output.integration.slug}) for ${output.agents.length ? `you and ${output.agents.join(", ")}` : "you only"}. ${
+            : `Saved ${output.integration.name} (${output.integration.slug}). ${
                 output.integration.hasCredentials
                   ? "Its saved credentials were kept."
                   : "They now see a card to enter the username and password. Don't ask for them in the chat."

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createOrganization } from "@/lib/orgs";
 import { useTestDb } from "@/test/db";
 
-import { agentModel, codingAgent, createAgent, getAgent, updateAgent } from "./store";
+import { agentModel, createAgent, getAgent, updateAgent, workerAgent } from "./store";
 
 const ORG = "org_cedar";
 
@@ -14,10 +14,11 @@ describe("the model each agent runs on", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("uses an agent's own model, else the company's, else Mach1's for its role", async () => {
+  it("uses an agent's own model, else the company's, else Mach1's for the work its skills are for", async () => {
     const analyst = await createAgent(ORG, { name: "Analyst" });
     expect(agentModel(analyst)).toBe("mach1/worker");
-    expect(agentModel(await codingAgent(ORG))).toBe("mach1/coder");
+    expect(agentModel(await workerAgent(ORG), {}, ["coding-in-github"])).toBe("mach1/coder");
+    expect(agentModel(await workerAgent(ORG), { agents: "openai/gpt-6.1-sol" }, ["coding-in-github"])).toBe("openai/gpt-6.1-sol");
     expect(agentModel(analyst, { agents: "openai/gpt-6.1-sol" })).toBe("openai/gpt-6.1-sol");
 
     await updateAgent(ORG, analyst.id, { model: "anthropic/claude-sonnet-4.5" });
