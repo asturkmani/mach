@@ -20,3 +20,11 @@ People mostly use Mach1 by talking to their Chief of Staff on WhatsApp (and emai
 - **Write for a phone**: what the CoS says lands on WhatsApp, so replies, action results and errors are short plain sentences for the person, not developer messages.
 
 More in `docs/assistant.md` ("Everything from chat").
+
+# Environments and databases
+
+- **Neon `dev` branch**: the development database. Coding sessions and local work use it (`DATABASE_URL`); it never syncs with production. If it drifts, reset it from `main` in the Neon console. Never point development work at production.
+- **Neon `main` branch**: production, used only by Vercel production deployments.
+- **Previews**: each branch's Vercel preview gets its own Neon branch, `preview/<branch>`. The Neon plan allows 10 branches; past that previews fail with "Resource provisioning failed". `.github/workflows/cleanup-merged-branches.yml` deletes a branch and its preview database when its pull request is merged (it never touches `main`, `dev` or `staging`).
+- **Schema**: `db/schema.sql`, idempotent (`create … if not exists`, `alter … add column if not exists`), applied by `scripts/migrate.mjs` on every Vercel build (`vercel-build`), so a merge migrates production. Keep changes additive and safe for the code that's still running.
+- **Flow**: feature branch → pull request → merge to `main`, which deploys production. Model ids aren't environment variables: they're per company by role (`lib/ai/lineup.ts`, `docs/ai-keys.md`).
