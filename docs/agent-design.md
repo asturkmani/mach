@@ -1,25 +1,32 @@
-# Agents, skills and tools
+# Agents, skills and connections
 
-**Status: proposed 2026-10-10.** Not built yet. Once built, it replaces "Asking a specialist" and "Big jobs: the coordinator" in [assistant.md](assistant.md), the Developer and the Researcher as agents ([github.md](github.md), [research.md](research.md)), and the worker agent made for each task.
+**Status: proposed 2026-10-10.** Not built yet. Once built, it replaces:
+- "Asking a specialist" and "Big jobs: the coordinator" in [assistant.md](assistant.md);
+- the Developer and the Researcher as agents ([github.md](github.md), [research.md](research.md));
+- the agents a company defines, and the worker agent made for each task;
+- limits on which agents may use an integration ([integrations.md](integrations.md)).
 
-## Goal
+## The idea
 
-People ask in chat, and three kinds of agent do the work:
+Mach1 is split into three parts:
 
-- **The chat agent** (today's Chief of Staff) answers fast and cheaply. It does what it can in the turn and hands off the rest.
-- **A worker** does one piece of work on a task, with whatever skills that work needs.
-- **A coordinator** runs a big job or a process. It plans, starts the parts (workers, people, scripts), checks what comes back and reports once.
+- **A fixed runtime of four agents**, which nobody configures: the chat agent, the coordinator, the worker and the browser agent.
+- **Skills and scripts**, which are what grows. A few base skills ship with Mach1. Everything else is learned on the job: the first time, a worker works something out. After that, it's a skill (how to do it) and scripts (the parts that run without a model).
+- **Connections**: the company's APIs and website logins. Credentials are sealed. Every agent in the company can use them, within the limits an admin sets for whose work they serve.
 
-What makes work "research" or "coding" is a **skill** the worker loads, not a different agent. Going wide (in-depth research, many issues at once) is always a job: the coordinator splits the work and workers do the parts in parallel. The only other agent loop is the browser agent, which earns its own (below).
-
-That's the whole set: **chat agent, coordinator, worker, and the browser agent**. Profiles are settings a worker runs with, not agents. The planner becomes the coordinator's model.
+Work moves from the model into skill text, and from skill text into scripts. Each step makes it cheaper and more reliable, and every company's Mach1 gets better at that company's work.
 
 ## Why
 
-- **Today's role agents are already one agent.** Every task agent runs the same loop (`runAgentOnTask`) with the same tools. The Developer's instructions are one line: "Load the coding-in-github skill before you start, and follow it." The Researcher's are the same with the research skill, plus `exa_search` and `investigate`. A worker agent is a role name made for one task. `coder` and `worker` are the same model in both lineups.
-- **Big jobs have no owner.** `plan_job` writes a plan as text, the cheapest model turns it into tasks with `after`, and `startFollowers` starts them in order. Nothing checks the parts or puts them together. Each task reports to people on its own.
-- **Long work runs in the chat turn.** The Chief of Staff runs code, the browser and page building inside a request that may last 800 s and isn't durable.
-- **It's where the field has landed.** In Claude's Agent SDK and Claude Code ([subagents](https://code.claude.com/docs/en/sub-agents)), every worker is the same kind of session. Subagents are used for three reasons only: verbose work kept out of the main context, restricted tools, and parallel work. Reusable know-how is a skill ([Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)). [Claude Code Projects](https://code.claude.com/docs/en/claude-projects) (beta) adds one coordinator that starts generic threads, sees only what they report, and shares a memory with them. Instinct, from what it has said in public, is one generalist agent with checks around it that aren't agents.
+- **Today's role agents are already one agent.** Every task agent runs the same loop (`runAgentOnTask`) with the same tools.
+  - The Developer's instructions are one line: "Load the coding-in-github skill before you start, and follow it."
+  - The Researcher's are the same line with the research skill, plus two extra tools, `exa_search` and `investigate`.
+  - A worker agent is just a role name made for one task.
+  - `coder` and `worker` are the same model in both lineups.
+- **Big jobs have no owner.** `plan_job` writes a plan as text, the cheapest model turns it into tasks with `after`, and `startFollowers` starts them in order. Nothing checks the parts or puts them together, and each task reports to people separately.
+- **Long work runs in the chat turn.** The Chief of Staff runs code, the browser and page building inside a request that can last 800 s and doesn't survive a failure.
+- **What's learned is scattered.** Scripts are saved in the file library but stay attached to their task, so nothing finds them for new work. Know-how sits in integration guides, a job's `NOTES.md` and the defined agents' instructions.
+- **It's where the field has landed.** In Claude's Agent SDK and Claude Code ([subagents](https://code.claude.com/docs/en/sub-agents)), every worker is the same kind of session. Subagents exist only to keep verbose work out of the main context, to restrict tools, or to run work in parallel. Reusable know-how is a skill: a `SKILL.md` with its scripts ([Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)). [Claude Code Projects](https://code.claude.com/docs/en/claude-projects) (beta) has one coordinator that starts generic threads and sees only what they report. Instinct, from what it has said in public, is one generalist agent with checks around it that aren't agents.
 
 ## The six scenarios
 
@@ -34,7 +41,7 @@ Every part of this design is there for at least one of these. They are also the 
 | 5 | "Monthly: Kalshi numbers from XYZ.com with charts; separately, regulatory status by state from ZZZ.com" | Two workers, each repeating | Two independent deliverables |
 | 6 | "Weekly: untagged Masttro transactions, Rita for Hassan Daher's, Mawla for Wissam Daher's, auto-tag clear repeats, else Mustapha; I confirm; then tag them in Masttro's web app" | Job, repeating | A process with people, an approval, and writes to another system |
 
-## The agents
+## The runtime
 
 ```
                           ┌──────────────┐
@@ -52,310 +59,392 @@ Every part of this design is there for at least one of these. They are also the 
           browser agent
 ```
 
+There are four agents, and only four. No company defines its own, and no task gets an agent made for it.
+
 ### Chat agent
 
 One per person per company, as today: the same conversation from the panel, WhatsApp and email, one turn at a time, on the `chat` model.
 
-It does these in the turn:
-
-- Answers from what it already has: the profile, open tasks, files, pages, the team.
+**It does these itself, in the turn:**
+- Answers from what it already has: the profile, open tasks, files, pages and the team.
 - Does actions with `do_action`, with the person's permissions.
-- Quick lookups: `web_search`, `fetch_page`, `market_data`, `x_search`, `reddit_search`, `find_tasks`, `read_task`, a GET with `call_api`.
-- Setting up integrations, because the credentials card and the sign-in code card live in the chat.
+- Quick lookups: `web_search`, `fetch_page`, `market_data`, `x_search`, `reddit_search`, `find_tasks`, `read_task`, or a GET with `call_api`.
+- Sets up connections, since the credentials card and the sign-in code card live in the chat.
 - Onboarding and profile suggestions.
 
-It hands everything else off, using these rules:
+**It hands everything else off by these rules:**
+1. If the context or one quick tool covers it, answer.
+2. If it's one thing to change in the app, use `do_action`.
+3. If it's one deliverable and one kind of work, use `spawn_worker`. If the answer is likely within a few minutes, pass `wait` and answer in the chat. If it takes longer, it becomes a task that reports back.
+4. Use `start_job` for any of these:
+   - several deliverables that depend on each other;
+   - a process with people or an approval in it;
+   - in-depth research;
+   - work whose shape nobody can know until someone looks.
+5. If unsure between 3 and 4, use a worker. It can escalate.
 
-1. The context or one quick tool covers it: answer.
-2. One thing to change in the app: `do_action`.
-3. One deliverable, one kind of work: `spawn_worker`. If the answer is likely within a few minutes, pass `wait` and answer in the chat. If it needs longer, it becomes a task that reports back.
-4. Several deliverables that depend on each other, a process with people or an approval in it, in-depth research, or a shape it can't know until someone looks: `start_job`.
-5. Unsure between 3 and 4: a worker. It can escalate.
-
-It writes the brief: the request with everything from the conversation that the work needs, since workers don't see the chat. It also writes which skills to load, and who the work is for.
+**It writes the brief**, since workers don't see the chat: the request, with everything from the conversation the work needs. It also says which skills to pin and who the work is for.
 
 ### Worker
 
-One built-in agent per company, called **Worker**. It replaces the Developer, the Researcher, and the worker agent made for each task. It works on a task in the agent-run workflow exactly as task agents do today: the same lease, the same turn limits, the same durable steps (`lib/agents/runner.ts`).
+One built-in agent per company, called **Worker**. It works on a task in the agent-run workflow exactly as task agents do today: the same lease, the same turn limits, the same durable steps (`lib/agents/runner.ts`).
 
-- **What it reads**: the task brief as today, plus the skills pinned to the task, already loaded. A worker can load more with `use_skill`.
-- **Running as a profile**: a task can name a profile (below). The worker then also gets that profile's instructions, model, pinned skills and allowed integrations.
-- **Model**: the task's model if one was set when it was started, else the profile's, else the pinned skill's default, else the company's model for agents, else the `worker` role.
-- **How a run ends**: `finish`, `ask` or `hand_off`, as today. On a job's child task, these go to the coordinator first (see Coordinator).
-- **Escalating**: when a worker finds the work needs a plan or needs to go wide (it found eight issues, not one; the question splits into six), it calls `escalate`. Its task becomes a job and a coordinator takes over. The worker's findings become the coordinator's first input. Workers never start other agents themselves.
-- **Long runs**: before each model call, older tool results (search hits, whole pages, command output) are trimmed to a short note of what they held. That way a run that reads a lot keeps a working context without needing a second agent.
+- **Skills.** The skills pinned to the task are loaded before it starts, and their scripts are copied into the sandbox. It can load more at any point with `use_skill`.
+- **Connections.** It may use every connection of the company that the person it works for may use. Anything it would change outside Mach1 still needs an approval (see Gates in code).
+- **Model.** The model set on the task when it was started, else the default of the first pinned skill, else the company's model for agents, else the `worker` role.
+- **Ending a run.** `finish` or `ask`, as today. On a job's child task, these go to the coordinator first.
+- **Escalating.** When the work needs a plan or needs to go wide (it found eight issues, not one, or the question splits into six), it calls `escalate`. Its task becomes a job, a coordinator takes over, and what the worker found becomes the coordinator's first input. A worker never starts another agent itself.
+- **Long runs.** Before each model call, older tool results (search hits, whole pages, command output) are trimmed to a short note of what they held. A run that reads a lot keeps a working context without needing a second agent.
+- **Learning.** Before it finishes, it asks itself whether anything is worth keeping as a skill or a script (see Learning on the job).
 
-### Profiles: what the company's own agents become
-
-The agents a company defines on the Team page ("Sales outbound", "Data entry") stay, as **profiles**. A profile is a name, standing instructions, a model, the skills it always loads, and the integrations it may use. A worker runs as a profile when a task names it.
-
-They stay for three reasons:
-
-- **Integration limits.** Today an integration can be limited to chosen agents, for example "only Data entry gets the Masttro login". That limit needs something to attach to.
-- **A model per kind of work.** A company can choose one, as it does per agent today.
-- **People think in names.** "Ask the analyst" should keep working.
-
-Profiles are the `agents` rows of kind `defined`, as today. Nothing about them changes, except that built-in agents stop being made and worker agents stop being made per task.
+`hand_off` goes: with one kind of worker there's no one to hand off to. Splitting work is the coordinator's job.
 
 ### Coordinator
 
-The agent of a **job**: a task with child tasks. It runs on the job's own task in the agent-run workflow, on the `planner` model (Opus 5.5 at low effort, or GPT-6 Astra). It takes over from `plan_job`.
+The agent of a **job**: a task with child tasks. It runs on the job's own task in the agent-run workflow, on the `planner` model (Opus 5.5, or GPT-6 Astra), and replaces `plan_job`.
 
-**Its turns are short**, and each is a run like any other:
+**Its turns are short**, and each one is an ordinary run:
 
 1. **First run.**
-   - Settles what to ask first. The person answers on the job's task, through `ask`.
+   - Settles what has to be asked first. The person answers on the job's task, through `ask`.
    - Writes the plan into the job's thread.
    - Shows a cost estimate when it's over the company's limit, and waits for the person to approve.
    - Starts the children that can start now.
    - Ends.
-2. **Later runs.** Children started together are a batch. The coordinator wakes once when the whole batch has delivered, not once per child, because each of its turns is on the planner model. It also wakes as soon as a child asks something or fails, or a person writes on the job. Each run does any of these:
-   - Reviews what came back.
-   - Answers the child, or sends it back with a reply.
-   - Starts the next children.
-   - Asks the person.
+2. **Later runs.** Children started together form a batch.
+   - It wakes once when the whole batch has delivered, not once per child, because every turn it takes is on the planner model.
+   - It also wakes as soon as a child asks something or fails, or a person writes on the job.
+   - In each run it reviews what came back, answers a child or sends it back with a reply, starts the next children, or asks the person.
 3. **Last run.** Puts the result together (a file, a deck, a table) and reports with `finish`. This is the only report the person gets.
 
-**Children** are tasks with one assignee each:
+**Each child task has one assignee:**
 
 | Assignee | What it is | Example |
 |---|---|---|
-| Worker | A task for the Worker, with skills, optionally as a profile | Fix issue #412; model SK hynix |
-| Person | A task with only that person on it: a question or a list to go through. Their own assistant tells them, and their answer comes back on the task | Rita: tag these 14 transactions |
-| Script | A task whose `run.sh` replays without a model. If it fails, a worker is woken to fix it | Pull untagged transactions from Masttro |
+| Worker | A task for the Worker, with pinned skills | Fix issue #412; model SK hynix |
+| Person | A task with only that person on it: a question, or a list to go through. Their own assistant tells them, and their answer comes back on the task | Rita: tag these 14 transactions |
+| Script | A task that runs a skill's script without a model. If the script fails, a worker is woken to fix it | Pull untagged transactions from Masttro |
 
 **Rules for children:**
-
-- **Who they're for.** Children are created for the person the job is for, never "by the coordinator". Whose accounts a run may use follows from who it's for (`workingForId`): their GitHub, and the integrations they're allowed.
-- **Who hears about them.** A worker child's `ask` and `finish` wake the coordinator, not people. The coordinator answers or asks the person. People can still open a child and write on it directly. A person child notifies its person, which is its job.
+- **Who they're for.** Children are created for the person the job is for, never "by the coordinator". Whose accounts a run may use (their GitHub, the connections they may use) depends on who it's for (`workingForId`).
+- **Who hears about them.** A worker child's `ask` and `finish` wake the coordinator, not people. The coordinator either answers or asks the person. People can still open a child and write on it directly. A person child does notify its person, since that's its purpose.
 - **Order.** `after` works as today: a child waits in backlog until the children it needs have delivered.
 - **Depth.** Children can't start jobs. A worker child that needs a plan tells the coordinator, which re-plans.
-- **Limits.** At most 8 children running at once, and 40 per job. The coordinator's messages don't reset a child's count of agent turns, so the six-turn limit still stops a loop between them.
+- **Limits.**
+  - At most 8 children run at once, and 40 per job.
+  - The coordinator's messages don't reset a child's count of agent turns, so the six-turn limit still stops a loop between them.
 
-**Repeating jobs.** A job can carry a schedule. Its first successful run saves its plan as a **runbook**: a skill owned by whoever asked for the job, and private like their tasks. Later runs load the runbook and don't plan again unless it fails. If the last run's children are still open when the next one is due, the coordinator carries the open items into the new run instead of skipping it.
+**In-depth research is a job:**
+1. The coordinator frames the question with the `research` skill: the decision it serves, and what a good answer contains. It splits the question into three to six parts.
+2. It starts one worker child per part, as one batch. Each child loads `research`, investigates, and finishes with compressed findings: dated, marked as fact, estimate or opinion, with numbered sources. It doesn't hand over everything it read, so the coordinator's context stays small.
+3. The coordinator reads the batch, runs a second round for the gaps that matter (two rounds at most), then writes the brief.
 
-**Research is a job.** In-depth research works like any other job:
-1. The coordinator frames the question with the `research` skill (the decision it's for, what a good answer holds) and splits it into three to six questions.
-2. It starts one worker child per question, as one batch. Each child loads `research`, investigates, and finishes with compressed findings: dated, marked Fact, Estimate or Opinion, with numbered sources. It doesn't hand over everything it read, so the coordinator's context stays small.
-3. The coordinator reads the batch, starts a second round for the gaps that matter (two rounds at most), then writes the brief.
+A quick research question ("what's the market saying about Micron's guidance?") goes to one worker with `wait` and is answered in the chat. This replaces the Researcher's sub-researchers (`investigate`).
 
-A quick research question ("what's the market saying about Micron's guidance?") is one worker with `wait`, answering in the chat. This replaces the Researcher's sub-researchers (`investigate`).
+**Repeating jobs.** A job can have a schedule.
+- The first good run saves its plan as a company skill: a **workflow skill**, with the scripts the run used.
+- Later runs load that skill and don't plan again unless something fails.
+- If the previous run's children are still open when the next run is due, the coordinator carries the open items into the new run instead of skipping it.
 
-### The browser agent: the one separate loop
+### Browser agent
 
-`use_browser` hands a bounded job on a website to the browser agent. It stays its own agent, unchanged, because:
-- it runs on its own vision model;
-- a screenshot after every step would swamp the caller's context;
-- web pages are untrusted, so the caller should only read the browser agent's report;
-- its sessions carry on between calls.
+`use_browser` hands one bounded job on a website to the browser agent. It stays a separate agent, unchanged, for four reasons:
+- It runs on its own vision model.
+- A screenshot after every step would swamp the caller's context.
+- Web pages are untrusted, so the caller should only read the browser agent's report.
+- Its sessions carry on between calls.
 
-How to use it well becomes a skill, `using-the-browser`.
+How to use it well is a base skill, `using-the-browser`. A website workflow that gets repeated becomes a Playwright script inside a skill and runs without it.
 
-## Skills
+### What the runtime guarantees, and skills can't
+
+A skill is text the model reads, so it can only ask for things. These have to hold even when the model ignores its instructions, so they live in code:
+
+- **Durability.** Long jobs survive failures and outlast a function's time limit (Vercel Workflow).
+- **One run at a time per task** (the lease), and the six-turn limit.
+- **Waiting for people.** Person children, wake-ups, and quiet hours.
+- **Who may use a connection.** Credentials stay sealed and out of models and sandboxes.
+- **Approvals** before changes outside Mach1, and cost approvals.
+
+## Skills and scripts
 
 ### What a skill is
 
-A playbook for one kind of work. The catalogue (each skill's name and one line on when to use it) is in every agent's instructions. The body is read only when it's loaded (`use_skill`) or pinned to the task, which keeps prompts small.
+A folder in the [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) layout, so Mach1 and Claude Code can each read the other's skills:
 
-A skill has:
-
-| Field | |
+| Part | |
 |---|---|
-| `name`, `description` | What it's called, and when to use it, in one line |
-| `body` | How to do the work: steps, rules, what good looks like, what to ask first |
-| `tools` | Tools it switches on when loaded, from a fixed list (e.g. `exa_search`). A skill never grants an integration, and never any tool the runner hasn't allowed |
-| `model` | Optional default: a role (`coder`, `worker`) and effort |
-| `files` | Optional scripts and templates copied into the sandbox when loaded (a deck builder, a chart style) |
-| `owner`, `visibility` | Company skills only: who wrote it, and private or company, with the same rules as tasks |
+| `SKILL.md`: name and description | What it's called, and when to use it, in one line. This is all the catalogue shows |
+| `SKILL.md`: body | How to do the work: the steps, the judgment calls, who to ask, what needs approval, what good looks like |
+| `scripts/` | The parts that run without a model, e.g. `pull_untagged.py` or `tag_cmr.py`. Copied into the sandbox when the skill is loaded |
+| `scripts/test` | An example run each script must pass before the skill is saved or changed |
+| Front matter | Connections its scripts use; a default model and effort; tools it switches on (from a fixed list, e.g. `exa_search`); `extends` (below) |
 
-Built-in skills use the Agent Skills layout (`SKILL.md` with front matter, plus files), so Mach1's skills and Claude Code's can be read by either.
+A skill never contains credentials, and never grants itself access to anything. Scripts call connections through the sandbox's network proxy, which adds credentials on the way out, as today.
 
-### Built-in skills
+**Two kinds, by what they describe:**
+- **System skills** cover how one system behaves: its endpoints, paging, quirks, the clicks through its web app, and scripts to pull from it. There's one per connection, made when the connection is made. Today's integration guides become these.
+- **Workflow skills** cover how this company does a piece of work: the steps, who gets what, the rules, the approvals, and the scripts that carry it out. "Masttro weekly tagging" and "how we do month-end" are workflow skills.
+
+### Base skills and company skills
+
+| | Base skills | Company skills |
+|---|---|---|
+| **Who writes them** | Mach1's developers | Learned on the job, or written by people |
+| **Where they live** | The repo: `skills/<name>/`, collected at build time like `lib/app-map.json` | Postgres (`skills`, `skill_versions`). Scripts are versioned files in the file library |
+| **Who sees them** | Every company | The company. Private ones only their owner, with the same rules as tasks |
+| **How they change** | With a deploy | A new version each time, applied by a person (system skills: by agents, see below) |
+| **Names** | Plain: `research` | Can't reuse a base skill's name |
+
+**Extending, not forking.** A company never edits a base skill. To add its own way of doing something ("our decks use this template and these colours", "our models use our chart of accounts"), it writes a company skill that `extends` the base one. That skill is loaded straight after it. Base skills keep getting fixes, and company details survive them.
+
+**Moving a skill up to base.** When the same kind of company skill shows up across many companies (several have learned to work with the same platform), Mach1's developers can write a general base skill from the pattern. This is never automatic, and nothing company-specific is copied: no names, rules or data. Company skills are never shared between companies.
+
+**The catalogue.** Every agent's instructions list the base skills and the company skills the person can see, one line each. The body is read only when a skill is loaded. Once a company has more than about 40 skills, the list becomes a search (`find_skill`), so the prompt stays small.
+
+### Base skills
 
 | Skill | For | Status |
 |---|---|---|
 | `company-profile` | Writing the profile | Today |
-| `writing-tasks` | Briefs, titles, who's on it | Today; covers `spawn_worker` and `start_job` briefs |
-| `designing-agents` | Profiles: role, instructions, integrations | Today; renamed `designing-profiles` |
-| `research` | Framing a question for the decision it serves, investigating one question well, the findings format children report in, writing the brief | Today; switches on `exa_search`. Going wide is a job |
+| `writing-tasks` | Briefs for `spawn_worker` and `start_job`: titles, who's on it, which skills to pin | Today, changed |
+| `research` | Framing a question for the decision it serves, investigating one part well, the findings format children report in, writing the brief | Today; switches on `exa_search`. Going wide is a job |
 | `financial-analysis` | Statements, valuation, scenarios | Today |
 | `excel-models` | Models with working formulas, recalculated | Today |
-| `connecting-integrations` | Data sources and logins | Today |
+| `connecting-integrations` | Setting up a connection and writing its first system skill | Today, changed |
 | `building-pages` | Pages and their refresh jobs | Today |
-| `coding-in-github` | Branch, change, test, PR, as the person | Today; default model `coder` |
-| `coordinating` | The coordinator's playbook: asking first, plan shape, splitting work into batches, children, review, assembly, gates | New |
-| `presentations` | Decks with `python-pptx` from a model's numbers, charts in the company's style | New (scenario 4) |
-| `data-pipelines` | Pulling a site or API into a `run.sh`: history on the drive, diffs against last time, charts, a `SUMMARY:` line | New (scenario 5) |
+| `coding-in-github` | Branch, change, test, PR, as the person; default model `coder` | Today |
+| `coordinating` | The coordinator's playbook: asking first, plan shape, batches, children, review, assembly, gates | New |
+| `presentations` | Decks with `python-pptx` from a model's numbers | New (scenario 4) |
+| `data-pipelines` | Pulling a site or API into scripts: history on the drive, diffs against last time, charts, a `SUMMARY:` line | New (scenario 5) |
 | `reconciliation` | Matching against history with fixed rules, sending the rest to people, keeping a ledger | New (scenario 6) |
 | `issue-triage` | Finding, deduplicating and reproducing issues before fixing them | New (scenario 3) |
 | `using-the-browser` | When to use the browser agent, how to brief it, what needs approval first | New |
-| `writing-skills` | Turning a finished job or a correction into a company skill | New |
+| `writing-skills` | Turning what a job learned into a skill and scripts, with tests | New |
 
-### Company skills
+`designing-agents` goes, since companies no longer define agents.
 
-A company's own procedures: "how we do month-end", "Masttro tagging", "who handles which family entity". They're kept in Postgres with every version, listed on a **Skills** screen, and can be written from chat.
+**When Mach1 adds a base skill:** all three of these must hold.
+- The kind of work recurs across companies.
+- Agents get it wrong, or work slowly, without guidance. Run them on representative requests first and look.
+- It isn't one company's way of working (that's a company skill), and it isn't one system's behaviour (that's a system skill).
 
-**What goes where** (one home per kind of knowledge):
+Each new base skill ships with a scenario in this document's style, checked before release.
+
+### Learning on the job
+
+Each round of the loop:
+
+1. **First time.** A worker figures the work out: the browser, `call_api`, code.
+2. **At the end**, before `finish`, it checks four things:
+   - Did it learn how a system behaves?
+   - Did it follow steps the person will want again?
+   - Did it write a script that worked?
+   - Did someone correct it?
+
+   If so, it calls `propose_skill` with the text and the scripts. The coordinator does the same at the end of a job.
+3. **Next time**, the chat agent or coordinator pins the skill. The worker runs its scripts, and the model only handles exceptions.
+4. **When a script breaks** (the site changed), the worker fixes it, the script's test passes again, and the worker proposes the new version.
+
+**Who applies what:**
+- **System skills**: agents update them directly, as they update integration guides today. Every change is a new version with its author and the task it came from, and can be rolled back. They describe a system, not what to do, so a bad edit costs a slower run, not a wrong action.
+- **Workflow skills and new skills**: a person applies them, from a suggestion card on the task and in Needs you, like profile suggestions today. A workflow skill is instructions that every later run follows. A skill written from an email or a web page could carry someone else's instructions.
+- **Scripts**: saved only with a passing test run. Skill text and scripts are scrubbed of known secret values when they're saved.
+
+Skills can also be written from chat: "here's how we do month-end, save it". The chat agent drafts the skill and shows the card.
+
+### Where knowledge goes
+
+There is one home for each kind:
 
 | Knowledge | Where | Who changes it |
 |---|---|---|
-| What the company is and wants | Company profile | A person applies a suggestion |
+| What the company is and wants, and rules for everyone ("ask before contacting anyone outside the company") | Company profile | A person applies a suggestion |
 | About one person | Their personal notes | Their assistant, and them |
-| One job's state: scripts, parameters, decisions | The job's `NOTES.md` | The job's agents |
-| How a system behaves: endpoints, quirks, the clicks through a web app | The integration's guide | Agents, freely |
-| How to do a kind of work: steps, rules, who to ask | A skill | A person, or an agent with a person applying it |
+| One job's state: parameters, results, decisions | The job's `NOTES.md` | The job's agents |
+| How a system behaves | A system skill | Agents, with versions |
+| How the company does a piece of work | A workflow skill | A person applies it |
+| The parts that run without a model | Scripts in a skill | With the skill, and a passing test |
 
-### When a skill is added
+## Connections
 
-**Built-in skills** are added by Mach1's developers when all three hold:
+A connection is a data source (an API) or a website login, as integrations are today:
+- **Credentials** are sealed with `MACH_SECRETS_KEY`. They never reach a model, a chat or a sandbox.
+- **Requests are signed** on the server (`call_api`), or by the sandbox's network proxy for scripts.
+- **A data source can be read-only.** Then it refuses anything but GET.
 
-- The kind of work recurs across companies.
-- Agents get it wrong, or slow, without guidance. Run them on representative requests first and see.
-- It doesn't belong in one company's skill, the profile or an integration's guide.
+**Who may use one.** Every agent in the company. An admin can limit a connection to chosen people: then it's used only for their work, meaning their assistant and runs that work for them. Limits by agent go (the `agent_ids` column, and the agent picker in Settings → Integrations).
 
-Each new built-in skill ships with a scenario in this document's style, checked before release.
+**What stops misuse** without limits by agent:
+- read-only data sources;
+- approvals in code before any change outside Mach1;
+- credentials that nothing in Mach1 can read back.
 
-**Company skills** are added in four ways:
-
-1. **Asked for in chat**: "here's how we do month-end, save it". The chat agent drafts it and shows a card.
-2. **From a job that repeats**: a repeating job's first good run saves its plan as a runbook (above).
-3. **From a finished job**: when a worker or coordinator notices the person will want the same thing again, it proposes a skill with `propose_skill`.
-4. **From a correction**: "Rita handles Hassan's trusts too". The agent proposes an edit to the skill it used.
-
-Proposals show up as suggestion cards (like profile suggestions today) on the task and in Needs you. A person applies them. Agents never change a skill on their own, because a skill is instructions every later run follows, and a skill written from an email or a web page could carry someone else's instructions. Skill text is scrubbed of known secret values when saved.
-
-**Actions** go in `lib/actions/skills.ts`, per AGENTS.md: `skill.list`, `skill.show`, `skill.save`, `skill.update`, `skill.set_visibility`, `skill.remove` and `skill.apply_suggestion`. The Skills page carries an `@map` line.
+**Each connection has a system skill**, made when it's connected and improved by every job that uses it. Today's guide becomes that skill's body.
 
 ## Tools
 
-Who gets what. ● always, ○ when a skill switches it on, – never.
+Who gets what: ● always, ○ when a skill switches it on, – never.
 
 | Tool | Chat agent | Worker | Coordinator |
 |---|---|---|---|
 | `do_action` | ● | – | – |
 | `find_tasks`, `read_task` | ● | – | ● (its children) |
 | `reply_on_task`, `check_back_later` | ● | – | – |
-| Profile, onboarding and suggestion tools | ● | – | – |
+| Onboarding and profile-suggestion tools | ● | – | – |
 | `connect_data_source`, `connect_login` | ● | – | – |
-| `spawn_worker` | ● | – | – |
-| `start_job` | ● | – | – |
+| `spawn_worker`, `start_job` | ● | – | – |
 | `create_task` (people only, no agent) | ● | – | – |
 | `web_search`, `fetch_page`, `market_data`, `x_search`, `reddit_search` | ● | ● | – |
 | `exa_search` | – | ○ | – |
 | `call_api` | ● GET | ● | – |
-| `read_integration_guide`, `save_integration_guide` | ● | ● | – |
 | `run_code`, `run_command`, `write_file` | setup only | ● | – |
 | `read_file`, `list_files` | setup only | ● | ● (children's files) |
 | `browse`, `browser_login` | setup only | ● | – |
 | `use_browser` | – | ● | – |
 | `github_api` | ● (theirs) | ● | – |
 | `save_page`, `read_page`, `refresh_page`, `share_page` | – | ○ | – |
-| `use_skill` | ● | ● | ● |
+| `use_skill`, `find_skill` | ● | ● | ● |
 | `propose_skill` | ● | ● | ● |
 | `escalate` | – | ● | – |
 | `finish`, `ask`, `post_update` | – | ● | ● |
-| `hand_off` | – | ● (to a profile on the task) | – |
 | `attach_file`, `save_output`, `set_schedule`, `stop_schedule` | – | ● | ● |
 | `start_child`, `message_child`, `cancel_child` | – | – | ● |
 | `request_approval` | – | ● | ● |
 
-"Setup only": the chat agent keeps its own sandbox and browser for connecting integrations, where it reads docs behind a sign-in. All other code and browser work goes to a worker.
+"Setup only" means the chat agent keeps its own sandbox and browser only for setting up connections, where it reads docs behind a sign-in. All other code and browser work goes to a worker.
 
 ### New tools
 
 | Tool | Takes | Does |
 |---|---|---|
-| `spawn_worker` | title, brief, skills, profile?, people?, files?, repeat?, share?, model?, `wait`? | Starts a task for the Worker. With `wait`, it runs inline in the person's sandbox (today's `ask_specialist`, up to 3 minutes). If it needs longer, it becomes the task. Replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist` |
-| `start_job` | title, request, people?, files?, repeat?, share? | Starts a job: a task for the coordinator, with the request as its brief. Replaces `plan_job` |
-| `start_child` | assignee (worker, person or script), title, brief, skills?, profile?, after?, files? | A child task on the job, created for the person the job is for. Children started in one step are one batch, which wakes the coordinator once when all have delivered |
+| `spawn_worker` | title, brief, skills, people?, files?, repeat?, share?, model?, `wait`? | Starts a task for the Worker with those skills pinned. With `wait`, it runs inline in the person's sandbox for up to 3 minutes (today's `ask_specialist`); if it needs longer, it becomes the task. Replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist` |
+| `start_job` | title, request, skills?, people?, files?, repeat?, share? | Starts a job: a task for the coordinator, with the request as its brief. Replaces `plan_job` |
+| `start_child` | assignee (worker, person or script), title, brief, skills?, after?, files? | A child task on the job, created for the person the job is for. Children started in one step are one batch |
 | `message_child`, `cancel_child` | child, text | Reply on a child (an answer, or "redo this"), or stop it |
 | `escalate` | why, what it found | Turns the worker's task into a job. A coordinator takes over |
-| `request_approval` | what, items or file | Asks the person to approve exact content. Returns an approval that later writes must name |
-| `propose_skill` | name, body or an edit, why | A suggestion card for a new skill or an edit |
+| `use_skill` | name | Loads a skill: its text, its scripts into the sandbox, the tools it switches on, and any company skill that extends it |
+| `find_skill` | words | Searches the catalogue, once it's too long to list |
+| `propose_skill` | name, text or an edit, scripts?, why | Saves a new version of a system skill, or a suggestion card for anything else. Scripts must pass their test |
+| `request_approval` | what, items or a file | Asks the person to approve exact content. Returns an approval that later writes must name |
+
+Gone: `hand_off`, `plan_job`, `ask_specialist`, `start_coding`, `start_research`, `investigate`, `create_agent`, `read_integration_guide` and `save_integration_guide`. The last two become `use_skill` and `propose_skill` on system skills.
 
 ## Gates in code
 
-Prompts ask agents to get approval before changing other systems. These gates make the important cases hold even when a prompt doesn't.
+Prompts ask agents to get approval before changing other systems. With no limits by agent, these gates are what make that hold.
 
-- **Tools declare what they touch**: `read`, `write` (inside Mach1) or `external` (outside it). External ones include: `call_api` with anything but GET, `use_browser` with a change, `github_api` writes, sending files to anyone but the asker, and anything that pays.
-- **External writes need an approval** from `request_approval` that covers them. The other way through is a profile or company skill setting that pre-approves a narrow kind, for example "open pull requests in our repos". The check runs in the wrapper every task tool already passes through (`narrated()` in `lib/agents/runner.ts`), before the tool does anything. The chat agent's tools get the same wrapper.
-- **Approvals are bound to content.** An approval stores what was approved (the list, or a hash of the file). A write outside it is refused, with a message the agent can act on.
-- **The browser can't be checked by code alone**, since a click is a click. When the browser agent is given an approval, each step that changes something is checked first against the approved content by a separate model call that doesn't share the agent's goal. This is what Instinct describes as its decoupled monitor.
-- **Cost**: `start_job` estimates cost from the plan. Above a company setting, the person approves the plan before children start.
-- **Ledgers**: writes made in a loop record what's done (on the drive, in the job's folder), so a retry carries on instead of repeating. The `reconciliation` skill requires one, and so does the gate for repeated external writes.
+- **Each tool declares what it touches**: `read`; `write`, meaning inside Mach1; or `external`, meaning outside it. External ones include:
+  - `call_api` with anything but GET;
+  - `use_browser` when it changes something;
+  - writes through `github_api`;
+  - sending files to anyone but the asker;
+  - anything that pays.
+- **External writes need an approval** from `request_approval` that covers them.
+  - The other way through is a skill an admin has marked as pre-approved for one narrow kind of write, e.g. `coding-in-github` opening pull requests in the person's repositories.
+  - The check runs before the tool does anything, in the wrapper every task tool already passes through (`narrated()` in `lib/agents/runner.ts`). The chat agent's tools get the same wrapper.
+- **Approvals are bound to content.** An approval stores exactly what was approved: the list, or a hash of the file. A write outside it is refused, with a message the agent can act on. Scripts get the approval through their environment and are expected to check against it. The proxy refuses non-GET requests to a connection when a run has no approval.
+- **The browser can't be checked by code alone**, since a click is just a click. When the browser agent is given an approval, each step that changes something is first checked against the approved content by a separate model call that doesn't share the agent's goal. This is what Instinct describes as its decoupled monitor.
+- **Cost.** `start_job` estimates the cost from the plan. Above a company setting, the person approves the plan before any child starts.
+- **Ledgers.** Writes made in a loop record what's done, in the job's folder on the drive, so a retry carries on instead of repeating. The `reconciliation` skill requires one, and so does the gate for repeated external writes.
 
 ## The scenarios, worked through
 
 1. **Open tasks.** The chat agent answers from its context. No tool call.
-2. **Invite.** `do_action person.add` with name, email, phone and `invite: true` (admins). The number is contact details only. The reply says they link WhatsApp themselves once they've joined.
+2. **Invite.** `do_action person.add` with name, email, phone and `invite: true` (admins only). The number is stored as contact details only. The reply says they link WhatsApp themselves once they've joined.
 3. **Issues.**
    - The chat agent asks which repository if it isn't clear, then calls `start_job`.
-   - The coordinator lists issues since last night with `github_api`, drops duplicates and anything that isn't a bug, and starts one worker child per issue with `coding-in-github` and `issue-triage`. Each child gets its own sandbox, branch and pull request.
-   - The coordinator reviews each one as it delivers: checks are green, and the new test reproduces the issue. It sends weak ones back.
+   - The coordinator lists issues since last night with `github_api` and drops duplicates and anything that isn't a bug.
+   - It starts one worker child per issue, as one batch, with `coding-in-github` and `issue-triage`. Each child has its own sandbox, branch and pull request, and is created for the person, so their GitHub is attached.
+   - When the batch is done, the coordinator reviews each child: checks green, and a new test that reproduces the issue. It sends weak ones back.
    - It reports once: fixed (with links), couldn't reproduce, needs a decision.
-   - Every child is created for the person, so their GitHub is attached. Opening a pull request in their repository is pre-approved by `coding-in-github`. Merging needs their word.
+   - Opening pull requests is pre-approved by `coding-in-github`. Merging needs the person's word.
 4. **Memory stocks.**
    - The coordinator asks first: which companies, and what format.
-   - It shows the plan with a cost estimate, and starts once the person approves.
+   - It shows the plan with a cost estimate and starts once the person approves.
    - First batch: research children in parallel, one per sector question (DRAM and NAND pricing, HBM, capacity and capex, demand). Each reports findings with sources.
-   - The coordinator writes the sector view and the shared scenario assumptions to `/vercel/drive/jobs/<job>/assumptions.json` from what they found.
-   - Second batch: one worker child per company, in parallel, with `research`, `financial-analysis` and `excel-models`, building each model on those assumptions.
+   - The coordinator writes the sector view and the shared scenario assumptions to `/vercel/drive/jobs/<job>/assumptions.json`.
+   - Second batch: one worker child per company, with `research`, `financial-analysis` and `excel-models`, building each model on those assumptions.
    - Then one worker child with `presentations` builds the deck from the models.
-   - The coordinator checks the same scenarios are used everywhere and that the deck's numbers match the models before it reports.
+   - Before reporting, the coordinator checks that the same scenarios are used everywhere and that the deck's numbers match the models.
 5. **Kalshi and state rules.**
-   - The chat agent splits the request into two `spawn_worker` calls with `repeat` and the `data-pipelines` skill.
-   - Each first run works out the site (with the browser agent if it needs one), writes `run.sh` (Playwright directly, where a browser is needed), keeps history on the drive, and delivers.
-   - Each month after, `run.sh` replays with no model. The states job's `SUMMARY:` line says what changed since last month.
-   - The chat agent offers a Page as well.
-6. **Masttro.** The chat agent calls `start_job` with `repeat` weekly. The first run plans, asks anything unclear, and saves the runbook as a company skill. Each run:
-   1. A script child pulls untagged transactions with `call_api` (read-only).
-   2. A worker child with `reconciliation` sorts them by fixed rules. Transactions for Hassan Daher and his entities go to Rita; for Wissam Daher, to Mawla. Repeats that exactly match past tags (same counterparty, same description pattern, amount within the usual range) are auto-tagged. Everything else goes to Mustapha. "98% confident" is these rules, not a number a model states.
-   3. Person children go to Rita, Mawla and Mustapha, each with their own list. Their assistants tell them on WhatsApp. Stragglers get a nudge after a day.
-   4. The coordinator combines the answers and calls `request_approval` with the full list. You approve or change it.
-   5. A worker child with the Masttro login (profile: Data entry) tags each approved transaction through the browser agent, step-checked against the approval, keeping a ledger and screenshots.
-   6. One report.
-
-   Items still open when next week's run starts carry into it. This only works for team members: Mach1 can't message anyone outside the company.
+   - The chat agent splits the request into two `spawn_worker` calls with `repeat` and `data-pipelines`.
+   - Each first run works out its site (using the browser agent if needed), writes scripts that pull the data and draw the charts, keeps history on the drive, and delivers.
+   - It proposes a system skill for each site, with the scripts.
+   - Each month after, the scripts replay with no model. The states job's `SUMMARY:` line says what changed since last month.
+   - The chat agent also offers a Page.
+6. **Masttro.**
+   - **First week.**
+     - The chat agent calls `start_job` with a weekly `repeat`.
+     - The coordinator plans and asks anything unclear.
+     - At the end it proposes the workflow skill `masttro-weekly-tagging`: the routing (Hassan Daher and his entities to Rita, Wissam Daher to Mawla, everything unclear to Mustapha), the rules for repeats, the approval step, and the scripts `pull_untagged.py`, `match_repeats.py` and `tag_cmr.py`. You apply it.
+   - **Every week after**, the coordinator loads that skill:
+     1. A script child runs `pull_untagged.py` against the read-only API.
+     2. A script child runs `match_repeats.py`. Exact matches with past tags (same counterparty, same description pattern, amount within the usual range) are auto-tagged. "98% confident" means these rules, not a number a model states.
+     3. Person children go to Rita, Mawla and Mustapha, each with their own list. Their assistants tell them on WhatsApp, and anyone who hasn't answered gets a nudge after a day.
+     4. The coordinator combines the answers and calls `request_approval` with the full list. You approve it or change it.
+     5. A script child runs `tag_cmr.py` (Playwright, signed in with the Masttro login) on the approved list. It keeps a ledger and takes screenshots. If the site has changed and the script fails, a worker fixes it with the browser agent, step-checked against the approval, and proposes the fixed script.
+     6. One report.
+   - Items still open when next week's run starts carry into it.
+   - This only works for team members. Mach1 can't message anyone outside the company.
 
 ## Data
 
 | Change | |
 |---|---|
-| `tasks.parent_task_id` | The job a child belongs to |
-| `tasks.assignee_kind` | `worker`, `person` or `script`, for children |
-| `tasks.skills`, `tasks.model`, `tasks.effort` | Pinned skills, and the model chosen when it was started |
-| `agents.builtin = 'worker'` | The Worker. `coding` and `research` stop being made; their existing tasks keep running as they are |
-| `skills`, `skill_versions` | Company skills: owner, visibility, body, files, tools, versions |
-| `approvals` | The task, what was approved (items or a hash), who approved and when, and what it covers |
+| `tasks.parent_task_id`, `tasks.assignee_kind` | The job a child belongs to, and whether its assignee is a worker, a person or a script |
+| `tasks.skills`, `tasks.model`, `tasks.effort` | Skills pinned to the task, and the model chosen when it was started |
+| `agents` | One built-in row, `builtin = 'worker'`. No new defined, worker, coding or research agents are made. Existing ones finish their open tasks, then are archived |
+| `skills`, `skill_versions` | Company skills: kind (system or workflow), owner, visibility, text, front matter, `extends`, scripts (file-library versions), author and source task per version |
+| `integrations.agent_ids` | Dropped. `person_ids` stays. `guide` becomes the first version of the connection's system skill |
+| `approvals` | The task, what was approved (items or a hash), who approved it and when, and what it covers |
+
+**Moving existing companies over:**
+- Each defined agent's role and instructions become a company workflow skill named after it, pinned to its open tasks.
+- Each integration's guide becomes a system skill.
+- Rules that every agent shared go into the profile's How We Work section, as a suggestion for a person to apply.
 
 ## Phases
 
-1. **One worker.** The Worker and pinned skills replace the Developer, the Researcher and per-task worker agents. `exa_search` comes with the research skill. Until jobs exist, the research skill keeps `investigate` too, so briefs don't get worse in between. Old tool results are trimmed in long runs. Built-in skills move to `SKILL.md` files, collected at build time like `lib/app-map.json`.
+1. **One worker, base skills in files.**
+   - The Worker with pinned skills replaces the Developer, the Researcher and the worker agent made per task.
+   - Limits by agent on integrations go.
+   - Old tool results are trimmed in long runs.
+   - Base skills move to `skills/<name>/SKILL.md`.
+   - Until jobs exist, the research skill keeps `investigate`, so briefs don't get worse in between.
 2. **One hand-off.** `spawn_worker` (with `wait`) and `escalate` replace `create_task` with agents, `start_coding`, `start_research` and `ask_specialist`.
-3. **Jobs.** Parent and child tasks, batches that wake the coordinator once, `start_job` and `start_child` with worker, person and script children, one report, and runbooks for repeating jobs. In-depth research moves to jobs. `plan_job` and `investigate` go.
-4. **Company skills.** The table, the Skills page and its actions, `propose_skill`, and suggestion cards.
-5. **Gates.** Tool effects, `request_approval`, the step check for the browser, cost approval and ledgers.
-6. **Long work leaves the chat turn.** Code, the browser and pages move to workers, except integration setup.
+3. **Jobs.**
+   - Parent and child tasks, with worker, person and script children.
+   - Batches that wake the coordinator once, and one report per job.
+   - In-depth research moves to jobs. `plan_job` and `investigate` go.
+4. **Learning on the job.**
+   - Company skills with scripts and tests, and system skills taking over from guides.
+   - `propose_skill`, suggestion cards, and the Skills page with its actions.
+   - Workflow skills saved by repeating jobs, `extends`, and `find_skill`.
+   - Defined agents become workflow skills, and the Team page lists people only.
+5. **Gates.** Tool effects, `request_approval`, the proxy refusing writes without an approval, the step check for the browser, cost approval, and ledgers.
+6. **Long work leaves the chat turn.** Code, the browser and pages move to workers, except setting up connections.
 
-Each phase ships on its own. Phases 1, 2 and 4 change little that people see. Phases 3 and 5 are the large ones.
+Each phase ships on its own. Phases 3, 4 and 5 are the large ones.
 
 ## Acceptance tests
 
-The six scenarios above, run against a test company with scripted models (`test/scripted-model.ts`) for routing and orchestration, and once by hand with real models before each phase ships:
+The six scenarios above, plus one for learning. Each is run against a test company with scripted models (`test/scripted-model.ts`) for routing and orchestration, and once by hand with real models before each phase ships.
 
 1. Answered with no tool call.
-2. One `person.add` with an invite. No attempt to link WhatsApp.
-3. One job, one child per real issue, each with a pull request and a test that fails before the fix. One report.
-4. Questions asked before work starts. A plan with a cost, approved. One assumptions file read by every model. A deck whose numbers match the models.
-5. Two repeating tasks. A replay with no model call at the next run, and a `SUMMARY:` line that says what changed.
-6. Person children to the right people. Auto-tags only for rule matches. An approval before any write. Writes refused outside the approval. A retry that resumes from the ledger. A runbook saved, and loaded the next week.
+2. One `person.add` with an invite, and no attempt to link WhatsApp.
+3. One job with one child per real issue. Each child has a pull request and a test that fails before the fix. One report.
+4. Questions asked before work starts, and a plan with a cost, approved. One assumptions file, read by every model. A deck whose numbers match the models.
+5. Two repeating tasks, each with a system skill and scripts. The next run replays with no model call, and its `SUMMARY:` line says what changed.
+6. Person children to the right people, and auto-tags only for rule matches. An approval before any write, and writes outside it refused. A retry that resumes from the ledger.
+7. **Learning.** The second week of scenario 6 loads the workflow skill, plans nothing, and makes model calls only for exceptions. A script broken on purpose is fixed and proposed as a new version, and its test passes.
 
 ## Open questions
 
-- **A company memory** that workers can write to, like Claude Code Projects' `MEMORY.md`, for lessons that aren't procedures ("the release moved to May"). For now the profile, guides and skills cover it.
-- **People outside the company** (scenario 6 with an outside accountant). This needs outbound email or an approved WhatsApp template, which Mach1 doesn't send today.
-- **The Team page**: whether jobs, and the Worker itself, show there.
-- **The coordinator's effort**: low effort keeps its turns cheap, while review steps may want more. This could be per job.
+- **A company memory** that workers can write to, like Claude Code Projects' `MEMORY.md`, for facts that aren't procedures ("the release moved to May"). For now the profile and skills cover it.
+- **People outside the company** (scenario 6 with an outside accountant). This needs outbound email, or an approved WhatsApp template, neither of which Mach1 sends today.
+- **Base skills that change under a company's extensions.** Extensions are short additions, so they should survive most changes. A base skill's scripts are an interface, though, and changing them needs care.
+- **The coordinator's effort.** Low effort keeps its turns cheap, but review steps may want more. This could be set per job.
 - **Importing community skills** in the Agent Skills format. Useful, but a skill is instructions, so each one needs reviewing first.
 
 ## Code
@@ -365,9 +454,11 @@ Where it will live:
 | Path | |
 |---|---|
 | `lib/agents/chief-of-staff.ts` | The chat agent: routing rules, `spawn_worker`, `start_job` |
-| `lib/agents/runner.ts`, `run-steps.ts` | The Worker and the coordinator (same runtime), `escalate`, trimming old tool results, child events, the gate in `narrated()` |
+| `lib/agents/runner.ts`, `run-steps.ts` | The worker and the coordinator (same runtime), `escalate`, trimming, child events, the gate in `narrated()` |
 | `lib/agents/jobs.ts` | Jobs and children: `start_child`, `message_child`, batches, waking the coordinator, carry-over |
 | `lib/agents/approvals.ts` | `request_approval`, tool effects, the browser step check |
-| `skills/<name>/SKILL.md`, `lib/agents/skills.ts` | Built-in skills and loading. Company skills from the `skills` table |
+| `skills/<name>/` | Base skills: `SKILL.md` and scripts |
+| `lib/skills/` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `propose_skill`, script tests |
 | `lib/actions/skills.ts`, `app/(app)/skills/` | Skill actions and the Skills page |
-| `lib/agents/store.ts` | The built-in Worker. Profiles (defined agents) |
+| `lib/integrations.ts` | Connections: limits by agent removed, guides moved to system skills |
+| `lib/agents/store.ts` | The built-in Worker |
