@@ -4,6 +4,7 @@ import { getWorkOS, withAuth } from "@workos-inc/authkit-nextjs";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
+import type { Actor } from "@/lib/operations";
 import { createOrganization, getOrganization, type Organization } from "@/lib/orgs";
 import { linkMember, type Person } from "@/lib/people";
 import { companyDomainFromEmail } from "@/lib/website";
@@ -48,6 +49,11 @@ export const getSessionContext = cache(async function getSessionContext(): Promi
   const person = await linkMember(organization.id, user);
   return { user, organization, person, isAdmin: auth.role === "admin" };
 });
+
+/** The signed-in person as the one doing something (lib/operations.ts). */
+export function actorOf({ organization, person, user, isAdmin }: AppContext): Actor {
+  return { organizationId: organization.id, personId: person.id, name: person.name, userId: user.id, isAdmin };
+}
 
 /** For pages that need an organization: sends people without one to /welcome. */
 export async function requireAppContext(): Promise<AppContext> {

@@ -11,6 +11,7 @@ import { requireAppContext } from "@/lib/session";
 import { toView } from "@/lib/task-view";
 import { getTaskByNumber, listInbox, listMessages, markMentionsSeen } from "@/lib/tasks";
 
+// @map Task | Home → click a task | One task: its thread (reply, @-mention people and agents, attach files), status, priority, the people and agents on it, its schedule (Repeats), its files, Private/Company, and Archive, Later and Done.
 const versionView = (v: FileVersion) => ({
   id: v.id,
   version: v.version,

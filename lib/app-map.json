@@ -1,0 +1,80 @@
+[
+  {
+    "path": "/",
+    "title": "Home",
+    "where": "Left menu → Home",
+    "what": "What needs you first (Needs you), then all the company's work as a board or a list (?view=board or ?view=list), for everyone or just you. New task with +."
+  },
+  {
+    "path": "/agents/{id}",
+    "title": "Agent",
+    "where": "Team → Agents → click an agent",
+    "what": "One agent: its name, role, job description, instructions and model, Pause or Archive, and the tasks it's on."
+  },
+  {
+    "path": "/company",
+    "title": "Company profile",
+    "where": "Company menu (top left) → Company profile",
+    "what": "What the Chief of Staff knows about the company: overview, mission, goals, people, products, customers, how it works, glossary."
+  },
+  {
+    "path": "/files",
+    "title": "Files",
+    "where": "Left menu → Files",
+    "what": "The company's files with their versions, and the data drive jobs share; each file is Private or Company."
+  },
+  {
+    "path": "/pages",
+    "title": "Pages",
+    "where": "Left menu → Pages",
+    "what": "The company's pages (live reports on its data), and ideas for new ones."
+  },
+  {
+    "path": "/pages/{slug}",
+    "title": "Page",
+    "where": "Pages → click a page",
+    "what": "One page: the report itself, how fresh its data is, the job that refreshes it, its versions, Private/Company."
+  },
+  {
+    "path": "/settings",
+    "title": "Settings → General",
+    "where": "Company menu (top left) → Settings",
+    "what": "The company's details (name, website), and deleting the company (admins)."
+  },
+  {
+    "path": "/settings/account",
+    "title": "Settings → Account",
+    "where": "Your menu (bottom left) → Account settings",
+    "what": "Your own profile, your WhatsApp link, your working and quiet hours, what your assistant knows about you, your GitHub, and this browser's preferences."
+  },
+  {
+    "path": "/settings/ai",
+    "title": "Settings → AI",
+    "where": "Company menu → Settings → AI",
+    "what": "The company's own AI provider keys (bring your own key) and the default models for the Chief of Staff and agents (admins change them)."
+  },
+  {
+    "path": "/settings/channels",
+    "title": "Settings → Channels",
+    "where": "Company menu → Settings → Channels",
+    "what": "Reaching the Chief of Staff outside Mach1: the company's email address and Mach1's WhatsApp number."
+  },
+  {
+    "path": "/settings/integrations",
+    "title": "Settings → Integrations",
+    "where": "Company menu → Settings → Integrations",
+    "what": "The company's data sources and website logins: credentials are entered here (never in a chat), plus which agents and people may use each, and testing them."
+  },
+  {
+    "path": "/tasks/{number}",
+    "title": "Task",
+    "where": "Home → click a task",
+    "what": "One task: its thread (reply, @-mention people and agents, attach files), status, priority, the people and agents on it, its schedule (Repeats), its files, Private/Company, and Archive, Later and Done."
+  },
+  {
+    "path": "/team",
+    "title": "Team",
+    "where": "Left menu → Team",
+    "what": "Everyone the company works with: people (role, manager, contact details, whether they've joined or been invited, admin or member) and agents (?show=people or ?show=agents). Admins add and invite people here (?new=person opens the form) and remove them."
+  }
+]

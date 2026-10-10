@@ -15,7 +15,9 @@ import { endReply, getOrCreateChat, takeTurn, type Chat } from "@/lib/chats";
 import { getGitHubConnection } from "@/lib/github";
 import { listLibrary } from "@/lib/files";
 import { listIntegrations } from "@/lib/integrations";
+import { memberRoles } from "@/lib/members";
 import { listPages } from "@/lib/pages";
+import { listPeople } from "@/lib/people";
 import type { Organization } from "@/lib/orgs";
 import type { Person } from "@/lib/people";
 import { loadProfile } from "@/lib/profile/store";
@@ -46,7 +48,7 @@ export async function loadChiefOfStaff(
   } = {},
 ) {
   const organizationId = context.organization.id;
-  const [profile, agents, tasks, jobs, files, integrations, pages, github, memory, hours] = await Promise.all([
+  const [profile, agents, tasks, jobs, files, integrations, pages, github, memory, hours, team] = await Promise.all([
     loadProfile(organizationId),
     listAgents(organizationId),
     listTasks(organizationId, { closedLimit: 0, viewer: context.person?.id }),
@@ -57,6 +59,7 @@ export async function loadChiefOfStaff(
     context.person ? getGitHubConnection(organizationId, context.person.id) : null,
     context.person ? getPersonalMemory(organizationId, context.person.id) : "",
     context.person ? getAssistantHours(organizationId, context.person.id) : null,
+    teamStatus(organizationId),
   ]);
   const viewing = options.viewing ? await describeViewing(organizationId, options.viewing, context.person?.id).catch(() => null) : null;
   const sandbox: SandboxSession = {};
@@ -75,6 +78,8 @@ export async function loadChiefOfStaff(
       github,
       memory,
       hours,
+      isAdmin: team.admins.has(context.user.id),
+      team: team.people,
       earlier: options.earlier,
     },
     { sandbox, model: options.model, research: options.research },
@@ -86,6 +91,22 @@ export async function loadChiefOfStaff(
       if (!sandbox.used) return;
       await closeSandbox(workspaceOf(context)).catch((error) => console.error("Couldn't close the Chief of Staff's sandbox", error));
     },
+  };
+}
+
+/** Who's on the team, who has joined and who's an admin (roles live in WorkOS; without it, nobody is an admin). */
+async function teamStatus(organizationId: string) {
+  const [people, roles] = await Promise.all([
+    listPeople(organizationId),
+    memberRoles(organizationId).catch((error) => {
+      console.error("Couldn't read the company's roles", (error as Error).message);
+      return new Map<string, { role: string }>();
+    }),
+  ]);
+  const admins = new Set([...roles].filter(([, m]) => m.role === "admin").map(([userId]) => userId));
+  return {
+    admins,
+    people: people.map((p) => ({ name: p.name, status: p.status, admin: Boolean(p.workosUserId && admins.has(p.workosUserId)) })),
   };
 }
 

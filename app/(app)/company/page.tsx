@@ -4,6 +4,7 @@ import { onboardingChecklist } from "@/lib/profile/markdown";
 import { loadProfile } from "@/lib/profile/store";
 import { requireAppContext } from "@/lib/session";
 
+// @map Company profile | Company menu (top left) → Company profile | What the Chief of Staff knows about the company: overview, mission, goals, people, products, customers, how it works, glossary.
 // What the Chief of Staff knows about the company: the profile it keeps.
 // Reached from the company menu and the Chief of Staff panel; the company's
 // settings are in Settings.

@@ -5,6 +5,7 @@ import { setEmailInbox } from "@/lib/orgs";
 import { whatsappNumber } from "@/lib/channels/twilio";
 import { requireAppContext } from "@/lib/session";
 
+// @map Settings → Channels | Company menu → Settings → Channels | Reaching the Chief of Staff outside Mach1: the company's email address and Mach1's WhatsApp number.
 // Settings → Channels: how the team reaches the Chief of Staff outside Mach1.
 export default async function ChannelsSettingsPage() {
   const { organization, person, isAdmin } = await requireAppContext();

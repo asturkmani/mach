@@ -14,6 +14,7 @@ import { getGitHubConnection, githubConfigured, githubInstallUrl } from "@/lib/g
 import { formatPhone } from "@/lib/phone-format";
 import { requireAppContext } from "@/lib/session";
 
+// @map Settings → Account | Your menu (bottom left) → Account settings | Your own profile, your WhatsApp link, your working and quiet hours, what your assistant knows about you, your GitHub, and this browser's preferences.
 // Settings → Account: your own profile (the same details, and the same
 // editing, as your row on the Team page), your WhatsApp link, your own
 // accounts elsewhere (GitHub), and this browser's preferences.

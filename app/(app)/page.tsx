@@ -6,6 +6,7 @@ import { requireAppContext } from "@/lib/session";
 import { toView } from "@/lib/task-view";
 import { listInbox, listTasks } from "@/lib/tasks";
 
+// @map Home | Left menu → Home | What needs you first (Needs you), then all the company's work as a board or a list (?view=board or ?view=list), for everyone or just you. New task with +.
 // Home: what needs this person, then all the company's work as a board or a
 // list. The view and scope are remembered in cookies; ?view= overrides. A
 // phone starts on the list, which suits a narrow screen; a computer on the board.

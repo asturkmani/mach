@@ -64,3 +64,23 @@ it's done). Jobs still go to tasks directly (`create_task`, `start_coding`).
 | `lib/assistant/store.ts` | Hours, the WhatsApp window, and the `assistant_wakeups` queue |
 | `lib/assistant/wake.ts` | The wake-up turn, run from the cron tick (`app/api/cron/tick`) every minute |
 | `lib/agents/specialist.ts` | `ask_specialist`: a defined agent answering a question while the Chief of Staff waits |
+
+## Everything from chat
+
+The Chief of Staff can do what the person it's talking to can do on Mach1's screens, with their permissions:
+tasks (`update_task`: status, priority, later, archive, people and agents, run, schedules), the team
+(`save_person` with `invite`, `team_access`: invite, admin or member, remove), agents (`update_agent`, including
+its model), files and pages (`share_file`, `share_page`, `manage_page`), integrations (`update_integration`:
+which agents and people, access, on or off, test, delete) and settings (`set_company_models`, hours, notes).
+It knows who on the team has joined, been invited, or is an admin.
+
+Who may do what lives in one place, `lib/operations.ts`, which the screens' actions and these tools
+(`lib/agents/app-tools.ts`) both call, so chat can never do more than the person could in the app: admins
+invite and remove people, change roles, choose whose work may use an integration and the company's models;
+only tasks, files and pages the person can see are touched. Never through chat, whoever asks: credentials and
+keys, deleting the company, linking WhatsApp. For those it sends the exact link.
+
+**Links**: every page starts with a `// @map Title | Where in the menus | What's there` line. `npm run build`
+(and `vercel-build`) writes them to `lib/app-map.json` (`scripts/app-map.mjs`), which the Chief of Staff reads
+to give the exact link and where it is, never just the home page. A test fails when a page has no `@map` line
+or the file is out of date (`npm run app-map` updates it).

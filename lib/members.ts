@@ -1,8 +1,8 @@
 import "server-only";
 
-import { getWorkOS } from "@workos-inc/authkit-nextjs";
 
 import { getDb } from "@/lib/db";
+import { workos } from "@/lib/workos";
 import type { Organization } from "@/lib/orgs";
 import { linkMember, listPeople, syncPeopleSection } from "@/lib/people";
 import { pushToPeople } from "@/lib/push";
@@ -18,7 +18,7 @@ export type Role = "admin" | "member";
 /** Each member's WorkOS membership and role, by WorkOS user id. */
 export async function memberRoles(organizationId: string): Promise<Map<string, { membershipId: string; role: Role }>> {
   const roles = new Map<string, { membershipId: string; role: Role }>();
-  const memberships = await getWorkOS().userManagement.listOrganizationMemberships({ organizationId, statuses: ["active"], limit: 100 });
+  const memberships = await (await workos()).userManagement.listOrganizationMemberships({ organizationId, statuses: ["active"], limit: 100 });
   for (const m of memberships.data) roles.set(m.userId, { membershipId: m.id, role: m.role?.slug === "admin" ? "admin" : "member" });
   return roles;
 }
@@ -38,5 +38,5 @@ export async function setRole(organizationId: string, workosUserId: string, role
     const admins = [...(await memberRoles(organizationId)).values()].filter((m) => m.role === "admin");
     if (admins.length <= 1) throw new Error("A company needs at least one admin.");
   }
-  await getWorkOS().userManagement.updateOrganizationMembership(membership.membershipId, { roleSlug: role });
+  await (await workos()).userManagement.updateOrganizationMembership(membership.membershipId, { roleSlug: role });
 }

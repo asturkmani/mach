@@ -19,6 +19,13 @@ const session = { isAdmin: true, person: null as Person | null };
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@workos-inc/authkit-nextjs", () => ({ getWorkOS: () => workos }));
 vi.mock("@/lib/session", () => ({
+  actorOf: ({ organization, person, user, isAdmin }: { organization: { id: string }; person: { id: string; name: string }; user: { id: string }; isAdmin: boolean }) => ({
+    organizationId: organization.id,
+    personId: person.id,
+    name: person.name,
+    userId: user.id,
+    isAdmin,
+  }),
   requireAppContext: async () => ({
     organization: await getOrganization(ORG),
     user: { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" },

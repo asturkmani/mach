@@ -8,6 +8,7 @@ import { getSchedule } from "@/lib/schedules";
 import { requireAppContext } from "@/lib/session";
 import { getTask } from "@/lib/tasks";
 
+// @map Page | Pages → click a page | One page: the report itself, how fresh its data is, the job that refreshes it, its versions, Private/Company.
 // One page: its header (how fresh its data is, the job that refreshes it,
 // its versions) over the page itself, in a sandboxed frame. ?v= shows an
 // older version.

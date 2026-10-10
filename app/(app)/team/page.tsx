@@ -17,6 +17,7 @@ import { listScheduledJobs } from "@/lib/work-overview";
 
 import { AddPersonForm, EditableText, PersonActions, ManagerSelect } from "./team-controls";
 
+// @map Team | Left menu → Team | Everyone the company works with: people (role, manager, contact details, whether they've joined or been invited, admin or member) and agents (?show=people or ?show=agents). Admins add and invite people here (?new=person opens the form) and remove them.
 const STATUS_LABELS = {
   active: { label: "Joined", className: "text-ok" },
   invited: { label: "Invited", className: "text-warn" },

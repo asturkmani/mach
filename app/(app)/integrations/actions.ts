@@ -2,20 +2,10 @@
 
 import { refresh } from "next/cache";
 
-import {
-  deleteIntegration,
-  forgetSession,
-  getIntegration,
-  IntegrationError,
-  saveCredentials,
-  testIntegration,
-  updateIntegration,
-  type IntegrationStatus,
-} from "@/lib/integrations";
+import { forgetSession, IntegrationError, saveCredentials, testIntegration, type IntegrationStatus } from "@/lib/integrations";
 import { sendLoginCode } from "@/lib/agents/browser-steps";
-import { listAgents } from "@/lib/agents/store";
-import { listPeople } from "@/lib/people";
-import { requireAppContext } from "@/lib/session";
+import { deleteIntegrationAs, OperationError, updateIntegrationAs } from "@/lib/operations";
+import { actorOf, requireAppContext } from "@/lib/session";
 
 // Integrations from the Chief of Staff's card and the Integrations page.
 // Credentials go straight from the form to sealed storage: they never pass
@@ -30,7 +20,7 @@ async function attempt(work: (organizationId: string) => Promise<IntegrationResu
     refresh();
     return result;
   } catch (error) {
-    if (error instanceof IntegrationError) return { error: error.message };
+    if (error instanceof IntegrationError || error instanceof OperationError) return { error: error.message };
     console.error(error);
     return { error: "Something went wrong. Try again." };
   }
@@ -56,28 +46,13 @@ export async function updateIntegrationAction(
   id: string,
   patch: { access?: "read" | "write"; agentIds?: string[] | null; personIds?: string[] | null; disabled?: boolean },
 ): Promise<IntegrationResult> {
-  const { isAdmin } = await requireAppContext();
-  if (patch.personIds !== undefined && !isAdmin) return { error: "Only admins choose whose work may use it." };
-  return attempt(async (organizationId) => {
-    if (!(await getIntegration(organizationId, id))) throw new IntegrationError("That integration doesn't exist.");
-    let agentIds = patch.agentIds;
-    if (agentIds) {
-      const own = new Set((await listAgents(organizationId)).map((a) => a.id));
-      agentIds = agentIds.filter((a) => own.has(a));
-    }
-    let personIds = patch.personIds;
-    if (personIds) {
-      const own = new Set((await listPeople(organizationId)).map((p) => p.id));
-      personIds = personIds.filter((p) => own.has(p));
-    }
-    await updateIntegration(organizationId, id, { ...patch, agentIds, personIds });
-  });
+  const actor = actorOf(await requireAppContext());
+  return attempt(async () => updateIntegrationAs(actor, id, patch));
 }
 
 export async function deleteIntegrationAction(id: string): Promise<IntegrationResult> {
-  return attempt(async (organizationId) => {
-    await deleteIntegration(organizationId, id);
-  });
+  const actor = actorOf(await requireAppContext());
+  return attempt(async () => deleteIntegrationAs(actor, id));
 }
 
 /** Forgets a login's saved session: the next agent to use it signs in afresh. */

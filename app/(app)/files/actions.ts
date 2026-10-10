@@ -3,8 +3,8 @@
 import { refresh } from "next/cache";
 
 import { deleteDriveFile, registerDriveUpload } from "@/lib/drive";
-import { listLibrary, setFileVisibility } from "@/lib/files";
-import { requireAppContext } from "@/lib/session";
+import { OperationError, setFileVisibilityAs } from "@/lib/operations";
+import { actorOf, requireAppContext } from "@/lib/session";
 
 // The company drive, from the Files page: register a file someone uploaded
 // straight to Blob, or delete files. Each returns an error for the person
@@ -35,11 +35,12 @@ export async function deleteDriveFileAction(path: string): Promise<{ error?: str
 
 /** Shares a library file with the company, or makes it private again (its owner, or an admin). */
 export async function setFileVisibilityAction(fileId: string, visibility: "company" | "private"): Promise<{ error?: string }> {
-  const { organization, person, isAdmin } = await requireAppContext();
-  const file = (await listLibrary(organization.id, { limit: 1000, viewer: person.id })).find((f) => f.id === fileId);
-  if (!file) return { error: "That file doesn't exist." };
-  if (file.ownerPersonId !== person.id && !isAdmin) return { error: "Only its owner, or an admin, can change who sees it." };
-  await setFileVisibility(organization.id, fileId, visibility === "company" ? "company" : "private");
+  try {
+    await setFileVisibilityAs(actorOf(await requireAppContext()), fileId, visibility === "company" ? "company" : "private");
+  } catch (error) {
+    if (error instanceof OperationError) return { error: error.message };
+    throw error;
+  }
   refresh();
   return {};
 }

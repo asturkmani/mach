@@ -2,6 +2,7 @@ import { DeleteCompany } from "@/components/delete-company";
 import { SettingRow, SettingsGroup } from "@/components/setting-row";
 import { requireAppContext } from "@/lib/session";
 
+// @map Settings → General | Company menu (top left) → Settings | The company's details (name, website), and deleting the company (admins).
 // Settings → General: the company's details, and deleting it at the bottom.
 export default async function GeneralSettingsPage() {
   const { organization, isAdmin } = await requireAppContext();

@@ -4,6 +4,7 @@ import { AI_PROVIDERS, listAiKeys, providerOf } from "@/lib/ai/keys";
 import { modelChoices } from "@/lib/models";
 import { requireAppContext } from "@/lib/session";
 
+// @map Settings → AI | Company menu → Settings → AI | The company's own AI provider keys (bring your own key) and the default models for the Chief of Staff and agents (admins change them).
 // Settings → AI: the company's own keys with AI providers (bring your own
 // key), so model usage is billed to its accounts, and which models its Chief
 // of Staff and agents run on by default.

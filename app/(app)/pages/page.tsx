@@ -8,6 +8,7 @@ import { pageIdeas } from "@/lib/page-ideas";
 import { listPages } from "@/lib/pages";
 import { requireAppContext } from "@/lib/session";
 
+// @map Pages | Left menu → Pages | The company's pages (live reports on its data), and ideas for new ones.
 /** Ideas for this company's pages; out-of-date ones show while new ones are written after the response. */
 async function Ideas({ organizationId }: { organizationId: string }) {
   return <PageIdeaList ideas={await pageIdeas(organizationId, { later: (work) => after(work) })} />;

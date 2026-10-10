@@ -4,6 +4,7 @@ import { listIntegrations, recentCalls, type ApiConfig, type LoginConfig } from 
 import { listPeople } from "@/lib/people";
 import { requireAppContext } from "@/lib/session";
 
+// @map Settings → Integrations | Company menu → Settings → Integrations | The company's data sources and website logins: credentials are entered here (never in a chat), plus which agents and people may use each, and testing them.
 /** How requests are signed, by name only (header and query names, the token step's host): never values. */
 function signing(config: ApiConfig): string {
   const parts = [

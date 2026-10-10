@@ -11,6 +11,7 @@ import { listLibrary } from "@/lib/files";
 import { requireAppContext } from "@/lib/session";
 import { blobConnected } from "@/lib/storage";
 
+// @map Files | Left menu → Files | The company's files with their versions, and the data drive jobs share; each file is Private or Company.
 function size(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;

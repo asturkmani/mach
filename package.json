@@ -4,15 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/app-map.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
-    "vercel-build": "node scripts/migrate.mjs && next build",
+    "vercel-build": "node scripts/migrate.mjs && node scripts/app-map.mjs && next build",
     "sandbox:template": "node --env-file-if-exists=.env.local scripts/sandbox-template.mjs",
-    "email:webhook": "node --env-file-if-exists=.env.local scripts/agentmail-webhook.mjs"
+    "email:webhook": "node --env-file-if-exists=.env.local scripts/agentmail-webhook.mjs",
+    "app-map": "node scripts/app-map.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.133",

@@ -9,7 +9,10 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import { appTools } from "@/lib/agents/app-tools";
 import { pageTools } from "@/lib/agents/page-tools";
+import { appMapLines } from "@/lib/app-map";
+import { invitePersonAs, OperationError, removePersonAs, type Actor } from "@/lib/operations";
 import type { AgentContext } from "@/lib/agents/prompts";
 import { appUrl } from "@/lib/app-url";
 import { skillList } from "@/lib/agents/skills";
@@ -38,7 +41,7 @@ import {
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
 import { workOverview, type ScheduledJob } from "@/lib/work-overview";
 import type { Page } from "@/lib/pages";
-import { removePersonByName, renamePerson, savePerson, syncPeopleSection, type Person } from "@/lib/people";
+import { listPeople, renamePerson, savePerson, syncPeopleSection, type Person } from "@/lib/people";
 import {
   isCaptured,
   onboardingChecklist,
@@ -89,13 +92,29 @@ type Context = {
   earlier?: string;
   /** When the person you're talking to works and wants quiet, in their timezone. */
   hours?: AssistantHours | null;
+  /** Whether the person you're talking to is one of the company's admins. */
+  isAdmin?: boolean;
+  /** Everyone on the Team page: whether they've joined Mach1 or been invited, and admins. */
+  team?: { name: string; status: "active" | "invited" | "not_invited"; admin: boolean }[];
 };
+
+/** The person you're talking to, as the one doing things (lib/operations.ts). */
+export function actorFor(context: Context): Actor | null {
+  if (!context.person) return null;
+  return {
+    organizationId: context.organization.id,
+    personId: context.person.id,
+    name: context.person.name,
+    userId: context.user.id,
+    isAdmin: context.isAdmin ?? false,
+  };
+}
 
 function channelInstructions(channel: Channel): string {
   const where = channel === "whatsapp" ? "WhatsApp" : "email";
   return `This message came by ${where}, and your reply goes back the same way, as plain text. Keep it short: a few sentences or a short list, no tables or headings${
     channel === "whatsapp" ? ", *single asterisks* for bold" : ""
-  }. Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give this link to finish in the app: ${appUrl("/")}. Links to a task are ${appUrl("/tasks/")} followed by its number. It's the same conversation as their chat panel in Mach1, so they can carry on in either.`;
+  }. Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give the link to the screen where they finish it, from the app's screens below. It's the same conversation as their chat panel in Mach1, so they can carry on in either.`;
 }
 
 function onboardingInstructions({ organization }: Context): string {
@@ -183,6 +202,21 @@ Company files (newest first). When a request builds on one ("add a 70/30 case to
 ${fileLines.join("\n") || "(none yet)"}`;
 }
 
+function appInstructions(context: Context): string {
+  const name = context.person?.name ?? context.user.name;
+  const team = (context.team ?? []).map(
+    (p) => `- ${p.name}: ${p.status === "active" ? "joined" : p.status === "invited" ? "invited, not joined yet" : "not invited"}${p.admin ? ", admin" : ""}`,
+  );
+  return `The app: you can do from chat everything ${name} can do on Mach1's screens, as them and with their permissions (${
+    context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
+  }). Tasks: create_task, update_task, reply_on_task, share_task. Team: save_person, team_access. Agents: create_agent, update_agent. Files and pages: share_file, share_page, manage_page. Integrations: connect_data_source, connect_login, update_integration. Settings: set_company_models, save_my_hours, update_personal_notes. When a tool refuses, say why in a line.
+Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
+${appMapLines()}
+
+The team in Mach1 (who has joined):
+${team.join("\n") || "(no one yet)"}`;
+}
+
 function githubLine({ github, person }: Context): string {
   if (!person) return "";
   if (github?.status === "connected") return `${person.name}'s GitHub is connected as @${github.login}.`;
@@ -226,6 +260,8 @@ ${context.channel ? `\n${channelInstructions(context.channel)}\n` : ""}${
       ? `\nRight now they're looking at ${context.viewing} in Mach1, with this chat open beside it. When they say "this", "here" or "it" without saying what, they mean that.\n`
       : ""
   }
+${appInstructions(context)}
+
 Recording facts:
 - The company profile below is a markdown document and your memory of the company. Record facts as soon as you learn them; don't ask permission to save.
 - Write in the company's own words, concise and factual. Never invent facts.
@@ -290,8 +326,9 @@ function profileTools(context: Context) {
         responsibilities: z.string().optional().describe("What they own, in a short phrase."),
         email: z.string().optional(),
         phone: z.string().optional().describe("Phone number, as contact details. It never lets anyone message you as them: people link their own WhatsApp in Settings → Account."),
+        invite: z.boolean().optional().describe("Also invite them to Mach1 by email (admins; they need an email)."),
       }),
-      execute: async ({ reportsTo, newName, ...person }) => {
+      execute: async ({ reportsTo, newName, invite, ...person }) => {
         let name = person.name;
         if (newName?.trim() && newName.trim().toLowerCase() !== name.trim().toLowerCase()) {
           try {
@@ -302,31 +339,39 @@ function profileTools(context: Context) {
             return { error: error instanceof Error ? error.message : "Couldn't rename them.", profile: await syncPeopleSection(orgId) };
           }
         }
-        await savePerson(orgId, { ...person, name, managerName: reportsTo });
-        return { profile: await syncPeopleSection(orgId) };
+        const saved = await savePerson(orgId, { ...person, name, managerName: reportsTo });
+        const profile = await syncPeopleSection(orgId);
+        const actor = actorFor(context);
+        if (!invite || !actor) return { profile };
+        try {
+          return { profile, invited: await invitePersonAs(actor, saved.id) };
+        } catch (error) {
+          if (error instanceof OperationError) return { profile, invited: `Saved, but not invited: ${error.message}` };
+          throw error;
+        }
       },
       toModelOutput: ({ output }) => ({
         type: "text" as const,
-        value: "error" in output && output.error ? `Not saved: ${output.error}` : "Saved.",
+        value: "error" in output && output.error ? `Not saved: ${output.error}` : "invited" in output && output.invited ? `Saved. ${output.invited}` : "Saved.",
       }),
     }),
     remove_person: tool({
       description:
-        "Remove a person from the organisation, which also takes them off every task. Not for renaming (use save_person with newName), and not for anyone who has signed in to Mach1: an admin removes those on the Team page.",
+        "Take a person off the team, which also takes them off every task and, if they joined or were invited, ends their access. Admins only. Not for renaming (use save_person with newName).",
       inputSchema: z.object({ name: z.string().min(1) }),
       execute: async ({ name }) => {
-        const result = await removePersonByName(orgId, name, { protect: context.person ? [context.person.id] : [] });
-        return { removed: result === "removed", result, profile: await syncPeopleSection(orgId) };
+        const actor = actorFor(context);
+        if (!actor) return { result: "Only a signed-in team member can remove people." };
+        const person = (await listPeople(orgId)).find((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase());
+        if (!person) return { result: `No one called ${name} is in the people list.`, profile: await syncPeopleSection(orgId) };
+        try {
+          return { result: await removePersonAs(actor, person.id), profile: await syncPeopleSection(orgId) };
+        } catch (error) {
+          if (error instanceof OperationError) return { result: `Not removed: ${error.message}` };
+          throw error;
+        }
       },
-      toModelOutput: ({ output }) => ({
-        type: "text" as const,
-        value:
-          output.result === "removed"
-            ? "Removed."
-            : output.result === "has_account"
-              ? "Not removed: they have a Mach1 account (or it's the person you're talking to). To rename someone use save_person with newName; to remove an account, an admin uses the Team page."
-              : "No one by that name was in the people list.",
-      }),
+      toModelOutput: ({ output }) => ({ type: "text" as const, value: output.result }),
     }),
     complete_onboarding: tool({
       description:
@@ -912,6 +957,7 @@ export function createChiefOfStaff(
     ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),
     ...githubTools(workspace),
     ...specialistTools(context, workspace, using, options.research !== false),
+    ...appTools(actorFor(context)),
     ...(options.research === false ? {} : researchTools()),
     use_skill: skillTool(),
   };
