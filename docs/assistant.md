@@ -92,7 +92,7 @@ The Chief of Staff can do what the person it's talking to can do on Mach1's scre
 It knows who on the team has joined, been invited, or is an admin.
 
 **Actions are declared once.** Everything a screen does is an action in `lib/actions` (`tasks.ts`,
-`company.ts`): a name like `task.set_status`, one line saying what it does, its inputs (zod) and, for
+`company.ts`, `research.ts`): a name like `task.set_status`, one line saying what it does, its inputs (zod) and, for
 admin-only ones, `who: "admin"`. The screens' server actions call `performAs(actor, name, input)`; the Chief
 of Staff gets the catalogue (every action the person may do, one line each) in its instructions and performs
 any of them with one tool, `do_action` (`lib/agents/action-tools.ts`). Inputs take ids from screens and names

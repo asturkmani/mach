@@ -25,6 +25,7 @@ import {
 } from "@/lib/agents/run-steps";
 import { askForLoginCode } from "@/lib/agents/browser-steps";
 import { attachSandboxFile, closeSandbox } from "@/lib/agents/sandbox-steps";
+import { exaTools, investigateTool } from "@/lib/research/tools";
 import {
   browserTools,
   githubTools,
@@ -221,6 +222,14 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
       return "Stopping the schedule";
     case "use_skill":
       return `Reading the ${input.name} playbook`;
+    case "market_data":
+      return `Looking up ${[input.symbols].flat().filter(Boolean).join(", ") || clipped(input.query, 30) || "market data"} (${input.action})`;
+    case "x_search":
+      return `Searching X: ${clipped(input.query, 40) || "the latest posts"}`;
+    case "reddit_search":
+      return `Searching Reddit: ${clipped(input.query, 40)}`;
+    case "investigate":
+      return `Investigating: ${clipped(input.question, 48)}`;
     case "ask":
       return "Writing a question";
     case "finish":
@@ -297,9 +306,12 @@ export async function runAgentOnTask(
   let outcome: RunOutcome | undefined;
 
   try {
+    // The company's own provider keys ride along with each model call (bring your own key).
+    const model = options.model ?? new CompanyModel(organizationId, begun.model);
+    // The Researcher also searches with Exa, and so do its sub-researchers.
+    const research = options.research === false ? {} : { ...researchTools(context), ...(begun.researcher ? exaTools() : {}) };
     const agent = new WorkflowAgent({
-      // The company's own provider keys ride along with each model call (bring your own key).
-      model: options.model ?? new CompanyModel(organizationId, begun.model),
+      model,
       instructions: begun.instructions,
       tools: narrated(context, {
         ...taskTools(context, begun.otherAgents, using, end),
@@ -312,7 +324,19 @@ export async function runAgentOnTask(
           return { text: asked, needsCode: login };
         }, { durable: true, heartbeat: () => keepLease(context, "Using the browser") }),
         ...githubTools(context),
-        ...(options.research === false ? {} : researchTools()),
+        ...research,
+        // The Researcher sends questions to sub-researchers, on its own model, each with the research tools.
+        ...(begun.researcher
+          ? {
+              investigate: investigateTool(context, {
+                model,
+                research,
+                highSignal: begun.highSignal,
+                durable: true,
+                heartbeat: () => keepLease(context, "Investigating"),
+              }),
+            }
+          : {}),
         use_skill: skillTool(),
       }, interrupt),
       // A run also ends when a tool ended it (e.g. a sign-in that asked for a code).

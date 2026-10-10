@@ -41,7 +41,8 @@ Built in TypeScript on Vercel (Next.js, AI SDK, AI Gateway), with Neon Postgres 
 17. **Your own GitHub, from anywhere**: each person connects their own GitHub (Settings → Account), then asks for code changes in chat or on WhatsApp ("fix the typo on the pricing page"). The Developer agent works in their repository as them: a branch, the repository's checks, a pull request, and the link back on WhatsApp. Nobody's GitHub is used for anyone else's work, and the token never enters a sandbox. See [docs/github.md](docs/github.md).
 18. **An assistant that writes first**: each person's Chief of Staff wakes up by itself when their work is ready or needs them, when it promised to check back, and before WhatsApp's 24-hour window closes, with one short message worth answering, in their working hours and never in their quiet hours (it asks for them, or Settings → Account → Your hours). See [docs/assistant.md](docs/assistant.md).
 19. **Bring your own key**: admins add the company's own Anthropic, OpenAI, Google or xAI key and choose its default models in Settings → AI, so its Chief of Staff and agents run on its own provider accounts. Keys are checked, stored encrypted and never reach a model or a sandbox. See [docs/ai-keys.md](docs/ai-keys.md).
-20. **Keyboard first**: <kbd>J</kbd>/<kbd>K</kbd> move, <kbd>V</kbd> board or list, <kbd>Enter</kbd> opens, <kbd>E</kbd> approves the recommendation or marks done, <kbd>1</kbd>–<kbd>3</kbd> pick an option, <kbd>R</kbd> reply, <kbd>L</kbd> later, <kbd>Z</kbd> undo, <kbd>N</kbd> new task, <kbd>S</kbd> summary, <kbd>/</kbd> search, <kbd>⌘K</kbd> everything else, <kbd>?</kbd> all shortcuts. Light and dark themes.
+20. **Research**: ask for research in chat ("a brief on Micron's HBM outlook", "compare these three CRMs for us", "what are people on X saying about the Fed?") and the Researcher, a built-in agent that knows the company and who it's working for, investigates the questions in parallel across the web (Parallel and Exa), filings, market data (Yahoo Finance), X (X's own API, or Grok; no one signs in) and Reddit, and reports back with a sourced brief, or answers a quick question in a few minutes. Save the websites, X accounts, subreddits and Reddit users you trust as high signal (in chat, or under Research in the left menu): every research job looks there first. See [docs/research.md](docs/research.md).
+21. **Keyboard first**: <kbd>J</kbd>/<kbd>K</kbd> move, <kbd>V</kbd> board or list, <kbd>Enter</kbd> opens, <kbd>E</kbd> approves the recommendation or marks done, <kbd>1</kbd>–<kbd>3</kbd> pick an option, <kbd>R</kbd> reply, <kbd>L</kbd> later, <kbd>Z</kbd> undo, <kbd>N</kbd> new task, <kbd>S</kbd> summary, <kbd>/</kbd> search, <kbd>⌘K</kbd> everything else, <kbd>?</kbd> all shortcuts. Light and dark themes.
 
 Agent runs are durable [Vercel Workflow](https://workflow-sdk.dev) runs (`workflows/agent-run.ts`). Every model call and every database change is its own step, retried on failure, so a run can take as long as the work needs instead of one function's time limit. Runs hold a lease on the task so only one runs at a time, pick up replies that arrive mid-run (or stop for one sent with Send now: `tasks.interrupt_requested_at`, checked before every model and tool call), and stop after six agent turns in a row without a person, so agents can't hand work back and forth forever. Locally, runs use Workflow's local world (data in `.workflow-data/`); inspect them with `npx workflow web` or `npx workflow inspect runs`.
 
@@ -99,7 +100,7 @@ The Chief of Staff's web search and page-reading tools run through AI Gateway (P
 ### Deploy to Vercel
 
 1. Import the repo; connect Neon from the Marketplace.
-2. Add the WorkOS variables. Models need no setup: each company runs Mach1's lineup for it (Claude with its own Anthropic key, else OpenAI; `docs/ai-keys.md`), and can pick its own in Settings → AI or per agent. Set `NEXT_PUBLIC_WORKOS_REDIRECT_URI` to `https://<your-domain>/callback` and add the same URL in WorkOS.
+2. Add the WorkOS variables. Models need no setup: each company runs Mach1's lineup for it (Claude with its own Anthropic key, else OpenAI; `docs/ai-keys.md`), and can pick its own in Settings → AI or per agent. For X research add `X_BEARER_TOKEN` (an X API app) and/or `XAI_API_KEY`, which also covers Reddit (docs/research.md). Set `NEXT_PUBLIC_WORKOS_REDIRECT_URI` to `https://<your-domain>/callback` and add the same URL in WorkOS.
 3. Connect a private Blob store, and add `CRON_SECRET` (any long random string) so the every-minute cron in `vercel.json` can start recurring jobs. Cron runs only on production deployments. Add `MACH_SECRETS_KEY` for integrations.
 4. Deploy. Vercel builds run `vercel-build`, which applies `db/schema.sql` before building, so the production tables are created automatically.
 
@@ -133,7 +134,7 @@ pnpm build
 | `app/api/cron/tick/route.ts`, `vercel.json` | The every-minute cron that starts recurring jobs |
 | `app/(app)/team/`, `agents/[id]/`, `company/` | The Team page (people and agents), an agent's page, the company profile |
 | `app/(app)/settings/` | Settings: General, Integrations, Channels and Account |
-| `components/shell/rail.tsx` | The left menu: Home, Team, Files, the company menu and the menu under your name |
+| `components/shell/rail.tsx` | The left menu: Home, Pages, Research, Team, Files, the company menu and the menu under your name |
 | `app/api/chat/route.ts` | Streams the Chief of Staff's replies for the signed-in company |
 | `lib/agents/chief-of-staff.ts` | The Chief of Staff: instructions and its company tools on top of the shared toolkit, in the sandbox of the person it's talking with |
 | `workflows/agent-run.ts`, `scheduled-run.ts` | The durable workflows an agent run, and a recurring job's run, execute in |
@@ -147,6 +148,7 @@ pnpm build
 | `lib/agents/scheduled.ts`, `schedule-steps.ts`, `lib/schedules.ts` | Recurring jobs: replaying run.sh or waking the agent, and schedule storage |
 | `lib/files.ts`, `lib/drive.ts`, `lib/storage.ts`, `lib/previews.ts` | The file library, the company drive, Blob or Postgres storage, and previews |
 | `lib/agents/skills.ts`, `templates.ts`, `store.ts` | Skills (playbooks), agent templates and agent storage |
+| `lib/research/` | Research: market data (Yahoo Finance), X and Reddit search, the Researcher's sub-researchers, and saved high-signal sources |
 | `lib/tasks.ts`, `lib/work.ts` | Task storage, and what people and agents do to tasks |
 | `lib/agents/history.ts`, `lib/chats.ts` | Stored chat history: loading, repairing, validating and saving |
 | `lib/session.ts` | Signed-in user, current company and their person record |

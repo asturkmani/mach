@@ -559,3 +559,19 @@ alter table organizations add column if not exists models jsonb not null default
 -- domain and auto-join columns are no longer read (kept so nothing is lost).
 update tasks set status = 'cancelled', options = '[]'::jsonb, updated_at = now()
 where kind = 'join_request' and status not in ('done', 'cancelled');
+
+-- The sources people trust most for research (lib/research/sources.ts): a website, an X account, a subreddit
+-- or a Reddit user, with why it's worth reading. The Researcher (and any agent researching for them) looks
+-- there first and weighs it higher. Private to whoever saved it, or the company's for everyone's research.
+create table if not exists research_sources (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  kind text not null check (kind in ('website', 'x_account', 'subreddit', 'reddit_user')),
+  handle text not null, -- ft.com, DeItaone, investing, DeepFuckingValue: no @, r/ or u/
+  note text not null default '',
+  visibility text not null default 'private' check (visibility in ('company', 'private')),
+  owner_person_id uuid references people (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists research_sources_unique
+  on research_sources (organization_id, coalesce(owner_person_id::text, ''), kind, lower(handle));

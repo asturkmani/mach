@@ -128,61 +128,75 @@ export async function createAgent(organizationId: string, input: AgentInput & { 
 }
 
 export const INTEGRATIONS_AGENT = "integrations";
+export const CODING_AGENT = "coding";
+export const RESEARCH_AGENT = "research";
 
-/**
- * The company's Integrations agent, made the first time it's needed: it
- * connects the company's systems, each on its own task. People can rename it
- * or add instructions; its playbook comes with Mach1.
- */
-export async function integrationsAgent(organizationId: string): Promise<Agent> {
+/** One of the agents Mach1 runs itself, if the company has it yet (not archived). */
+export async function findBuiltinAgent(organizationId: string, builtin: string): Promise<Agent | null> {
   const [row] = await getDb().query<AgentRow>(
     `select ${COLUMNS} from agents where organization_id = $1 and builtin = $2 and status <> 'archived' order by created_at limit 1`,
-    [organizationId, INTEGRATIONS_AGENT],
+    [organizationId, builtin],
   );
-  if (row) {
-    if (row.status !== "active") await getDb().query("update agents set status = 'active', updated_at = now() where id = $1", [row.id]);
-    return toAgent({ ...row, status: "active" });
+  return row ? toAgent(row) : null;
+}
+
+/**
+ * One of the agents Mach1 runs itself, made the first time it's needed (or
+ * brought back if it was paused or archived). People can rename it or add
+ * instructions; its playbook comes with Mach1.
+ */
+async function builtinAgent(organizationId: string, builtin: string, profile: AgentInput & { name: string }): Promise<Agent> {
+  const found = await findBuiltinAgent(organizationId, builtin);
+  if (found) {
+    if (found.status !== "active") await getDb().query("update agents set status = 'active', updated_at = now() where id = $1", [found.id]);
+    return { ...found, status: "active" };
   }
-  let name = "Integrations";
-  for (let n = 2; await findAgentByName(organizationId, name); n++) name = `Integrations ${n}`;
-  const agent = await createAgent(organizationId, {
-    name,
+  let name = profile.name;
+  for (let n = 2; await findAgentByName(organizationId, name); n++) name = `${profile.name} ${n}`;
+  const agent = await createAgent(organizationId, { ...profile, name });
+  await getDb().query("update agents set builtin = $2 where id = $1", [agent.id, builtin]);
+  return { ...agent, builtin };
+}
+
+/** The company's Integrations agent: it connects the company's systems, each on its own task. */
+export function integrationsAgent(organizationId: string): Promise<Agent> {
+  return builtinAgent(organizationId, INTEGRATIONS_AGENT, {
+    name: "Integrations",
     role: "Connecting the company's systems",
     description:
       "Connects the company's other systems (banking, portfolio, accounting and other platforms) so every agent can use them: works out what's possible, does the research, sets up the connection and doesn't stop until it works.",
   });
-  await getDb().query("update agents set builtin = $2 where id = $1", [agent.id, INTEGRATIONS_AGENT]);
-  return { ...agent, builtin: INTEGRATIONS_AGENT };
 }
 
-export const CODING_AGENT = "coding";
-
 /**
- * The company's Developer agent, made the first time someone asks for a code
- * change: it works in people's GitHub repositories, as the person who asked
- * (their own GitHub, never anyone else's). Its playbook is the
- * coding-in-github skill.
+ * The company's Developer agent, for code changes people ask for: it works in
+ * their GitHub repositories, as the person who asked (their own GitHub, never
+ * anyone else's). Its playbook is the coding-in-github skill.
  */
-export async function codingAgent(organizationId: string): Promise<Agent> {
-  const [row] = await getDb().query<AgentRow>(
-    `select ${COLUMNS} from agents where organization_id = $1 and builtin = $2 and status <> 'archived' order by created_at limit 1`,
-    [organizationId, CODING_AGENT],
-  );
-  if (row) {
-    if (row.status !== "active") await getDb().query("update agents set status = 'active', updated_at = now() where id = $1", [row.id]);
-    return toAgent({ ...row, status: "active" });
-  }
-  let name = "Developer";
-  for (let n = 2; await findAgentByName(organizationId, name); n++) name = `Developer ${n}`;
-  const agent = await createAgent(organizationId, {
-    name,
+export function codingAgent(organizationId: string): Promise<Agent> {
+  return builtinAgent(organizationId, CODING_AGENT, {
+    name: "Developer",
     role: "Changes code in GitHub repositories",
     description:
       "Makes code changes people ask for in their GitHub repositories, as the person who asked: clones the repository, works on a branch, runs its checks, pushes and opens a pull request, then reports what changed with the link. Merges only when told to.",
     instructions: "Load the coding-in-github skill before you start, and follow it.",
   });
-  await getDb().query("update agents set builtin = $2 where id = $1", [agent.id, CODING_AGENT]);
-  return { ...agent, builtin: CODING_AGENT };
+}
+
+/**
+ * The company's Researcher: anything the company needs to know (companies and
+ * markets, people and organisations, products and vendors, topics and events),
+ * from the web, filings, market data, X and Reddit, starting with the sources
+ * each person saved as high signal. Its playbook is the research skill.
+ */
+export function researchAgent(organizationId: string): Promise<Agent> {
+  return builtinAgent(organizationId, RESEARCH_AGENT, {
+    name: "Researcher",
+    role: "Research and insight",
+    description:
+      "Looks into anything the company needs to know (companies and markets, people and organisations, products and vendors, topics and events) for the decision or work it's for: plans the questions, investigates them in parallel across the web, filings, market data, X and Reddit (starting with the sources people saved as high signal), and delivers a sourced brief that leads with the insight and says what would change it.",
+    instructions: "Load the research skill before you start, and follow it.",
+  });
 }
 
 /** A throwaway agent for one task, named after its role ("Research worker", then "Research worker 2"). */

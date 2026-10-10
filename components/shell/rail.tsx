@@ -15,6 +15,7 @@ import {
   Search,
   Settings,
   Sun,
+  Telescope,
   UserPlus,
   UserRound,
   Users,
@@ -44,6 +45,7 @@ type Item = { href: string; label: string; icon: LucideIcon; count?: number; acc
 /** The places people go every day, after Home: in the left menu and the phone's menu sheet. */
 export const MAIN_PAGES: Item[] = [
   { href: "/pages", label: "Pages", icon: PanelsTopLeft },
+  { href: "/research", label: "Research", icon: Telescope },
   { href: "/team", label: "Team", icon: Users },
   { href: "/files", label: "Files", icon: FolderOpen },
 ];

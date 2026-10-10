@@ -1,0 +1,176 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
+import { setScheduler } from "@/lib/agents/dispatch";
+import { runAgentOnTask } from "@/lib/agents/runner";
+import { setSpecialistModel } from "@/lib/agents/specialist";
+import { agentModel, createAgent, listAgents, RESEARCH_AGENT, researchAgent } from "@/lib/agents/store";
+import { createOrganization, getOrganization } from "@/lib/orgs";
+import { getPerson, linkMember, updatePerson } from "@/lib/people";
+import { getSchedule } from "@/lib/schedules";
+import { createTask, getTask, getTaskByNumber, listMessages } from "@/lib/tasks";
+import { doAction } from "@/test/do-action";
+import { useTestDb } from "@/test/db";
+import { scriptedModel, type Step } from "@/test/scripted-model";
+
+const ORG = "org_cedar";
+
+async function sara() {
+  await createOrganization({ id: ORG, name: "Cedar Legacy" });
+  const linked = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
+  const person = await updatePerson(ORG, linked.id, { role: "Chief Investment Officer", responsibilities: "the public portfolio" });
+  const actor = { organizationId: ORG, personId: person.id, name: "Sara", userId: "user_sara", isAdmin: false };
+  await doAction(actor, "source.add", { source: "@DeItaone", note: "breaking macro" });
+  await doAction(actor, "source.add", { source: "semianalysis.com", note: "semis supply chain", shareWithCompany: true });
+  return person;
+}
+
+describe("the Researcher", () => {
+  beforeEach(async () => {
+    setScheduler(() => {}); // runs are started by hand here
+    await useTestDb();
+  });
+  afterEach(() => {
+    setSpecialistModel(null);
+    setScheduler(null);
+    vi.unstubAllEnvs();
+  });
+
+  it("is made once, on the company's model for agents' work", async () => {
+    await createOrganization({ id: ORG, name: "Cedar Legacy" });
+    const researcher = await researchAgent(ORG);
+    expect(researcher).toMatchObject({ name: "Researcher", builtin: RESEARCH_AGENT, kind: "defined" });
+    expect((await researchAgent(ORG)).id).toBe(researcher.id);
+    expect(agentModel(researcher)).toBe("mach1/worker");
+  });
+
+  it("starts from the saved sources and sends questions to sub-researchers", async () => {
+    const person = await sara();
+    const researcher = await researchAgent(ORG);
+    const task = await createTask(ORG, {
+      title: "Brief on Micron's HBM outlook",
+      description: "Is the HBM shortage priced in? For a decision on our MU position.",
+      people: [person.id],
+      agents: [researcher.id],
+      createdBy: { personId: person.id },
+    });
+    const steps: Step[] = [
+      [["investigate", { question: "How has HBM pricing moved since June 2026?", look_at: "SemiAnalysis first" }]],
+      // The sub-researcher's report, on the same (scripted) model.
+      "1. Findings:\n- Fact: HBM contract prices up 18% since June [1]\n3. Sources:\n[1] ★ SemiAnalysis, HBM update, 2026-09-30, https://semianalysis.com/hbm",
+      [["finish", { summary: "HBM prices are up 18% since June: the shortage looks mostly priced in.", report: "HBM contract prices rose 18% since June…" }]],
+    ];
+    const model = scriptedModel(steps);
+    expect(await runAgentOnTask(ORG, task.id, researcher.id, { model, research: false })).toEqual({ type: "finished" });
+
+    const [lead, investigator] = model.doGenerateCalls.map((call) => JSON.stringify(call.prompt));
+    expect(lead).toContain("Load the research skill before you start");
+    // It knows who it's working for, and the company, without being told.
+    expect(lead).toContain("This run is for Sara (Chief Investment Officer; the public portfolio)");
+    expect(lead).toContain("<company_profile>");
+    expect(lead).toContain("<high_signal_sources>");
+    expect(lead).toContain("The sources Sara trusts most");
+    expect(lead).toContain("@DeItaone: breaking macro");
+    expect(lead).toContain("semianalysis.com: semis supply chain (the company's)");
+    expect(investigator).toContain("You investigate one question for the Researcher");
+    expect(investigator).toContain("How has HBM pricing moved since June 2026?");
+    expect(investigator).toContain("Where to look: SemiAnalysis first");
+    expect(investigator).toContain("@DeItaone");
+    expect(JSON.stringify(model.doGenerateCalls[2].prompt)).toContain("HBM contract prices up 18% since June");
+
+    expect((await getTask(ORG, task.id))!.summary).toBe("HBM prices are up 18% since June: the shortage looks mostly priced in.");
+    expect((await listMessages(task.id)).map((m) => m.author)).toContain("Researcher");
+  });
+
+  it("searches with Exa as well as the shared research tools; other agents don't", async () => {
+    const person = await sara();
+    const researcher = await researchAgent(ORG);
+    const analyst = await createAgent(ORG, { name: "Analyst" });
+    const toolsOf = async (agentId: string) => {
+      const task = await createTask(ORG, { title: "Look into Micron", people: [person.id], agents: [agentId], createdBy: { personId: person.id } });
+      const model = scriptedModel([[["finish", { summary: "Done.", report: "Done." }]]]);
+      await runAgentOnTask(ORG, task.id, agentId, { model });
+      return (model.doGenerateCalls[0].tools ?? []).map((t) => t.name);
+    };
+    expect(await toolsOf(researcher.id)).toEqual(expect.arrayContaining(["web_search", "exa_search", "x_search", "reddit_search", "market_data", "investigate"]));
+    const shared = await toolsOf(analyst.id);
+    expect(shared).toEqual(expect.arrayContaining(["web_search", "x_search", "market_data"]));
+    expect(shared).not.toContain("exa_search");
+    expect(shared).not.toContain("investigate");
+  });
+
+  async function chat(steps: Step[]) {
+    const person = (await getPerson(ORG, (await sara()).id))!;
+    const organization = { ...(await getOrganization(ORG))!, onboardingCompletedAt: new Date() };
+    const model = scriptedModel(steps);
+    await createChiefOfStaff(
+      { organization, user: { id: "user_sara", email: "sara@cedar.example", name: "Sara" }, person, profile: "# Cedar Legacy", agents: await listAgents(ORG) },
+      { model, research: false },
+    ).generate({ prompt: "research this" });
+    return JSON.stringify(model.doGenerateCalls.at(-1)!.prompt);
+  }
+
+  it("answers a quick question in the chat, knowing why it's asked and for whom", async () => {
+    const specialist = scriptedModel(["Mostly bearish on X today: @DeItaone flagged hawkish Fed minutes."]);
+    setSpecialistModel(specialist);
+    const told = await chat([
+      [
+        [
+          "start_research",
+          {
+            title: "Check X on the Fed minutes",
+            question: "What's X saying about the Fed minutes?",
+            purpose: "Deciding whether to trim our TLT position before Friday",
+            depth: "quick",
+          },
+        ],
+      ],
+      "Done.",
+    ]);
+    expect(told).toContain("Researcher says:");
+    expect(told).toContain("hawkish Fed minutes");
+    const asked = JSON.stringify(specialist.doGenerateCalls[0].prompt);
+    expect(asked).toContain("You are Researcher, Research and insight");
+    expect(asked).toContain("asking you a question for Sara (Chief Investment Officer; the public portfolio)");
+    expect(asked).toContain("Why: Deciding whether to trim our TLT position before Friday");
+    expect(asked).toContain("<company_profile>");
+    expect(asked).toContain("@DeItaone: breaking macro");
+    expect(await getTaskByNumber(ORG, 1)).toBeNull();
+  });
+
+  it("turns a brief into a task it reports back on, repeating when asked", async () => {
+    const told = await chat([
+      [
+        [
+          "start_research",
+          {
+            title: "Weekly digest on AI semis",
+            question: "What my sources say about AI semis this week",
+            purpose: "Keeping our semis positions under review",
+            context: "We hold MU and NVDA. Sara thinks HBM pricing is the swing factor.",
+            deliverable: "Five bullets and anything that changes the view",
+            depth: "brief",
+            repeat: { cron: "0 8 * * 1", timezone: "Europe/London" },
+          },
+        ],
+      ],
+      "Done.",
+    ]);
+    expect(told).toContain("Started task #1: Researcher is on it");
+    expect(told).toContain("Repeats:");
+    const task = (await getTaskByNumber(ORG, 1))!;
+    expect(task).toMatchObject({ title: "Weekly digest on AI semis", visibility: "private" });
+    // The hand-off from the chat, which the Researcher reads as the task's description.
+    expect(task.description).toBe(
+      [
+        "What my sources say about AI semis this week",
+        "Why: Keeping our semis positions under review",
+        "For: Sara (Chief Investment Officer; the public portfolio)",
+        "What matters: We hold MU and NVDA. Sara thinks HBM pricing is the swing factor.",
+        "What they want back: Five bullets and anything that changes the view",
+      ].join("\n\n"),
+    );
+    expect(task.members.map((m) => m.name)).toEqual(["Sara", "Researcher"]);
+    expect(await getSchedule(task.id)).toMatchObject({ mode: "agent", timezone: "Europe/London" });
+  });
+});

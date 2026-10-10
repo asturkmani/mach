@@ -4,10 +4,13 @@ import { stepCountIs, ToolLoopAgent, type LanguageModel } from "ai";
 
 import type { AgentContext } from "@/lib/agents/prompts";
 import { companyModel } from "@/lib/ai/company-model";
-import { agentModel, type Agent } from "@/lib/agents/store";
-import { integrationTools, researchTools, sandboxTools, type SandboxUser } from "@/lib/agents/toolkit";
+import { agentModel, CODING_AGENT, INTEGRATIONS_AGENT, RESEARCH_AGENT, type Agent } from "@/lib/agents/store";
+import { integrationTools, researchTools, sandboxTools, skillTool, type SandboxUser } from "@/lib/agents/toolkit";
 import { listIntegrations } from "@/lib/integrations";
 import type { CompanyModels } from "@/lib/orgs";
+import { listSources } from "@/lib/research/store";
+import { sourcesBrief } from "@/lib/research/sources";
+import { exaTools } from "@/lib/research/tools";
 
 // A quick question for one of the company's agents, answered while the
 // Chief of Staff waits: the agent works on its own model (one chosen for its
@@ -32,13 +35,23 @@ export async function askSpecialist(
   using: SandboxUser,
   agent: Agent,
   company: CompanyModels,
-  input: { question: string; askedBy: string; profile: string; research?: boolean },
+  input: {
+    question: string;
+    askedBy: string;
+    /** Their role and what they look after, so the answer fits them. */
+    about?: string;
+    profile: string;
+    research?: boolean;
+  },
   { budgetMs = BUDGET_MS }: { budgetMs?: number } = {},
 ): Promise<SpecialistAnswer> {
   const model = testModel ?? agentModel(agent, company);
   if (!model) return { needsTask: `${agent.name} has no model set.` };
   const context: AgentContext = { ...workspace, agentId: agent.id, agentName: agent.name };
-  const integrations = await listIntegrations(workspace.organizationId, { agentId: agent.id, personId: workspace.personId });
+  const [integrations, sources] = await Promise.all([
+    listIntegrations(workspace.organizationId, { agentId: agent.id, personId: workspace.personId }),
+    agent.builtin === CODING_AGENT || agent.builtin === INTEGRATIONS_AGENT ? [] : listSources(workspace.organizationId, { viewer: workspace.personId }),
+  ]);
   const allowed = {
     sources: integrations.filter((i) => i.kind === "api").map((i) => i.slug),
     logins: integrations.filter((i) => i.kind === "login").map((i) => i.slug),
@@ -49,7 +62,7 @@ export async function askSpecialist(
       agent.instructions ? `\n\nYour instructions:\n${agent.instructions}` : ""
     }
 
-The Chief of Staff is asking you a question for ${input.askedBy}, and is waiting for your answer. Answer it directly and completely, with the figures, sources and reasoning that matter, in a few short paragraphs at most. You have a few minutes: use your tools if you need to (the company's data sources, research, code in a sandbox), but don't start anything long.
+The Chief of Staff is asking you a question for ${input.askedBy}${input.about ? ` (${input.about})` : ""}, and is waiting for your answer. Answer it directly and completely, with the figures, sources and reasoning that matter, in a few short paragraphs at most. You have a few minutes: use your tools if you need to (the company's data sources, research, code in a sandbox), but don't start anything long.
 
 If answering properly needs longer work (a long analysis, files to produce, many steps, something to watch over time), don't start it: reply with exactly "${NEEDS_TASK} " and one line on what the work is. It will become a task for you.
 
@@ -57,11 +70,13 @@ Today's date: ${new Date().toISOString().slice(0, 10)}.
 
 <company_profile>
 ${input.profile}
-</company_profile>`,
+</company_profile>${sources.length ? `\n\n${sourcesBrief(sources, input.askedBy)}` : ""}`,
     tools: {
-      ...(input.research === false ? {} : researchTools()),
+      ...(input.research === false ? {} : researchTools(context)),
+      ...(input.research === false || agent.builtin !== RESEARCH_AGENT ? {} : exaTools()),
       ...integrationTools(context, using, allowed),
       ...sandboxTools(context, using),
+      use_skill: skillTool(),
     },
     stopWhen: stepCountIs(20),
   });

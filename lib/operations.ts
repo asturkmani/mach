@@ -23,6 +23,8 @@ import {
   type Person,
   type PersonPatch,
 } from "@/lib/people";
+import { findSource, removeSource, saveSource, updateSource } from "@/lib/research/store";
+import { SourceError, sourceLabel, type ResearchSource, type SourceKind } from "@/lib/research/sources";
 import { personalSandboxName, sandboxes } from "@/lib/sandbox";
 import { addMessage, canSeeTask } from "@/lib/tasks";
 import { rerunScript, WorkError } from "@/lib/work";
@@ -53,7 +55,13 @@ async function asOperation<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } catch (error) {
-    if (error instanceof PersonError || error instanceof PageError || error instanceof IntegrationError || error instanceof WorkError) {
+    if (
+      error instanceof PersonError ||
+      error instanceof PageError ||
+      error instanceof IntegrationError ||
+      error instanceof WorkError ||
+      error instanceof SourceError
+    ) {
       throw new OperationError(error.message);
     }
     throw error;
@@ -274,6 +282,53 @@ export async function testIntegrationAs(actor: Actor, id: string) {
 
 export async function deleteIntegrationAs(actor: Actor, id: string): Promise<void> {
   await asOperation(() => deleteIntegration(actor.organizationId, id));
+}
+
+// ---- Research sources -------------------------------------------------------
+
+/** Saves a source as high signal for them (anyone, for themselves), or shares it for the company's research. Returns what happened, in words. */
+export async function saveSourceAs(
+  actor: Actor,
+  input: { source: string; kind?: SourceKind; note?: string; shareWithCompany?: boolean },
+): Promise<string> {
+  const { source, created } = await asOperation(() =>
+    saveSource(actor.organizationId, {
+      source: input.source,
+      kind: input.kind,
+      note: input.note,
+      visibility: input.shareWithCompany === undefined ? undefined : input.shareWithCompany ? "company" : "private",
+      ownerPersonId: actor.personId,
+    }),
+  );
+  const whose = source.visibility === "company" ? "for the company's research" : "for your research";
+  return `${created ? "Saved" : "Updated"} ${sourceLabel(source)} as a high-signal source ${whose}.`;
+}
+
+/** A source they can see, by id or as they'd say it; changing it is for whoever saved it, or an admin for the company's. */
+async function sourceToChange(actor: Actor, ref: string): Promise<ResearchSource> {
+  const source = await findSource(actor.organizationId, actor.personId, ref);
+  if (!source) throw new OperationError(`You have no saved source ${ref}.`);
+  if (source.ownerPersonId !== actor.personId && !actor.isAdmin) {
+    throw new OperationError(`${sourceLabel(source)} is the company's; only whoever saved it, or an admin, can change it.`);
+  }
+  return source;
+}
+
+export async function updateSourceAs(actor: Actor, ref: string, patch: { note?: string; shareWithCompany?: boolean }): Promise<string> {
+  const source = await sourceToChange(actor, ref);
+  const visibility = patch.shareWithCompany === undefined ? undefined : patch.shareWithCompany ? "company" : "private";
+  await updateSource(actor.organizationId, source.id, { note: patch.note, visibility });
+  return visibility === "company"
+    ? `${sourceLabel(source)} is shared for the company's research.`
+    : visibility === "private"
+      ? `${sourceLabel(source)} is just yours now.`
+      : `Saved ${sourceLabel(source)}.`;
+}
+
+export async function removeSourceAs(actor: Actor, ref: string): Promise<string> {
+  const source = await sourceToChange(actor, ref);
+  await removeSource(actor.organizationId, source.id);
+  return `Removed ${sourceLabel(source)} from the saved sources.`;
 }
 
 // ---- Agents and the company -------------------------------------------------
