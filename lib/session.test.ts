@@ -24,7 +24,7 @@ vi.mock("@workos-inc/authkit-nextjs", () => ({
 }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
-const { getCompanyDomain, getSessionContext } = await import("./session");
+const { getSessionContext } = await import("./session");
 
 describe("getSessionContext", () => {
   beforeEach(async () => {
@@ -42,25 +42,5 @@ describe("getSessionContext", () => {
   it("treats a session still pointing at a deleted company as having none, so they start again", async () => {
     auth.organizationId = "org_deleted";
     expect((await getSessionContext()).organization).toBeNull();
-  });
-});
-
-describe("getCompanyDomain", () => {
-  beforeEach(() => {
-    auth.user = { id: "user_ahmed", email: "ahmed@cedarlegacy.com", emailVerified: true };
-  });
-
-  it("returns the domain of a verified work email", async () => {
-    expect(await getCompanyDomain()).toBe("cedarlegacy.com");
-  });
-
-  it("ignores unverified addresses, so nobody can claim a domain they don't own", async () => {
-    auth.user.emailVerified = false;
-    expect(await getCompanyDomain()).toBeNull();
-  });
-
-  it("ignores personal email providers", async () => {
-    auth.user.email = "ahmed@gmail.com";
-    expect(await getCompanyDomain()).toBeNull();
   });
 });

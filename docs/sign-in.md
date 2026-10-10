@@ -16,14 +16,17 @@ New and returning people take the same steps: the first sign-in creates the acco
 
 **WorkOS's own page** handles what Mach1's doesn't (multi-factor authentication, a Radar challenge). Mach1 sends people there only when WorkOS asks for one of these, and with `max_age=0`, so it always asks again rather than signing in silently with a session it remembers from earlier.
 
-## Finding your company
+## Joining a company
 
-A company's **email domain** is the work domain of whoever creates it, once their email is verified. Every way of signing in verifies it: a code, a password confirmed with a code, Google, Microsoft, or single sign-on. Personal addresses (gmail.com, outlook.com…) never claim one.
+Only by invitation. An admin adds someone on the Team page with **Invite them to Mach1** ticked, and they
+join that company when they sign in with that email, even without the invitation's link (`/welcome` finds
+the open invitation by email and offers **Join**). Nobody is matched to a company by their email's domain:
+it says little about who should see a company's work (contractors, people who've left but whose mailbox
+still works, shared inboxes, providers like agentmail.to). Anyone else who signs in creates a company of
+their own; `/welcome` tells people joining a team to ask an admin for an invitation instead.
 
-When someone signs in for the first time with that domain, `/welcome` shows the company instead of offering to create a duplicate:
-
-- **Ask to join** (the default) puts a request, a task of kind `join_request`, in every admin's inbox, with a push notification: *Let them in* or *Decline*. They join as a member. Their page checks every 15 seconds and shows the company to open once an admin says yes. After a decline they can ask again.
-- **Join** straight away, when an admin has turned on **Colleagues join on their own** (Settings → General). This is off by default: contractors, or people who've left but whose mailbox still works, would otherwise get in.
+Companies created before this kept their `domain` and `auto_join` columns, which nothing reads any more,
+and any open requests to join were closed.
 
 **Roles** live in WorkOS: `admin` or `member`. Whoever creates a company is its first admin. Admins make others admins (or members again) on the Team page. A company always keeps at least one admin, and nobody changes their own role. Code: `lib/members.ts`.
 

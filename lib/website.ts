@@ -2,6 +2,7 @@
 // work email domain that identifies a company.
 
 const PERSONAL_EMAIL_DOMAINS = new Set([
+  "agentmail.to",
   "gmail.com",
   "googlemail.com",
   "outlook.com",

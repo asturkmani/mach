@@ -6,7 +6,7 @@ import { createCompany, type CreateCompanyState } from "./actions";
 
 const inputClass = "field";
 
-export function CreateCompanyForm({ defaultWebsite, domain }: { defaultWebsite: string; domain: string | null }) {
+export function CreateCompanyForm({ defaultWebsite }: { defaultWebsite: string }) {
   const [state, action, pending] = useActionState<CreateCompanyState, FormData>(createCompany, {});
 
   return (
@@ -21,11 +21,6 @@ export function CreateCompanyForm({ defaultWebsite, domain }: { defaultWebsite: 
         </span>
         <input name="website" defaultValue={defaultWebsite} className={inputClass} placeholder="cedarlegacy.com" />
       </label>
-      {domain && (
-        <p className="text-sm text-muted">
-          Colleagues who sign in with an @{domain} email will be pointed to this company.
-        </p>
-      )}
       {state.error && (
         <p className="border border-danger/40 px-3 py-2 text-sm text-danger">
           {state.error}

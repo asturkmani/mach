@@ -13,8 +13,6 @@ export type Organization = {
   onboardingCompletedAt: Date | null;
   /** The Chief of Staff's email address for the company (an AgentMail inbox), if one was set up. */
   emailInbox: string | null;
-  /** Colleagues with a verified email at the company's domain join without asking. */
-  autoJoin: boolean;
   /** The company's own choice of models (AI Gateway ids), over Mach1's defaults. */
   models: CompanyModels;
 };
@@ -29,11 +27,10 @@ type OrgRow = {
   timezone: string | null;
   onboarding_completed_at: Date | null;
   email_inbox: string | null;
-  auto_join: boolean;
   models: CompanyModels | null;
 };
 
-const ORG_COLUMNS = "id, name, website, domain, timezone, onboarding_completed_at, email_inbox, auto_join, models";
+const ORG_COLUMNS = "id, name, website, domain, timezone, onboarding_completed_at, email_inbox, models";
 
 const toOrg = (row: OrgRow): Organization => ({
   id: row.id,
@@ -43,7 +40,6 @@ const toOrg = (row: OrgRow): Organization => ({
   timezone: row.timezone,
   onboardingCompletedAt: row.onboarding_completed_at,
   emailInbox: row.email_inbox,
-  autoJoin: row.auto_join ?? false,
   models: row.models ?? {},
 });
 
@@ -52,25 +48,16 @@ export async function getOrganization(id: string): Promise<Organization | null> 
   return row ? toOrg(row) : null;
 }
 
-/** The company that owns a work email domain, if any. */
-export async function findOrganizationByDomain(domain: string): Promise<Organization | null> {
-  const [row] = await getDb().query<OrgRow>(`select ${ORG_COLUMNS} from organizations where lower(domain) = lower($1)`, [
-    domain,
-  ]);
-  return row ? toOrg(row) : null;
-}
-
 /** Creates the organization and its empty profile. Does nothing if it already exists. */
 export async function createOrganization(org: {
   id: string;
   name: string;
   website?: string | null;
-  domain?: string | null;
 }): Promise<void> {
   const db = getDb();
   await db.query(
-    "insert into organizations (id, name, website, domain) values ($1, $2, $3, $4) on conflict (id) do nothing",
-    [org.id, org.name, org.website ?? null, org.domain ?? null],
+    "insert into organizations (id, name, website) values ($1, $2, $3) on conflict (id) do nothing",
+    [org.id, org.name, org.website ?? null],
   );
   await db.query(
     "insert into company_profiles (organization_id, markdown) values ($1, $2) on conflict (organization_id) do nothing",
@@ -104,11 +91,6 @@ export async function setEmailInbox(organizationId: string, inbox: string | null
 export async function findOrganizationByInbox(inbox: string): Promise<Organization | null> {
   const [row] = await getDb().query<OrgRow>(`select ${ORG_COLUMNS} from organizations where lower(email_inbox) = lower($1)`, [inbox]);
   return row ? toOrg(row) : null;
-}
-
-/** Whether colleagues with the company's domain join without asking. */
-export async function setAutoJoin(id: string, on: boolean): Promise<void> {
-  await getDb().query("update organizations set auto_join = $2 where id = $1", [id, on]);
 }
 
 /** The company's own default models; an empty one goes back to Mach1's. */

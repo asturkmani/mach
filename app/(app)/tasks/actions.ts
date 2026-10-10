@@ -26,7 +26,6 @@ import {
   type Actor,
 } from "@/lib/work";
 import { addMessage, canSeeTask, getTask, removeMember, setTaskVisibility, type TaskVisibility } from "@/lib/tasks";
-import { decideJoinRequest } from "@/lib/members";
 
 // Everything the task screens do. Each returns an error message for the person
 // rather than throwing, and refreshes the page data on success.
@@ -51,17 +50,6 @@ const snapshot = (task: Task): TaskSnapshot => ({
   priority: task.priority,
   laterUntil: task.laterUntil ? new Date(task.laterUntil).toISOString() : null,
 });
-
-/** A colleague asking to join: only an admin answers, by letting them in (the first option) or declining. */
-async function answerJoinRequest(taskId: string, index: number): Promise<TaskActionResult | null> {
-  const { organization, person, isAdmin } = await requireAppContext();
-  const task = await getTask(organization.id, taskId);
-  if (task?.kind !== "join_request") return null;
-  if (!isAdmin) return { error: "Only an admin can let someone in." };
-  return attempt(async () => {
-    await decideJoinRequest(organization.id, taskId, index === 0, { name: person.name, personId: person.id });
-  });
-}
 
 async function attempt(work: () => Promise<TaskActionResult | void>): Promise<TaskActionResult> {
   try {
@@ -132,8 +120,6 @@ export async function sendQueuedNowAction(taskId: string, messageId: string): Pr
 }
 
 export async function pickOptionAction(taskId: string, index: number): Promise<TaskActionResult> {
-  const joining = await answerJoinRequest(taskId, index);
-  if (joining) return joining;
   const { organizationId, by } = await actorFor(taskId);
   return attempt(async () => {
     await pickOption(organizationId, taskId, by, index);
@@ -142,8 +128,6 @@ export async function pickOptionAction(taskId: string, index: number): Promise<T
 
 /** E: takes the recommended option, or marks the task done. Returns what to restore on undo. */
 export async function approveOrDoneAction(taskId: string): Promise<TaskActionResult> {
-  const joining = await answerJoinRequest(taskId, 0);
-  if (joining) return joining;
   const { organizationId, by } = await actorFor(taskId);
   return attempt(async () => {
     const before = await getTask(organizationId, taskId);

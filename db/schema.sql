@@ -552,3 +552,8 @@ create table if not exists ai_keys (
 
 -- The company's own choice of models (AI Gateway ids): { "chiefOfStaff": …, "agents": … }. Empty uses Mach1's.
 alter table organizations add column if not exists models jsonb not null default '{}';
+
+-- People join a company only by invitation now: requests to join by email domain are closed, and the
+-- domain and auto-join columns are no longer read (kept so nothing is lost).
+update tasks set status = 'cancelled', options = '[]'::jsonb, updated_at = now()
+where kind = 'join_request' and status not in ('done', 'cancelled');
