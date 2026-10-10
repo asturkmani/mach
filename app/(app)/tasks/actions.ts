@@ -3,33 +3,27 @@
 import { refresh } from "next/cache";
 
 import { searchTasks as search, updateTask, type Priority, type Task, type TaskStatus } from "@/lib/tasks";
-import { PRIORITIES, TASK_STATUSES } from "@/lib/task-words";
-import { attachFileAs, OperationError } from "@/lib/operations";
+import { PRIORITIES } from "@/lib/task-words";
+import { performAs } from "@/lib/actions";
+import { OperationError } from "@/lib/operations";
 import { actorOf, requireAppContext } from "@/lib/session";
-import { attachToTask, detachFromTask, discardUploads, readUpload } from "@/lib/files";
+import { discardUploads, readUpload } from "@/lib/files";
 import {
-  addToTask,
   approveOrDone,
-  archiveTask,
-  unarchiveTask,
   createTaskWithTeam,
-  pauseTaskSchedule,
-  pickOption,
   replyToTask,
-  rerunScript,
-  runNow,
-  scheduleTask,
   sendQueuedNow,
   setStatus,
-  unscheduleTask,
   MAX_REPLY_ATTACHMENTS,
   WorkError,
   type Actor,
 } from "@/lib/work";
-import { addMessage, canSeeTask, getTask, removeMember, setTaskVisibility, type TaskVisibility } from "@/lib/tasks";
+import { canSeeTask, getTask, type TaskVisibility } from "@/lib/tasks";
 
-// Everything the task screens do. Each returns an error message for the person
-// rather than throwing, and refreshes the page data on success.
+// Everything the task screens do: the actions themselves are declared once in
+// lib/actions/tasks.ts (so the Chief of Staff can do them too). Each returns an
+// error message for the person rather than throwing, and refreshes the page
+// data on success.
 
 export type TaskSnapshot = { status: TaskStatus; priority: Priority; laterUntil: string | null };
 export type TaskActionResult = { error?: string; number?: number; snapshot?: TaskSnapshot };
@@ -58,10 +52,27 @@ async function attempt(work: () => Promise<TaskActionResult | void>): Promise<Ta
     refresh();
     return result;
   } catch (error) {
-    if (error instanceof WorkError) return { error: error.message };
+    if (error instanceof WorkError || error instanceof OperationError) return { error: error.message };
     console.error(error);
     return { error: "Something went wrong. Try again." };
   }
+}
+
+/** Does one of the task actions (lib/actions/tasks.ts) as the signed-in person. */
+async function perform(name: string, input: object): Promise<TaskActionResult> {
+  const actor = actorOf(await requireAppContext());
+  return attempt(async () => void (await performAs(actor, name, input)));
+}
+
+/** The same, returning how the task was before, for undo (restoreAction). */
+async function performWithUndo(taskId: string, name: string, input: object): Promise<TaskActionResult> {
+  const context = await requireAppContext();
+  return attempt(async () => {
+    const before = await getTask(context.organization.id, taskId, { viewer: context.person.id });
+    if (!before) throw new WorkError("That task doesn't exist.");
+    await performAs(actorOf(context), name, input);
+    return { snapshot: snapshot(before) };
+  });
 }
 
 export async function createTaskAction(input: {
@@ -121,10 +132,7 @@ export async function sendQueuedNowAction(taskId: string, messageId: string): Pr
 }
 
 export async function pickOptionAction(taskId: string, index: number): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    await pickOption(organizationId, taskId, by, index);
-  });
+  return perform("task.pick_option", { task: taskId, option: index + 1 });
 }
 
 /** E: takes the recommended option, or marks the task done. Returns what to restore on undo. */
@@ -141,46 +149,16 @@ export async function approveOrDoneAction(taskId: string): Promise<TaskActionRes
 }
 
 export async function setStatusAction(taskId: string, status: TaskStatus): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  if (!TASK_STATUSES.includes(status)) return { error: "Unknown status." };
-  return attempt(async () => {
-    const before = await getTask(organizationId, taskId);
-    if (!before) throw new WorkError("That task no longer exists.");
-    await setStatus(organizationId, taskId, status, by);
-    return { snapshot: snapshot(before) };
-  });
+  return performWithUndo(taskId, "task.set_status", { task: taskId, status });
 }
 
 export async function setPriorityAction(taskId: string, priority: Priority): Promise<TaskActionResult> {
-  const { organizationId } = await actorFor(taskId);
-  if (!PRIORITIES.includes(priority)) return { error: "Unknown priority." };
-  return attempt(async () => {
-    const before = await getTask(organizationId, taskId);
-    if (!before) throw new WorkError("That task no longer exists.");
-    await updateTask(organizationId, taskId, { priority });
-    return { snapshot: snapshot(before) };
-  });
+  return performWithUndo(taskId, "task.set_priority", { task: taskId, priority });
 }
 
 /** Puts a task off until a time (ISO string), or brings it back with null. */
 export async function laterAction(taskId: string, until: string | null): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  const date = until ? new Date(until) : null;
-  if (date && Number.isNaN(date.getTime())) return { error: "That time doesn't look right." };
-  return attempt(async () => {
-    const before = await getTask(organizationId, taskId);
-    if (!before) throw new WorkError("That task no longer exists.");
-    await updateTask(organizationId, taskId, { laterUntil: date });
-    if (date) {
-      await addMessage(taskId, {
-        author: by.name,
-        personId: by.personId,
-        kind: "event",
-        body: `Put this off until ${date.toISOString().slice(0, 16).replace("T", " ")} UTC.`,
-      });
-    }
-    return { snapshot: snapshot(before) };
-  });
+  return performWithUndo(taskId, "task.later", { task: taskId, until });
 }
 
 /** Z: puts status, priority and "later" back to how they were. */
@@ -201,44 +179,25 @@ export async function updateTaskTextAction(
   taskId: string,
   patch: { title?: string; description?: string; context?: string; progress?: string },
 ): Promise<TaskActionResult> {
-  const { organizationId } = await actorFor(taskId);
-  return attempt(async () => {
-    if (patch.title !== undefined && !patch.title.trim()) throw new WorkError("A task needs a title.");
-    await updateTask(organizationId, taskId, patch);
-  });
+  return perform("task.edit", { task: taskId, ...patch });
 }
 
 export async function addMemberAction(
   taskId: string,
   member: { personId?: string; agentId?: string; workerRole?: string },
 ): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    await addToTask(organizationId, taskId, by, member);
-  });
+  return perform("task.add_member", { task: taskId, member: member.personId ?? member.agentId, workerRole: member.workerRole });
 }
 
 export async function removeMemberAction(
   taskId: string,
   member: { personId?: string; agentId?: string },
 ): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    const task = await getTask(organizationId, taskId);
-    if (!task) throw new WorkError("That task no longer exists.");
-    const leaving = task.members.find((m) => m.id === (member.personId ?? member.agentId));
-    await removeMember(taskId, member);
-    if (leaving) {
-      await addMessage(taskId, { author: by.name, personId: by.personId, kind: "event", body: `Took ${leaving.name} off this task.` });
-    }
-  });
+  return perform("task.remove_member", { task: taskId, member: member.personId ?? member.agentId });
 }
 
 export async function runAgentAction(taskId: string, agentId: string): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    await runNow(organizationId, taskId, agentId, by);
-  });
+  return perform("task.run_agent", { task: taskId, agent: agentId });
 }
 
 export type TaskHit = { id: string; number: number; title: string; status: TaskStatus };
@@ -250,39 +209,20 @@ export async function searchTasksAction(query: string): Promise<TaskHit[]> {
 }
 
 export async function archiveAction(taskId: string): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    await archiveTask(organizationId, taskId, by);
-  });
+  return perform("task.archive", { task: taskId, archived: true });
 }
 
 export async function unarchiveAction(taskId: string): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    await unarchiveTask(organizationId, taskId, by);
-  });
+  return perform("task.archive", { task: taskId, archived: false });
 }
 
 /** Attaches a company file to a job as an input. */
 export async function attachFileAction(taskId: string, fileId: string): Promise<TaskActionResult> {
-  const actor = actorOf(await requireAppContext());
-  return attempt(async () => {
-    try {
-      await attachFileAs(actor, taskId, fileId);
-    } catch (error) {
-      if (error instanceof OperationError) throw new WorkError(error.message);
-      throw error;
-    }
-  });
+  return perform("task.attach_file", { task: taskId, file: fileId });
 }
 
 export async function detachFileAction(taskId: string, fileId: string): Promise<TaskActionResult> {
-  const { organizationId } = await actorFor(taskId);
-  return attempt(async () => {
-    const task = await getTask(organizationId, taskId);
-    if (!task) throw new WorkError("That task no longer exists.");
-    await detachFromTask(taskId, fileId);
-  });
+  return perform("task.detach_file", { task: taskId, file: fileId });
 }
 
 /** Makes a job repeat, or changes its schedule. */
@@ -290,42 +230,23 @@ export async function setScheduleAction(
   taskId: string,
   input: { cron: string; timezone: string; mode: "script" | "agent" },
 ): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  if (input.mode !== "script" && input.mode !== "agent") return { error: "Pick how each run works." };
-  return attempt(async () => {
-    await scheduleTask(organizationId, taskId, by, input);
-  });
+  return perform("task.set_schedule", { task: taskId, ...input });
 }
 
 export async function pauseScheduleAction(taskId: string, paused: boolean): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    await pauseTaskSchedule(organizationId, taskId, by, paused);
-  });
+  return perform("task.pause_schedule", { task: taskId, paused });
 }
 
 export async function removeScheduleAction(taskId: string): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    await unscheduleTask(organizationId, taskId, by);
-  });
+  return perform("task.remove_schedule", { task: taskId });
 }
 
 /** Replays the job's run.sh now. */
 export async function rerunAction(taskId: string): Promise<TaskActionResult> {
-  const { organizationId, by } = await actorFor(taskId);
-  return attempt(async () => {
-    await rerunScript(organizationId, taskId, by);
-  });
+  return perform("task.rerun_script", { task: taskId });
 }
 
 /** Shares a task with the whole company, or makes it private to whoever created it and the people on it (they or an admin). */
 export async function setVisibilityAction(taskId: string, visibility: TaskVisibility): Promise<TaskActionResult> {
-  const { organization, person, isAdmin } = await requireAppContext();
-  const task = await getTask(organization.id, taskId, { viewer: person.id });
-  if (!task) return { error: "That task doesn't exist." };
-  if (task.createdByPersonId !== person.id && !isAdmin) return { error: "Only whoever created it, or an admin, can change who sees it." };
-  return attempt(async () => {
-    await setTaskVisibility(organization.id, taskId, visibility === "company" ? "company" : "private");
-  });
+  return perform("task.set_visibility", { task: taskId, visibility });
 }

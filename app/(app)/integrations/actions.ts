@@ -2,9 +2,10 @@
 
 import { refresh } from "next/cache";
 
-import { forgetSession, IntegrationError, saveCredentials, testIntegration, type IntegrationStatus } from "@/lib/integrations";
+import { performAs } from "@/lib/actions";
+import { IntegrationError, saveCredentials, testIntegration, type IntegrationStatus } from "@/lib/integrations";
 import { sendLoginCode } from "@/lib/agents/browser-steps";
-import { deleteIntegrationAs, OperationError, updateIntegrationAs } from "@/lib/operations";
+import { deleteIntegrationAs, OperationError, testIntegrationAs, updateIntegrationAs } from "@/lib/operations";
 import { actorOf, requireAppContext } from "@/lib/session";
 
 // Integrations from the Chief of Staff's card and the Integrations page.
@@ -36,8 +37,9 @@ export async function saveCredentialsAction(id: string, values: Record<string, s
 }
 
 export async function testIntegrationAction(id: string): Promise<IntegrationResult> {
-  return attempt(async (organizationId) => {
-    const tested = await testIntegration(organizationId, id);
+  const actor = actorOf(await requireAppContext());
+  return attempt(async () => {
+    const tested = await testIntegrationAs(actor, id);
     return { status: tested.status, detail: tested.statusDetail };
   });
 }
@@ -57,9 +59,8 @@ export async function deleteIntegrationAction(id: string): Promise<IntegrationRe
 
 /** Forgets a login's saved session: the next agent to use it signs in afresh. */
 export async function forgetSessionAction(id: string): Promise<IntegrationResult> {
-  return attempt(async (organizationId) => {
-    await forgetSession(organizationId, id);
-  });
+  const actor = actorOf(await requireAppContext());
+  return attempt(async () => void (await performAs(actor, "integration.forget_session", { integration: id })));
 }
 
 /** Hands a sign-in code from the chat's code card to the Chief of Staff's waiting browser. */

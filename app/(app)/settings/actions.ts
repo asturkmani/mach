@@ -2,36 +2,35 @@
 
 import { revalidatePath } from "next/cache";
 
-import { MEMORY_LIMIT, savePersonalMemory } from "@/lib/agents/conversation";
+import { performAs } from "@/lib/actions";
 import type { WorkHours } from "@/lib/assistant/hours";
-import { saveAssistantHours } from "@/lib/assistant/store";
-import { disconnectGitHub } from "@/lib/github";
-import { requireAppContext } from "@/lib/session";
+import { OperationError } from "@/lib/operations";
+import { actorOf, requireAppContext } from "@/lib/session";
+
+// Your own settings (Settings → Account), declared in lib/actions/company.ts.
+
+async function perform(name: string, input: object): Promise<{ error?: string }> {
+  try {
+    await performAs(actorOf(await requireAppContext()), name, input);
+  } catch (error) {
+    if (error instanceof OperationError) return { error: error.message };
+    throw error;
+  }
+  revalidatePath("/settings/account");
+  return {};
+}
 
 /** Forgets your GitHub here and revokes what you granted Mach1 there. */
 export async function disconnectGitHubAction(): Promise<void> {
-  const { organization, person } = await requireAppContext();
-  await disconnectGitHub(organization.id, person.id);
-  revalidatePath("/settings/account");
+  await perform("me.disconnect_github", {});
 }
 
 /** Rewrites what your assistant knows about you (only it reads this, and only while talking with you). */
 export async function savePersonalNotesAction(notes: string): Promise<{ error?: string }> {
-  const { organization, person } = await requireAppContext();
-  if (notes.length > MEMORY_LIMIT) return { error: `Keep it under ${MEMORY_LIMIT} characters.` };
-  await savePersonalMemory(organization.id, person.id, notes);
-  revalidatePath("/settings/account");
-  return {};
+  return perform("me.set_notes", { notes });
 }
 
 /** When your assistant may message you first: your timezone, working hours and quiet hours. */
 export async function saveWorkHoursAction(timezone: string, hours: WorkHours): Promise<{ error?: string }> {
-  const { organization, person } = await requireAppContext();
-  try {
-    await saveAssistantHours(organization.id, person.id, timezone.trim(), hours);
-  } catch (error) {
-    return { error: (error as Error).message };
-  }
-  revalidatePath("/settings/account");
-  return {};
+  return perform("me.set_hours", { timezone, ...hours });
 }

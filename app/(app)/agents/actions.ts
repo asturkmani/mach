@@ -2,8 +2,10 @@
 
 import { refresh } from "next/cache";
 
-import { createAgent, getAgent, updateAgent, type AgentStatus } from "@/lib/agents/store";
-import { requireAppContext } from "@/lib/session";
+import { performAs } from "@/lib/actions";
+import { createAgent, type AgentStatus } from "@/lib/agents/store";
+import { OperationError } from "@/lib/operations";
+import { actorOf, requireAppContext } from "@/lib/session";
 
 export type AgentActionResult = { error?: string; id?: string };
 
@@ -33,24 +35,21 @@ export async function createAgentAction(_: AgentActionResult, form: FormData): P
 }
 
 export async function updateAgentAction(id: string, _: AgentActionResult, form: FormData): Promise<AgentActionResult> {
-  const { organization } = await requireAppContext();
-  const input = fields(form);
-  if (!input.name) return { error: "Give the agent a name." };
-  try {
-    await updateAgent(organization.id, id, input);
-    refresh();
-    return { id };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Couldn't save the agent." };
-  }
+  return perform(id, "agent.update", { agent: id, ...fields(form) });
 }
 
 export async function setAgentStatusAction(id: string, status: AgentStatus): Promise<AgentActionResult> {
-  const { organization } = await requireAppContext();
-  if (!["active", "paused", "archived"].includes(status)) return { error: "Unknown status." };
-  const agent = await getAgent(organization.id, id);
-  if (!agent) return { error: "That agent no longer exists." };
-  await updateAgent(organization.id, id, { status });
-  refresh();
-  return { id };
+  return perform(id, "agent.set_status", { agent: id, status });
+}
+
+/** Does one of the agent actions (lib/actions/company.ts) as the signed-in person. */
+async function perform(id: string, name: string, input: object): Promise<AgentActionResult> {
+  try {
+    await performAs(actorOf(await requireAppContext()), name, input);
+    refresh();
+    return { id };
+  } catch (error) {
+    if (error instanceof OperationError) return { error: error.message };
+    throw error;
+  }
 }

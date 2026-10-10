@@ -79,7 +79,7 @@ describe("a conversation that never ends", () => {
     const sara = await linkMember(ORG, user);
     const organization = { ...(await getOrganization(ORG))!, onboardingCompletedAt: new Date() };
     const notes = "- Prefers one-line answers\n- Looks after the Lebanon entities";
-    const model = scriptedModel([[["update_personal_notes", { notes }]], "Noted."]);
+    const model = scriptedModel([[["do_action", { action: "me.set_notes", input: { notes } }]], "Noted."]);
     await chiefOfStaffTurn({ organization, user, person: sara }, "Keep answers to one line. I look after the Lebanon entities.", "whatsapp", { model, research: false });
     expect(await getPersonalMemory(ORG, sara.id)).toBe(notes);
 

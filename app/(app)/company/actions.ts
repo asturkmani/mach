@@ -3,12 +3,12 @@
 import { getWorkOS, signOut } from "@workos-inc/authkit-nextjs";
 import { refresh } from "next/cache";
 
-import { agentmailConfigured, createInbox, ensureEmailWebhook } from "@/lib/channels/agentmail";
+import { performAs } from "@/lib/actions";
 import { whatsappNumber } from "@/lib/channels/twilio";
 import { startWhatsAppLink, unlinkWhatsApp } from "@/lib/channels/whatsapp-links";
-import { setEmailInbox } from "@/lib/orgs";
+import { OperationError } from "@/lib/operations";
 import { deleteCompany } from "@/lib/delete-company";
-import { requireAppContext } from "@/lib/session";
+import { actorOf, requireAppContext } from "@/lib/session";
 
 /**
  * Deletes the company and everything it has in Mach1 (admins only, after they
@@ -50,16 +50,11 @@ export async function unlinkWhatsAppAction(): Promise<void> {
 
 /** Gives the company an email address for its Chief of Staff (admins). */
 export async function createEmailInboxAction(): Promise<{ error?: string }> {
-  const { organization, isAdmin } = await requireAppContext();
-  if (!isAdmin) return { error: "Only an admin can set up the company's email address." };
-  if (!agentmailConfigured()) return { error: "Email isn't set up for Mach1 yet (AGENTMAIL_API_KEY)." };
-  if (organization.emailInbox) return {};
   try {
-    await setEmailInbox(organization.id, await createInbox(organization.name));
-    await ensureEmailWebhook();
+    await performAs(actorOf(await requireAppContext()), "company.set_up_email", {});
   } catch (error) {
-    console.error(error);
-    return { error: "Couldn't create the email address. Try again." };
+    if (error instanceof OperationError) return { error: error.message };
+    throw error;
   }
   refresh();
   return {};

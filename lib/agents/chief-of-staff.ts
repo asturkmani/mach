@@ -9,10 +9,11 @@ import {
 } from "ai";
 import { z } from "zod";
 
-import { appTools } from "@/lib/agents/app-tools";
+import { actionCatalog } from "@/lib/actions";
+import { actionTools } from "@/lib/agents/action-tools";
 import { pageTools } from "@/lib/agents/page-tools";
 import { appMapLines } from "@/lib/app-map";
-import { invitePersonAs, OperationError, removePersonAs, type Actor } from "@/lib/operations";
+import { invitePersonAs, OperationError, type Actor } from "@/lib/operations";
 import type { AgentContext } from "@/lib/agents/prompts";
 import { appUrl } from "@/lib/app-url";
 import { skillList } from "@/lib/agents/skills";
@@ -41,7 +42,7 @@ import {
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
 import { workOverview, type ScheduledJob } from "@/lib/work-overview";
 import type { Page } from "@/lib/pages";
-import { listPeople, renamePerson, savePerson, syncPeopleSection, type Person } from "@/lib/people";
+import { renamePerson, savePerson, syncPeopleSection, type Person } from "@/lib/people";
 import {
   isCaptured,
   onboardingChecklist,
@@ -50,14 +51,13 @@ import {
   setCompanyName,
   setSection,
 } from "@/lib/profile/markdown";
-import { MEMORY_LIMIT, savePersonalMemory } from "@/lib/agents/conversation";
 import { describeHours } from "@/lib/assistant/hours";
-import { saveAssistantHours, scheduleWakeup, type AssistantHours } from "@/lib/assistant/store";
+import { scheduleWakeup, type AssistantHours } from "@/lib/assistant/store";
 import { getGitHubConnection } from "@/lib/github";
 import { updateProfile } from "@/lib/profile/store";
 import { describeSchedule, getSchedule } from "@/lib/schedules";
 import type { SessionUser } from "@/lib/session";
-import { findTasks, getTaskByNumber, isRunning, listMessages, PRIORITIES, setTaskVisibility, TASK_STATUSES, type Task } from "@/lib/tasks";
+import { findTasks, getTaskByNumber, isRunning, listMessages, PRIORITIES, TASK_STATUSES, type Task } from "@/lib/tasks";
 import { createTaskWithTeam, replyToTask, resolveTeam, suggestProfileUpdate, WorkError } from "@/lib/work";
 import { elapsed, taskState } from "@/lib/work-overview";
 
@@ -173,7 +173,7 @@ function workInstructions(context: Context): string {
   return `Tasks and agents:
 - When someone asks for work to be done ("do a review of…", "draft…", "find…"), create a task with create_task instead of doing the work in chat. Load the writing-tasks skill first. Put an agent on it: a defined agent whose role fits, or a worker agent with a clear role for a one-off job. The agent starts straight away and reports back to their inbox; tell them that in one line.
 - Answer quick questions yourself. Create a task only for real work.
-- Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company") with share_task.
+- Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company"): task.set_visibility.
 - A question that needs one of the defined agents' expertise (the analyst on a number, the lawyer on a clause) goes to it with ask_specialist rather than you guessing: it answers in a few minutes on a model chosen for that work, or it becomes a task for it. Answer everyday questions yourself.
 - If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
 - For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on create_task. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the agent builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
@@ -209,7 +209,8 @@ function appInstructions(context: Context): string {
   );
   return `The app: you can do from chat everything ${name} can do on Mach1's screens, as them and with their permissions (${
     context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
-  }). Tasks: create_task, update_task, reply_on_task, share_task. Team: save_person, team_access. Agents: create_agent, update_agent. Files and pages: send_file, attach_file, share_file, share_page, manage_page (files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message). Integrations: connect_data_source, connect_login, update_integration. Settings: set_company_models, save_my_hours, update_personal_notes. When a tool refuses, say why in a line.
+  }). Besides your own tools (create_task, reply_on_task, save_person, create_agent, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
+${actionCatalog({ isAdmin: Boolean(context.isAdmin) })}
 Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
 ${appMapLines()}
 
@@ -226,8 +227,8 @@ function githubLine({ github, person }: Context): string {
 /** What you know about the person you're talking to, and your conversation with them so far. */
 function hoursLine({ person, hours }: Context): string {
   if (!person || !hours) return "";
-  if (hours.saved) return `${person.name}'s hours: ${describeHours(hours.hours, hours.timezone)}. If they change them, save the new ones with save_my_hours.`;
-  return `You don't know ${person.name}'s hours yet (until you do, you assume ${describeHours(hours.hours, hours.timezone)}). Early on, when it fits, ask once in one short question which timezone they're in, when they work, and when you should never message them, proposing those defaults so a "yes" will do; save the answer with save_my_hours. Don't ask again if they skip it.`;
+  if (hours.saved) return `${person.name}'s hours: ${describeHours(hours.hours, hours.timezone)}. If they change them, save the new ones with do_action me.set_hours.`;
+  return `You don't know ${person.name}'s hours yet (until you do, you assume ${describeHours(hours.hours, hours.timezone)}). Early on, when it fits, ask once in one short question which timezone they're in, when they work, and when you should never message them, proposing those defaults so a "yes" will do; save the answer with do_action me.set_hours. Don't ask again if they skip it.`;
 }
 
 function personalInstructions(context: Context): string {
@@ -238,7 +239,7 @@ You are ${person.name}'s own assistant as well as the company's Chief of Staff: 
 
 What you know about ${person.name} (your notes; only you see them, and only while talking with them):
 ${memory?.trim() || "(nothing yet)"}
-Keep these notes current with update_personal_notes when you learn something lasting about them: how they like answers, what they look after, who and what they care about, what you're following up on for them. Facts about the company go in the profile instead. Never put credentials in notes.
+Keep these notes current (do_action me.set_notes, which replaces them, so keep what's still true; short bullet points) when you learn something lasting about them: how they like answers, what they look after, who and what they care about, what you're following up on for them. Facts about the company go in the profile instead. Never put credentials in notes.
 
 ${hoursLine(context)}
 You wake up by yourself to tell them when work of theirs is done or needs them, and you can set yourself a check-in with check_back_later ("I'll check on the import at 4 and tell you"): use it whenever you promise to come back to something or are waiting on work they care about, then keep the promise. You never message them in their quiet hours, and anything that can wait goes in their working hours.
@@ -265,7 +266,7 @@ ${appInstructions(context)}
 Recording facts:
 - The company profile below is a markdown document and your memory of the company. Record facts as soon as you learn them; don't ask permission to save.
 - Write in the company's own words, concise and factual. Never invent facts.
-- Use save_person / remove_person for people. To change someone's name (including the person you're talking to), call save_person with their current name and newName; never remove someone and add them again, which would take them off their tasks. Never write the "${PEOPLE_SECTION}" section with update_section; it is generated from the people list.
+- Use save_person for people (person.remove takes someone off the team). To change someone's name (including the person you're talking to), call save_person with their current name and newName; never remove someone and add them again, which would take them off their tasks. Never write the "${PEOPLE_SECTION}" section with update_section; it is generated from the people list.
 ${
     organization.onboardingCompletedAt
       ? "- Use suggest_profile_update for every other section, passing the complete new body (markdown, no \"## \" heading). It replaces what was there when applied, so keep anything that should stay."
@@ -354,24 +355,6 @@ function profileTools(context: Context) {
         type: "text" as const,
         value: "error" in output && output.error ? `Not saved: ${output.error}` : "invited" in output && output.invited ? `Saved. ${output.invited}` : "Saved.",
       }),
-    }),
-    remove_person: tool({
-      description:
-        "Take a person off the team, which also takes them off every task and, if they joined or were invited, ends their access. Admins only. Not for renaming (use save_person with newName).",
-      inputSchema: z.object({ name: z.string().min(1) }),
-      execute: async ({ name }) => {
-        const actor = actorFor(context);
-        if (!actor) return { result: "Only a signed-in team member can remove people." };
-        const person = (await listPeople(orgId)).find((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase());
-        if (!person) return { result: `No one called ${name} is in the people list.`, profile: await syncPeopleSection(orgId) };
-        try {
-          return { result: await removePersonAs(actor, person.id), profile: await syncPeopleSection(orgId) };
-        } catch (error) {
-          if (error instanceof OperationError) return { result: `Not removed: ${error.message}` };
-          throw error;
-        }
-      },
-      toModelOutput: ({ output }) => ({ type: "text" as const, value: output.result }),
     }),
     complete_onboarding: tool({
       description:
@@ -469,16 +452,6 @@ function workTools(context: Context) {
             : `Created task #${output.task.number} with ${output.members.join(", ")}.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
       }),
     }),
-    update_personal_notes: tool({
-      description:
-        "Rewrite your notes about the person you're talking to (they replace the old notes, so keep what's still true). Only you see them, and only while talking with this person.",
-      inputSchema: z.object({ notes: z.string().max(MEMORY_LIMIT).describe("Short bullet points.") }),
-      execute: async ({ notes }) => {
-        if (!context.person) return "There's no one signed in to keep notes about.";
-        await savePersonalMemory(orgId, context.person.id, notes);
-        return "Saved your notes.";
-      },
-    }),
     start_coding: tool({
       description:
         "Start a code change in a GitHub repository, done by the Developer agent as the person you're talking to (with their own GitHub): a task it works on straight away, ending in a pull request. They're on it and hear back when it's ready.",
@@ -533,39 +506,6 @@ function workTools(context: Context) {
           at: when,
         });
         return `You'll wake up at ${dueAt.toISOString()} to check: ${about}`;
-      },
-    }),
-    save_my_hours: tool({
-      description:
-        "Save the timezone, working hours and quiet hours of the person you're talking to: you only message them first in working hours (or, when they're needed, any time but quiet hours).",
-      inputSchema: z.object({
-        timezone: z.string().describe("IANA timezone, e.g. Europe/London."),
-        days: z.array(z.number().int().min(1).max(7)).describe("Days they work: 1 is Monday, 7 is Sunday."),
-        start: z.string().describe("When their working day starts, HH:MM, e.g. 09:00."),
-        end: z.string().describe("When it ends, e.g. 18:00."),
-        quietStart: z.string().describe("When you must stop messaging them, e.g. 21:00."),
-        quietEnd: z.string().describe("When you may start again, e.g. 08:00."),
-      }),
-      execute: async ({ timezone, ...hours }) => {
-        if (!context.person) return "There's no one signed in.";
-        try {
-          const saved = await saveAssistantHours(orgId, context.person.id, timezone, hours);
-          return `Saved: ${describeHours(saved.hours, saved.timezone)}.`;
-        } catch (error) {
-          return (error as Error).message;
-        }
-      },
-    }),
-    share_task: tool({
-      description:
-        "Share a task with the whole company, or make it private again (only whoever created it and the people on it see it). Only for tasks the person you're talking to created.",
-      inputSchema: z.object({ number: z.number().int().positive(), withCompany: z.boolean() }),
-      execute: async ({ number, withCompany }) => {
-        const task = await getTaskByNumber(orgId, number, { viewer: context.person?.id });
-        if (!task) return `There's no task #${number}.`;
-        if (!context.person || task.createdByPersonId !== context.person.id) return `Only whoever created #${number}, or an admin in the app, can change who sees it.`;
-        await setTaskVisibility(orgId, task.id, withCompany ? "company" : "private");
-        return withCompany ? `#${number} is shared with the company.` : `#${number} is private to ${context.person.name} and the people on it.`;
       },
     }),
     find_tasks: tool({
@@ -957,7 +897,7 @@ export function createChiefOfStaff(
     ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),
     ...githubTools(workspace),
     ...specialistTools(context, workspace, using, options.research !== false),
-    ...appTools(actorFor(context), { whatsapp: context.channel === "whatsapp" ? context.person?.whatsapp : null }),
+    ...actionTools(actorFor(context), { whatsapp: context.channel === "whatsapp" ? context.person?.whatsapp : null }),
     ...(options.research === false ? {} : researchTools()),
     use_skill: skillTool(),
   };

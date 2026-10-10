@@ -3,7 +3,6 @@ import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET as fileByLink } from "@/app/api/files/[token]/route";
-import { appTools } from "@/lib/agents/app-tools";
 import { handleEmail, handleWhatsApp } from "@/lib/channels/inbound";
 import { getDb } from "@/lib/db";
 import { fileLinkToken, readFileLinkToken } from "@/lib/file-links";
@@ -13,6 +12,7 @@ import { createOrganization, setEmailInbox } from "@/lib/orgs";
 import { linkMember } from "@/lib/people";
 import { createTask, listMessages } from "@/lib/tasks";
 import { useTestDb } from "@/test/db";
+import { doAction as use } from "@/test/do-action";
 import { scriptedModel } from "@/test/scripted-model";
 
 const ORG = "org_cedar";
@@ -90,8 +90,7 @@ describe("files by WhatsApp and email", () => {
   it("sends a file back on WhatsApp through a link that lasts ten minutes and can't be forged", async () => {
     const posted = stubProviders();
     const saved = await saveVersion(ORG, { name: "Model.xlsx", kind: "deliverable", bytes: Buffer.from("xlsx bytes"), personId: actor.personId });
-    const tools = appTools(actor, { whatsapp: "447700900123" }) as Record<string, { execute: (input: object, options: object) => Promise<string> }>;
-    expect(await tools.send_file.execute({ file: "Model.xlsx", caption: "Here it is" }, { toolCallId: "t", messages: [] })).toBe("Sent Model.xlsx on WhatsApp.");
+    expect(await use(actor, "file.send", { file: "Model.xlsx", caption: "Here it is" }, "447700900123")).toBe("Sent Model.xlsx on WhatsApp.");
     const form = new URLSearchParams(posted[0].body);
     expect(form.get("To")).toBe("whatsapp:+447700900123");
     expect(form.get("Body")).toBe("Here it is");
@@ -109,8 +108,7 @@ describe("files by WhatsApp and email", () => {
     expect(readFileLinkToken(fileLinkToken(ORG, saved.versionId))).toEqual({ organizationId: ORG, versionId: saved.versionId });
 
     // Outside WhatsApp, it's a link to download it in the app.
-    const app = appTools(actor) as typeof tools;
-    expect(await app.send_file.execute({ file: "Model.xlsx" }, { toolCallId: "t", messages: [] })).toBe(`Download link: https://mach.example/files/${saved.versionId}`);
+    expect(await use(actor, "file.send", { file: "Model.xlsx" })).toBe(`Download link: https://mach.example/files/${saved.versionId}`);
   });
 
   it("attaches a file to a task, only one they can see", async () => {
@@ -119,10 +117,9 @@ describe("files by WhatsApp and email", () => {
     const omar = await linkMember(ORG, { id: "user_omar", email: "omar@cedar.example", name: "Omar" });
     await saveVersion(ORG, { name: "Omar's notes.txt", kind: "deliverable", bytes: Buffer.from("x"), personId: omar.id });
     const task = await createTask(ORG, { title: "Update the model", createdBy: { personId: actor.personId } });
-    const tools = appTools(actor) as Record<string, { execute: (input: object, options: object) => Promise<string> }>;
-    expect(await tools.attach_file.execute({ number: task.number, file: "Model.xlsx" }, { toolCallId: "t", messages: [] })).toBe(`Attached Model.xlsx to #${task.number}.`);
+    expect(await use(actor, "task.attach_file", { task: task.number, file: "Model.xlsx" })).toBe(`Attached Model.xlsx to #${task.number}.`);
     expect((await listMessages(task.id)).at(-1)?.body).toBe("Attached a file from the library.");
-    expect(await tools.attach_file.execute({ number: task.number, file: "Omar's notes.txt" }, { toolCallId: "t", messages: [] })).toBe(
+    expect(await use(actor, "task.attach_file", { task: task.number, file: "Omar's notes.txt" })).toBe(
       "Not done: There's no file called Omar's notes.txt.",
     );
   });

@@ -67,18 +67,23 @@ it's done). Jobs still go to tasks directly (`create_task`, `start_coding`).
 
 ## Everything from chat
 
-The Chief of Staff can do what the person it's talking to can do on Mach1's screens, with their permissions:
-tasks (`update_task`: status, priority, later, archive, people and agents, run, schedules), the team
-(`save_person` with `invite`, `team_access`: invite, admin or member, remove), agents (`update_agent`, including
-its model), files and pages (`share_file`, `share_page`, `manage_page`), integrations (`update_integration`:
-which agents and people, access, on or off, test, delete) and settings (`set_company_models`, hours, notes).
+The Chief of Staff can do what the person it's talking to can do on Mach1's screens, with their permissions.
 It knows who on the team has joined, been invited, or is an admin.
 
-Who may do what lives in one place, `lib/operations.ts`, which the screens' actions and these tools
-(`lib/agents/app-tools.ts`) both call, so chat can never do more than the person could in the app: admins
-invite and remove people, change roles, choose whose work may use an integration and the company's models;
-only tasks, files and pages the person can see are touched. Never through chat, whoever asks: credentials and
-keys, deleting the company, linking WhatsApp. For those it sends the exact link.
+**Actions are declared once.** Everything a screen does is an action in `lib/actions` (`tasks.ts`,
+`company.ts`): a name like `task.set_status`, one line saying what it does, its inputs (zod) and, for
+admin-only ones, `who: "admin"`. The screens' server actions call `performAs(actor, name, input)`; the Chief
+of Staff gets the catalogue (every action the person may do, one line each) in its instructions and performs
+any of them with one tool, `do_action` (`lib/agents/action-tools.ts`). Inputs take ids from screens and names
+from chat (a task's number, a person's or agent's exact name, a file's name). Finer rules (whose task, file or
+page it is) live in `lib/operations.ts`, so chat can never do more than the person could in the app.
+
+**Adding something to a screen**: declare it in `lib/actions` and call `performAs` from the server action;
+chat has it from then on. `lib/actions/coverage.test.ts` reads every `app/**/actions.ts` and fails for a
+server action that doesn't go through the registry (or an operation a registered action uses), isn't one of
+the Chief of Staff's own tools (`create_task`, `reply_on_task`, …), and isn't listed as screen-only with the
+reason. Never through chat, whoever asks: credentials and keys, deleting the company, linking WhatsApp. For
+those it sends the exact link.
 
 **Links**: every page starts with a `// @map Title | Where in the menus | What's there` line. `npm run build`
 (and `vercel-build`) writes them to `lib/app-map.json` (`scripts/app-map.mjs`), which the Chief of Staff reads

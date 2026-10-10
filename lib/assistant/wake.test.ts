@@ -157,7 +157,7 @@ describe("the assistant wakes up by itself", () => {
     const hours = await getAssistantHours(ORG, sara);
     const model = scriptedModel([
       [
-        ["save_my_hours", { timezone: "Asia/Dubai", days: [1, 2, 3, 4, 5], start: "08:00", end: "17:00", quietStart: "22:00", quietEnd: "07:00" }],
+        ["do_action", { action: "me.set_hours", input: { timezone: "Asia/Dubai", days: [1, 2, 3, 4, 5], start: "08:00", end: "17:00", quietStart: "22:00", quietEnd: "07:00" } }],
         ["check_back_later", { about: "Whether the bank feed caught up", minutes: 90 }],
       ],
       "Saved.",
