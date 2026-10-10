@@ -18,7 +18,8 @@ Work moves from the model into skill text, and from skill text into scripts. Eac
 
 Learning happens after the work, never during it:
 1. A decision model (Jev) looks at each finished worker task or job and decides whether there's anything to learn.
-2. Only if it says yes, a learner (the planner model) reads the whole run. It decides whether to update a skill, write a new one, or update the company profile, and makes the change itself.
+2. Only if it says yes, a learner (the planner model) reads the whole run. It decides whether to update a skill, write a new one, or update the company profile.
+3. The proposed changes are summarised and sent to the person they concern. A change is applied when they say yes.
 
 ## Why
 
@@ -228,7 +229,7 @@ For a new decision, code puts the closest past cases with their final answers in
 - If there isn't enough history yet, or no threshold reaches the target, nothing is applied automatically. Everything goes to people, with Jev's suggestion filled in.
 - "98% confident" therefore means measured on this company's own past answers, not a number a model states about itself.
 
-**People confirm suggestions; they don't start from blank.** A person's list shows Jev's suggestion and how sure it is. Confirming or changing it adds to the history. When people keep changing the same kind of answer, the learner updates the skill, for example with a new entity or a new rule.
+**People confirm suggestions; they don't start from blank.** A person's list shows Jev's suggestion and how sure it is. Confirming or changing it adds to the history. When people keep changing the same kind of answer, the learner proposes an update to the skill, for example a new entity or a new rule.
 
 ### Base skills and company skills
 
@@ -237,7 +238,7 @@ For a new decision, code puts the closest past cases with their final answers in
 | **Who writes them** | Mach1's developers | Learned on the job, or written by people |
 | **Where they live** | The repo: `skills/<name>/`, collected at build time like `lib/app-map.json` | Postgres (`skills`, `skill_versions`). Scripts are versioned files in the file library |
 | **Who sees them** | Every company | The company. Private ones only their owner, with the same rules as tasks |
-| **How they change** | With a deploy | A new version each time, made by the learner or by people. Any version can be restored |
+| **How they change** | With a deploy | A new version each time: proposed by the learner and applied when the owner says yes, or written by people. Any version can be restored |
 | **Names** | Plain: `research` | Can't reuse a base skill's name |
 
 **Extending, not forking.** A company never edits a base skill. To add its own way of doing something ("our decks use this template and these colours", "our models use our chart of accounts"), it writes a company skill that `extends` the base one. That skill is loaded straight after it. Base skills keep getting fixes, and company details survive them.
@@ -334,7 +335,7 @@ Jev gives no reasons, and doesn't need to here: the learner reads the run and wr
 
 A new `learner` role in the lineup (`lib/ai/lineup.ts`), set to the planner model for now: Opus 5.5, or GPT-6 Astra. Learned skills compound, so this isn't the place to save on the model.
 
-**It reads** the full run: the thread, the skills and scripts that were used, what changed in the scripts, test results, `NOTES.md`, and where the run left the skill. It also sees the gate's answers, and changes people have undone before.
+**It reads** the full run: the thread, the skills and scripts that were used, what changed in the scripts, test results, `NOTES.md`, and where the run left the skill. It also sees the gate's answers, and changes people have skipped before.
 
 **It decides** one or more of: nothing; update an integration skill; update a workflow skill; save or fix a script; write a new skill; or update the company profile. Every line it adds or changes has to cite something that happened in the run: a message, a step, or a script result.
 
@@ -355,13 +356,22 @@ Code checks every change the learner drafts:
 - **Citations.** Every changed line cites a step or message from the run.
 - **Where the text came from.** Nothing in a workflow skill comes from external text (a page, an email, an API response) unless a person's message on the task backs it.
 
-#### Applying changes
+#### Proposing changes
 
-The learner applies what passes the checks itself: a new version of the skill or of the profile, recorded with the task it came from. Nothing waits for a person.
+The learner doesn't change anything itself. Once its changes pass the checks, they're summarised and sent to the person they concern, and each one is applied when that person says yes.
 
-- **Telling people.** The owner of each changed skill sees the change in a weekly digest from their Chief of Staff, with the line from the run behind it. For a profile change, it's the person the job was for. For example: "Masttro tagging: added the Daher Family Trust to Rita's list (Rita, 3 Oct)."
-- **Undo.** Saying "undo" in chat, or Restore on the Skills page, rolls back any version. For a company-wide skill, the owner or an admin can do it. An undone change is recorded, so the learner doesn't make it again.
-- **Limits that still hold.** A skill change can't widen what work may do outside Mach1. Every write outside it still needs an approval in code (Gates in code), whatever a skill says.
+- **Who's asked.**
+  - For a skill, its owner. For a company-wide skill, its owner or an admin.
+  - For the company profile, the person the job was for, as with profile suggestions today.
+- **One message per review.** All of a job's proposed changes come together, in plain words, each with the line from the run behind it. For example: "From this week's Masttro tagging: 1) Rita said the Daher Family Trust is hers too, so add it to her list. 2) Masttro moved its Tag button, so use the fixed `tag_cmr.py`. Apply both?"
+- **How it reaches them.** Like any wake-up: in their working hours. On WhatsApp while the window is open; otherwise in the app's chat with a push notification. It's also a card in Needs you.
+- **Answering is text first**, because WhatsApp and email have no cards. The changes are numbered, and the person answers in their own words: "yes", "just 2", "skip 1, apply the rest", "no". Their Chief of Staff reads the answer against the proposals waiting on them (they're in its context, like open tasks) and acts with `do_action`: `skill.apply_proposal` or `skill.skip_proposal`, with the change numbers. If an answer could mean two things, it asks.
+- **Buttons where WhatsApp allows them.** Inside the 24-hour window, the message can carry up to three reply buttons ("Apply all", "Choose", "Skip"), sent as a Twilio `twilio/quick-reply` message, which needs no approval in a session. A tap comes back like a typed answer. Outside the window, buttons need a template WhatsApp has approved. Without one, the proposal waits in the app until they next write, like any wake-up. In the app, the card in Needs you has Apply and Skip on each change, and uses the same two actions.
+- **Changes in words.** An answer like "yes, but only the trust, not the LLC" goes back to the learner, which sends a revised proposal.
+- **Applied** as a new version of the skill or profile, recorded with the task it came from. Restore on the Skills page rolls any version back.
+- **Skipped** changes are recorded, so the learner doesn't propose them again.
+- **Unanswered** proposals stay in Needs you. A later review of the same skill replaces them with one updated proposal. Until a change is applied, runs use the current version. If a broken script fails again next week, a worker fixes it again, and the proposal is still waiting.
+- **Limits that still hold.** Even an applied change can't widen what work may do outside Mach1. Every write outside it still needs an approval in code (Gates in code), whatever a skill says.
 
 Skills can also be written from chat: "here's how we do month-end, save it". The chat agent saves it with `save_skill`, since the person asked.
 
@@ -371,11 +381,11 @@ There is one home for each kind:
 
 | Knowledge | Where | Who changes it |
 |---|---|---|
-| What the company is and wants, and rules for everyone ("ask before contacting anyone outside the company") | Company profile | The learner, or a person |
+| What the company is and wants, and rules for everyone ("ask before contacting anyone outside the company") | Company profile | The learner proposes, a person applies |
 | About one person | Their personal notes | Their assistant, and them |
 | One job's state: parameters, results, decisions | The job's `NOTES.md` | The job's agents |
-| How a system works | An integration skill | The learner, with versions |
-| How the company does a piece of work | A workflow skill | The learner, with versions |
+| How a system works | An integration skill | The learner proposes, the owner applies |
+| How the company does a piece of work | A workflow skill | The learner proposes, the owner applies |
 | The parts that run without a model | Scripts in a skill | With the skill, and a passing test |
 
 ## Integrations
@@ -392,7 +402,7 @@ An integration is a company skill (how the system works, and its scripts) plus c
 - approvals in code before any change outside Mach1;
 - credentials that nothing in Mach1 can read back.
 
-**Its skill** is made when the integration is connected, and improved by the learner after jobs that use it. Today's guide becomes that skill's first version.
+**Its skill** is made when the integration is connected, and improved through the learner's proposals after jobs that use it. Today's guide becomes that skill's first version.
 
 **In high demand?** When many companies connect the same system, Mach1 builds it in as a tool (see Base skills and company skills). It doesn't become a base skill.
 
@@ -490,14 +500,14 @@ Prompts ask agents to get approval before changing other systems. With no limits
 5. **Kalshi and state rules.**
    - The chat agent splits the request into two `spawn_worker` calls with `repeat` and `data-pipelines`.
    - Each first run works out its site (using the browser agent if needed), writes scripts that pull the data and draw the charts, keeps history on the drive, and delivers.
-   - When the round closes, the gate says yes (new scripts that worked, work that repeats). The learner saves an integration skill for each site, with its scripts. It's applied automatically.
+   - When the round closes, the gate says yes (new scripts that worked, work that repeats). The learner proposes an integration skill for each site, with its scripts. You get a summary and apply it.
    - Each month after, the scripts replay with no model. The states job's `SUMMARY:` line says what changed since last month.
    - The chat agent also offers a Page.
 6. **Masttro.**
    - **First week.**
      - The chat agent calls `start_job` with a weekly `repeat`.
      - The coordinator plans and asks anything unclear.
-     - When the job closes, the gate says yes. The learner writes the workflow skill `masttro-weekly-tagging`: the routing (Hassan Daher and his entities to Rita, Wissam Daher to Mawla, everything unclear to Mustapha), the 98% target, the approval step, and the scripts `pull_untagged.py`, `classify.py` and `tag_cmr.py`. Your Chief of Staff tells you it's there. The first weeks' answers seed its decision history, and Masttro's already-tagged transactions can seed it on day one.
+     - When the job closes, the gate says yes. The learner writes the workflow skill `masttro-weekly-tagging`: the routing (Hassan Daher and his entities to Rita, Wissam Daher to Mawla, everything unclear to Mustapha), the 98% target, the approval step, and the scripts `pull_untagged.py`, `classify.py` and `tag_cmr.py`. Your Chief of Staff sends you a summary, and you apply it. The first weeks' answers seed its decision history, and Masttro's already-tagged transactions can seed it on day one.
    - **Every week after**, the coordinator loads that skill:
      1. A script child runs `pull_untagged.py` against the read-only API, and fetches the current tag list.
      2. A script child runs `classify.py`. For each transaction:
@@ -507,7 +517,7 @@ Prompts ask agents to get approval before changing other systems. With no limits
         - Transactions above the backtested threshold for the 98% target are tagged automatically. The rest are routed by the skill's rules: Hassan Daher's entities to Rita, Wissam Daher's to Mawla, everything else to Mustapha, each with Jev's suggestion filled in.
      3. Person children go to Rita, Mawla and Mustapha, each with their own list, to confirm or change. Their assistants tell them on WhatsApp, and anyone who hasn't answered gets a nudge after a day. Every answer goes into the decision history.
      4. The coordinator combines the answers and calls `request_approval` with the full list. You approve it or change it.
-     5. A script child runs `tag_cmr.py` (Playwright, signed in with the Masttro login) on the approved list. It keeps a ledger and takes screenshots. If the site has changed and the script fails, a worker fixes it with the browser agent, step-checked against the approval. After the job, the learner saves the fixed script, applied automatically once its test passes.
+     5. A script child runs `tag_cmr.py` (Playwright, signed in with the Masttro login) on the approved list. It keeps a ledger and takes screenshots. If the site has changed and the script fails, a worker fixes it with the browser agent, step-checked against the approval. After the job, the learner proposes the fixed script, with its test passing, and you apply it.
      6. One report.
    - Items still open when next week's run starts carry into it.
    - This only works for team members. Mach1 can't message anyone outside the company.
@@ -524,7 +534,7 @@ Prompts ask agents to get approval before changing other systems. With no limits
 | `approvals` | The task, what was proposed and what was approved (items or a hash), who approved it and when, and what it covers |
 | `run_log` | One row per run: skills pinned and loaded, every tool call (with the script path and exit code), and the number of model steps. The digest is built from it |
 | `skill_decisions` | A skill's decision history: the state, options, Jev's probabilities and model version, the threshold, and the outcome (applied automatically, confirmed, or changed, and by whom). Used for retrieval, backtests and the learner |
-| `learning_reviews` | One row per review: the gate's answers and model version, whether the learner ran, what it decided, the changes it made, and whether any were undone. The gate's eval set |
+| `learning_reviews` | One row per review: the gate's answers and model version, whether the learner ran, what it decided, the changes it proposed, and whether each was applied or skipped. The gate's eval set |
 
 **Moving existing companies over:**
 - Each defined agent's role and instructions become a company workflow skill named after it, pinned to its open tasks.
@@ -548,7 +558,7 @@ Prompts ask agents to get approval before changing other systems. With no limits
    - Company skills with scripts and tests, and integration skills taking over from guides.
    - The run log, digests, the gate (Jev, with the `background` model as fallback) and the learner, with its checks.
    - `mach.decide` in the sandbox template, the decision history, retrieval of past cases, and backtested thresholds.
-   - `save_skill` from chat, the weekly digest of changes with undo, and the Skills page with its actions.
+   - `save_skill` from chat, summaries of proposed changes applied on a yes, and the Skills page with its actions.
    - Workflow skills saved by repeating jobs, `extends`, and `find_skill`.
    - Defined agents become workflow skills, and the Team page lists people only.
 5. **Gates.** Tool effects, `request_approval`, the proxy refusing writes without an approval, the step check for the browser, cost approval, and ledgers.
@@ -567,15 +577,15 @@ The six scenarios above, plus one for learning. Each is run against a test compa
 5. Two repeating tasks, each with an integration skill and scripts for its site. The next run replays with no model call, and its `SUMMARY:` line says what changed.
 6. Person children to the right people, with Jev's suggestions filled in. Auto-tags only above the backtested threshold, and none while the history is too short. An approval before any write, and writes outside it refused. A retry that resumes from the ledger.
 7. **Learning.**
-   - The first week of scenario 6 ends with the gate saying yes, and the learner writing `masttro-weekly-tagging`. You're told it's there.
+   - The first week of scenario 6 ends with the gate saying yes, and the learner proposing `masttro-weekly-tagging`. A summary reaches you, and nothing changes until you say yes.
    - The second week loads the skill, plans nothing, and makes model calls only for exceptions. Its gate says no, and no learner runs.
    - A script broken on purpose is fixed during the job. The learner saves the fix automatically, and its test passes.
-   - A correction from Rita ("the trust is mine too") updates the skill and the profile, shows in your digest, and can be undone.
+   - A correction from Rita ("the trust is mine too") reaches you as a proposed change to the skill and the profile, with her line quoted. It's applied on your yes, and not proposed again if you skip it.
 
 ## Open questions
 
 - **A company memory** that workers can write to, like Claude Code Projects' `MEMORY.md`, for facts that aren't procedures ("the release moved to May"). For now the learner puts them in the profile, and skills cover the rest.
-- **Whether some changes should wait for a person**: a new rule in a workflow skill (who's asked, a threshold), or a profile change. In tests of self-improving agents, checking skills when they're written cut harm by about four fifths ([Practice Makes Unsafe](https://arxiv.org/abs/2608.12851)). For now the weekly digest and undo are the check.
+- **Applying some changes without asking**, if the summaries get noisy. Script fixes that pass their tests, or changes to integration skills, would be the first candidates. Every skill change waits for a person for now. In tests of self-improving agents, checking skills when they're written cut harm by about four fifths ([Practice Makes Unsafe](https://arxiv.org/abs/2608.12851)).
 - **People outside the company** (scenario 6 with an outside accountant). This needs outbound email, or an approved WhatsApp template, neither of which Mach1 sends today.
 - **TypeSafe's data terms.** Digests hold business data, such as Masttro transactions. Check how TypeSafe retains and uses what it's sent before turning the gate on. Until then, or for a company that says no, the `background` model fallback answers instead.
 - **Jev is new** (September 2026). Pin the version, watch the gate's eval set, and keep the fallback working. How the AI SDK calls typed questions through AI Gateway still needs checking.
@@ -596,7 +606,8 @@ Where it will live:
 | `skills/<name>/` | Base skills: `SKILL.md` and scripts |
 | `lib/skills/` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `save_skill`, restoring versions, script tests |
 | `sandbox/` (template), `lib/skills/decisions.ts` | `mach.decide`, the proxy rule that lets it reach Jev, the decision history, retrieval and backtests |
-| `lib/learning/` | The run log, digests, the gate (Jev through AI Gateway), the learner, checks, applying changes, the weekly digest, undo |
-| `lib/actions/skills.ts`, `app/(app)/skills/` | Skill actions and the Skills page |
+| `lib/learning/` | The run log, digests, the gate (Jev through AI Gateway), the learner, checks, summaries of proposed changes, applying them on a yes |
+| `lib/channels/twilio.ts` | Reply buttons (`twilio/quick-reply`) inside the WhatsApp window |
+| `lib/actions/skills.ts`, `app/(app)/skills/` | Skill actions (`skill.apply_proposal`, `skill.skip_proposal`, `skill.restore`, …) and the Skills page |
 | `lib/integrations.ts` | Integrations: limits by agent removed, guides moved to integration skills |
 | `lib/agents/store.ts` | The built-in Worker |
