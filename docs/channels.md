@@ -58,9 +58,7 @@ app's chat with a push notification instead. To set one up:
    language English. Body:
 
    ```
-   Hi {{1}}, an update from your Chief of Staff: {{2}}
-
-   Reply here to carry on.
+   Hi {{1}}, update: {{2}}. Reply to carry on.
    ```
 
    with samples such as `Sara` and `#14 Cash runway is ready for you to review. Want the short version?`.
