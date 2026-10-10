@@ -621,15 +621,15 @@ function workTools(context: Context) {
             }),
           )
           .describe("The credentials the person enters."),
-        headers: z.record(z.string(), z.string()).optional().describe('Templates, e.g. { "Authorization": "Bearer {{apiKey}}" }.'),
-        query: z.record(z.string(), z.string()).optional().describe('Query parameter templates, e.g. { "api_key": "{{apiKey}}" }.'),
+        headers: z.object({}).catchall(z.string()).optional().describe('Templates, e.g. { "Authorization": "Bearer {{apiKey}}" }.'),
+        query: z.object({}).catchall(z.string()).optional().describe('Query parameter templates, e.g. { "api_key": "{{apiKey}}" }.'),
         token: z
           .object({
             url: z.string(),
             method: z.enum(["POST", "GET"]).optional(),
             format: z.enum(["json", "form"]).optional(),
-            body: z.record(z.string(), z.string()).optional(),
-            headers: z.record(z.string(), z.string()).optional(),
+            body: z.object({}).catchall(z.string()).optional(),
+            headers: z.object({}).catchall(z.string()).optional(),
             path: z.string().describe("Where the token is in the JSON response, e.g. access_token."),
             expiresInPath: z.string().optional(),
             ttlSeconds: z.number().optional(),

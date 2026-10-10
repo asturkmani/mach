@@ -4,7 +4,7 @@ import { after } from "next/server";
 import { forModel, MAX_CHAT_ATTACHMENTS, restoreOriginals, saveChatAttachments, type ChatUpload } from "@/lib/agents/chat-attachments";
 import { generateMessageId, loadChiefOfStaff } from "@/lib/agents/cos-turn";
 import { prepareHistory } from "@/lib/agents/history";
-import { conversationWindow, saveConversation } from "@/lib/agents/conversation";
+import { catchUpSummary, conversationWindow, saveConversation } from "@/lib/agents/conversation";
 import { endReply, loadChat, stopRequested, takeTurn } from "@/lib/chats";
 import { getSessionContext } from "@/lib/session";
 
@@ -116,6 +116,8 @@ export async function POST(request: Request) {
       // What the model was shown (attached images as data) is never stored; the conversation keeps its file links.
       await saveConversation(chat.id, older, await prepareHistory(restoreOriginals(finished, messages), agent.tools));
       await endReply(chat.id);
+      // The summary of older messages catches up after the reply, never before it.
+      after(() => catchUpSummary(chat.id).catch((error) => console.error("Couldn't bring the conversation summary up to date", error)));
       // Stop the workspace sandbox if this turn used it (it keeps running while a sign-in waits for a code).
       await close();
     },

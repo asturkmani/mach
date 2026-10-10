@@ -8,8 +8,9 @@ import { getDb } from "@/lib/db";
 // A person's conversation with their assistant never ends (the chat panel and
 // WhatsApp are one thread), so the model can't be shown all of it. It sees
 // the latest messages in full and a running summary of everything before,
-// which is brought up to date as messages fall out of the window. Storage
-// keeps a long tail for the chat panel, trimmed only past what's summarized.
+// brought up to date after replies as messages fall out of the window.
+// Storage keeps a long tail for the chat panel, trimmed only past what's
+// summarized.
 
 /** Messages the model sees in full. */
 export const RECENT = 30;
@@ -54,11 +55,16 @@ async function readSummary(chatId: string): Promise<Stored> {
   return { summary: row?.summary ?? "", summarizedThrough: row?.summarized_through ?? null, organizationId: row?.organization_id ?? "" };
 }
 
+/** Messages past the summary the model can still be shown in full while the summary catches up. */
+const MAX_BEHIND = 40;
+
 /**
  * What the model is shown of this conversation: the recent messages in full
- * (`recent`), and a summary of the ones before (`earlier`), brought up to
- * date first if enough has fallen out of the window. `older` are the messages
- * not shown, which are saved back with the reply.
+ * (`recent`), and the running summary of the ones before (`earlier`). It
+ * never waits for the summary: messages the summary doesn't cover yet are
+ * shown in full instead (up to MAX_BEHIND more), and catchUpSummary brings it
+ * up to date after the reply has gone out. `older` are the messages not
+ * shown, which are saved back with the reply.
  */
 export async function conversationWindow(
   chatId: string,
@@ -67,15 +73,36 @@ export async function conversationWindow(
   const start = windowStart(messages);
   const stored = await readSummary(chatId);
   if (start === 0) return { earlier: stored.summary, older: [], recent: messages };
-  const covered = stored.summarizedThrough ? messages.findIndex((m) => m.id === stored.summarizedThrough) + 1 : 0;
-  let summary = stored.summary;
-  if (start - covered >= CATCH_UP || (covered === 0 && !summary)) {
-    summary = (await summarize(stored.organizationId, summary, messages.slice(covered, start))) ?? summary;
-    if (summary !== stored.summary) {
-      await getDb().query("update chats set summary = $2, summarized_through = $3 where id = $1", [chatId, summary, messages[start - 1].id]);
-    }
-  }
-  return { earlier: summary, older: messages.slice(0, start), recent: messages.slice(start) };
+  const covered = coveredUpTo(messages, stored.summarizedThrough);
+  const from = Math.min(start, Math.max(covered, start - MAX_BEHIND));
+  return { earlier: stored.summary, older: messages.slice(0, from), recent: messages.slice(from) };
+}
+
+/** How many of the messages the summary covers (from the start). */
+const coveredUpTo = (messages: Pick<UIMessage, "id">[], summarizedThrough: string | null) =>
+  summarizedThrough ? messages.findIndex((m) => m.id === summarizedThrough) + 1 : 0;
+
+/**
+ * Brings the conversation's summary up to date once enough messages have
+ * fallen out of the window. Runs after a reply, so nobody waits for it.
+ */
+export async function catchUpSummary(chatId: string): Promise<void> {
+  const [row] = await getDb().query<{ messages: UIMessage[]; summary: string; summarized_through: string | null; organization_id: string }>(
+    "select messages, summary, summarized_through, organization_id from chats where id = $1",
+    [chatId],
+  );
+  if (!row) return;
+  const messages = row.messages ?? [];
+  const start = windowStart(messages);
+  const covered = coveredUpTo(messages, row.summarized_through);
+  if (start === 0 || (start - covered < CATCH_UP && (covered > 0 || row.summary))) return;
+  const summary = await summarize(row.organization_id, row.summary, messages.slice(covered, start));
+  if (!summary) return;
+  // Only if nobody else caught it up meanwhile.
+  await getDb().query(
+    "update chats set summary = $2, summarized_through = $3 where id = $1 and summarized_through is not distinct from $4",
+    [chatId, summary, messages[start - 1].id, row.summarized_through],
+  );
 }
 
 async function summarize(organizationId: string, previous: string, messages: UIMessage[]): Promise<string | null> {

@@ -9,7 +9,7 @@ import { linkMember } from "@/lib/people";
 import { useTestDb } from "@/test/db";
 import { scriptedModel } from "@/test/scripted-model";
 
-import { conversationWindow, forStorage, getPersonalMemory, RECENT, setSummaryModel, windowStart } from "./conversation";
+import { catchUpSummary, conversationWindow, forStorage, getPersonalMemory, RECENT, setSummaryModel, windowStart } from "./conversation";
 
 const ORG = "org_cedar";
 const user = { id: "user_sara", email: "sara@cedar.example", name: "Sara" };
@@ -27,7 +27,7 @@ describe("a conversation that never ends", () => {
   });
   afterEach(() => setSummaryModel(null));
 
-  it("shows the model the latest messages, starting at a question, and a summary of the rest", async () => {
+  it("never makes a reply wait for the summary: it catches up afterwards, from where it left off", async () => {
     expect(windowStart(thread(10))).toBe(0);
     const long = thread(40);
     const start = windowStart(long);
@@ -35,18 +35,33 @@ describe("a conversation that never ends", () => {
     expect(long[start].role).toBe("user");
 
     const { id } = await getOrCreateChat(ORG, user.id);
+    await saveChat(id, long);
     const summarizer = scriptedModel(["- Sara asked questions 0 to 24; all answered."]);
     setSummaryModel(summarizer);
+    // Before the summary exists, what it would cover is shown in full instead (no model call).
+    const before = await conversationWindow(id, long);
+    expect(before.earlier).toBe("");
+    expect(before.recent).toHaveLength(long.length - start + 40); // up to 40 more than usual
+    expect(summarizer.doGenerateCalls).toHaveLength(0);
+
+    // After the reply, it catches up; then only the recent messages are shown in full.
+    await catchUpSummary(id);
     const window = await conversationWindow(id, long);
     expect(window.earlier).toBe("- Sara asked questions 0 to 24; all answered.");
     expect(window.older).toHaveLength(start);
     expect(window.recent[0].id).toBe(long[start].id);
     expect(JSON.stringify(summarizer.doGenerateCalls[0].prompt)).toContain("Them: Question 0");
 
-    // A few more messages don't redo the summary; enough of them bring it up to date, from where it left off.
-    expect((await conversationWindow(id, thread(42))).earlier).toBe("- Sara asked questions 0 to 24; all answered.");
+    // A few more messages don't redo it: they're shown in full. Enough of them bring it up to date.
+    await saveChat(id, thread(42));
+    await catchUpSummary(id);
+    const few = await conversationWindow(id, thread(42));
+    expect(few.earlier).toBe("- Sara asked questions 0 to 24; all answered.");
+    expect(few.older).toHaveLength(start);
     expect(summarizer.doGenerateCalls).toHaveLength(1);
     setSummaryModel(scriptedModel(["- Up to question 34."]));
+    await saveChat(id, thread(46));
+    await catchUpSummary(id);
     const later = await conversationWindow(id, thread(46));
     expect(later.earlier).toBe("- Up to question 34.");
     const [row] = await getDb().query<{ summarized_through: string }>("select summarized_through from chats where id = $1", [id]);
@@ -84,6 +99,7 @@ describe("a conversation that never ends", () => {
     const chat = await getOrCreateChat(ORG, user.id);
     await saveChat(chat.id, thread(40));
     setSummaryModel(scriptedModel(["- Earlier: questions 0 to 24 answered."]));
+    await catchUpSummary(chat.id); // after an earlier reply
     const model = scriptedModel(["Here you go."]);
     await chiefOfStaffTurn({ organization, user, person: sara }, "And the next one?", "whatsapp", { model, research: false });
     const prompt = JSON.stringify(model.doGenerateCalls[0].prompt);

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { chiefOfStaffTurn } from "@/lib/agents/cos-turn";
+import { catchUpConversation, chiefOfStaffTurn } from "@/lib/agents/cos-turn";
 import { recordWhatsAppIn } from "@/lib/assistant/store";
 import { appUrl } from "@/lib/app-url";
 import { replyToEmail } from "@/lib/channels/agentmail";
@@ -81,6 +81,7 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
     reply = trouble();
   }
   await sendWhatsApp(message.from, reply);
+  await catchUpConversation(context);
 }
 
 /** The parts of AgentMail's message.received event used here. */
@@ -120,4 +121,5 @@ export async function handleEmail(email: ReceivedEmail, options: TurnOptions = {
     reply = trouble();
   }
   await replyToEmail(email.inbox_id, email.message_id, reply);
+  await catchUpConversation(context);
 }

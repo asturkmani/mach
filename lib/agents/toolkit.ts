@@ -102,7 +102,7 @@ export function integrationTools(
               integration: slugOf(sources),
               method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).optional(),
               path: z.string().min(1).describe("A path under the base URL, e.g. /v1/portfolios, or a full URL on its domain."),
-              query: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+              query: z.object({}).catchall(z.union([z.string(), z.number(), z.boolean()])).optional(),
               body: z.unknown().optional().describe("A JSON body, for write requests."),
               save_as: z.string().optional().describe("e.g. inputs/positions.json or /vercel/drive/masttro/positions-2026-10-07.json"),
             }),

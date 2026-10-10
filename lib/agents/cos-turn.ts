@@ -9,7 +9,7 @@ import { describeViewing } from "@/lib/agents/viewing";
 import { closeSandbox } from "@/lib/agents/sandbox-steps";
 import { listAgents } from "@/lib/agents/store";
 import type { SandboxSession } from "@/lib/agents/toolkit";
-import { conversationWindow, getPersonalMemory, saveConversation } from "@/lib/agents/conversation";
+import { catchUpSummary, conversationWindow, getPersonalMemory, saveConversation } from "@/lib/agents/conversation";
 import { getAssistantHours } from "@/lib/assistant/store";
 import { endReply, getOrCreateChat, takeTurn, type Chat } from "@/lib/chats";
 import { getGitHubConnection } from "@/lib/github";
@@ -96,6 +96,12 @@ export function replyText(messages: UIMessage[]): string {
     .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** After a reply has gone out: brings the conversation's summary up to date if it's behind. */
+export async function catchUpConversation(context: ChiefOfStaffContext): Promise<void> {
+  const { id } = await getOrCreateChat<UIMessage>(context.organization.id, context.user.id);
+  await catchUpSummary(id).catch((error) => console.error("Couldn't bring the conversation summary up to date", error));
 }
 
 /**
