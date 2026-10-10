@@ -20,7 +20,7 @@ import {
   type Wakeup,
 } from "@/lib/assistant/store";
 import { contextFor } from "@/lib/channels/senders";
-import { sendWhatsApp, twilioConfigured } from "@/lib/channels/twilio";
+import { sendWhatsApp, sendWhatsAppTemplate, templateValue, twilioConfigured, whatsappTemplateSid } from "@/lib/channels/twilio";
 import { endReply, getOrCreateChat, takeTurn } from "@/lib/chats";
 import { pushToPeople } from "@/lib/push";
 import { getTask } from "@/lib/tasks";
@@ -31,8 +31,9 @@ import { getTask } from "@/lib/tasks";
 // only within 24 hours of the person's last message. Each wake-up is a turn
 // in their conversation that starts from a note only the assistant sees: it
 // checks the work involved and either writes them one short message or
-// stays quiet. Its words go out on WhatsApp while the window's open,
-// otherwise into the app's chat with a notification.
+// stays quiet. Its words go out on WhatsApp while the window's open, in an
+// approved template once it has closed (if one is set up), otherwise into
+// the app's chat with a notification.
 
 /** The reply that means "nothing worth sending". */
 export const QUIET = "QUIET";
@@ -96,6 +97,8 @@ export async function wakeTurn(context: ChiefOfStaffContext, wakeups: Wakeup[], 
   ]);
   const openFor = window.lastIn ? window.lastIn.getTime() + 24 * HOUR - now.getTime() : 0;
   const onWhatsApp = Boolean(person.whatsapp && twilioConfigured() && openFor > 60_000);
+  // Once the window has closed, WhatsApp only takes an approved template, with the message as one line in it.
+  const template = !onWhatsApp && person.whatsapp ? whatsappTemplateSid() : null;
 
   const reasons = await Promise.all(
     wakeups.map(async (w) => {
@@ -127,7 +130,13 @@ export async function wakeTurn(context: ChiefOfStaffContext, wakeups: Wakeup[], 
     keepAlive
       ? `It's been quiet${items.length ? " otherwise too" : ""}, and the conversation goes cold if they don't reply within the window. Find something of theirs worth a reply, in this order: work they're waiting on (find_tasks and read_task: their open tasks and jobs, anything that moved or finished), something they asked about before and never followed up on (from the conversation and your notes), something you're still waiting on from them. End with one clear question they can answer in a few words. No filler: never "just checking in".`
       : "",
-    `Then reply with ONE short message to ${person.name}, which is sent as it stands ${onWhatsApp ? "on WhatsApp" : "to their chat in Mach1, with a notification"}. Or, if nothing here is worth their attention now (already handled, nothing new, nothing open), reply with exactly ${QUIET} and nothing else. Don't create tasks or post on tasks on your own here.`,
+    `Then reply with ONE short message to ${person.name}, which is sent as it stands ${
+      onWhatsApp
+        ? "on WhatsApp"
+        : template
+          ? "on WhatsApp inside a notice (their window has closed): one or two plain sentences, no line breaks, ending with what you'd like from them, so they reply"
+          : "to their chat in Mach1, with a notification"
+    }. Or, if nothing here is worth their attention now (already handled, nothing new, nothing open), reply with exactly ${QUIET} and nothing else. Don't create tasks or post on tasks on your own here.`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -161,12 +170,14 @@ export async function wakeTurn(context: ChiefOfStaffContext, wakeups: Wakeup[], 
     id: generateMessageId(),
     role: "assistant",
     parts: [{ type: "text", text }],
-    metadata: { channel: onWhatsApp ? "whatsapp" : undefined, proactive: true },
+    metadata: { channel: onWhatsApp || template ? "whatsapp" : undefined, proactive: true },
   };
   // The conversation as it is now (the turn is held, so nothing else changed it).
   await saveConversation(chat.id, older, [...recent, message]);
   if (onWhatsApp) await sendWhatsApp(`+${person.whatsapp}`, text);
-  else {
+  else if (template) {
+    await sendWhatsAppTemplate(`+${person.whatsapp}`, template, { "1": person.name.split(" ")[0] || person.name, "2": templateValue(text) });
+  } else {
     await pushToPeople(organizationId, [person.id], { title: "Chief of Staff", body: text.slice(0, 180), url: "/", tag: "assistant" });
   }
   await recordNudge(organizationId, person.id);

@@ -135,6 +135,20 @@ describe("the assistant wakes up by itself", () => {
     expect(JSON.stringify((await getOrCreateChat(ORG, "user_sara")).messages)).toContain("4,210 rows");
   });
 
+  it("uses the approved template once the window has closed, if there is one", async () => {
+    vi.stubEnv("TWILIO_WHATSAPP_TEMPLATE_SID", "HX123");
+    const sent = stubTwilio();
+    await getDb().query("update people set whatsapp_in_at = now() - interval '30 hours' where id = $1", [sara]);
+    await scheduleWakeup(ORG, sara, { reason: "check_in", note: "The import" });
+    const model = scriptedModel(["The import finished:\n4,210 rows. Want the summary?"]);
+    await runAssistantWakeups({ model, research: false });
+    expect(promptOf(model)).toContain("inside a notice");
+    expect(sent).toHaveLength(1);
+    expect(sent[0].get("ContentSid")).toBe("HX123");
+    expect(sent[0].get("Body")).toBeNull();
+    expect(JSON.parse(sent[0].get("ContentVariables")!)).toEqual({ "1": "Sara", "2": "The import finished: · 4,210 rows. Want the summary?" });
+  });
+
   it("asks for their hours until it knows them, saves them, and sets itself check-ins", async () => {
     await getDb().query("update people set timezone = null, work_hours = null where id = $1", [sara]);
     const organization = (await getOrganization(ORG))!;

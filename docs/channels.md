@@ -47,6 +47,29 @@ Only people who have joined their company in Mach1 (signed in at least once) get
 
 The signature check uses the URL Twilio called. Behind a proxy that changes the host, set `TWILIO_WEBHOOK_URL` to the exact URL configured in Twilio.
 
+### Writing first on WhatsApp (a template)
+
+The assistant writes first (docs/assistant.md): when work is done or needs someone, a check-in it set, and
+before the conversation goes cold. WhatsApp lets a business write freely only within 24 hours of the
+person's last message; after that only a template WhatsApp approved. Without one, those messages go to the
+app's chat with a push notification instead. To set one up:
+
+1. In Twilio, Messaging → Content Template Builder → Create new: type **Text**, category **Utility**,
+   language English. Body:
+
+   ```
+   Hi {{1}}, an update from your Chief of Staff: {{2}}
+
+   Reply here to carry on.
+   ```
+
+   with samples such as `Sara` and `#14 Cash runway is ready for you to review. Want the short version?`.
+2. Submit it for WhatsApp approval (usually minutes to a day).
+3. Once approved, set `TWILIO_WHATSAPP_TEMPLATE_SID` to its SID (it starts with `HX`) and redeploy.
+
+`{{1}}` is their first name and `{{2}}` the assistant's message on one line (at most 900 characters). When they
+reply, the 24 hours start again and the conversation carries on as normal.
+
 ### Email (AgentMail)
 
 1. **Get an API key:** add AgentMail from the Vercel Marketplace and connect it to the project, which sets `AGENTMAIL_API_KEY`. An account made on agentmail.to works too, with the key set by hand.
@@ -57,7 +80,6 @@ Deleting a company deletes its inbox too.
 
 ## Not built yet
 
-- **Messages the Chief of Staff starts**, e.g. "something needs you" on WhatsApp. WhatsApp only allows a business to start a conversation with pre-approved templates, so this needs one.
 - **Reading attachments** sent on WhatsApp or by email.
 - **A custom email domain** (`chief@cedarlegacy.com`). AgentMail supports one; Mach1 uses `@agentmail.to` addresses for now.
 

@@ -82,6 +82,37 @@ export async function sendWhatsApp(to: string, text: string): Promise<void> {
   }
 }
 
+/** The approved WhatsApp template for writing to someone outside the 24-hour window, if one is set up (docs/channels.md). */
+export const whatsappTemplateSid = () => (twilioConfigured() && process.env.TWILIO_WHATSAPP_TEMPLATE_SID) || null;
+
+/** A template's variable: one line, at most `max` characters (WhatsApp refuses line breaks and long values). */
+export function templateValue(text: string, max = 900): string {
+  const line = whatsappText(text).replace(/\s*\n+\s*/g, " · ").replace(/\s{2,}/g, " ").trim();
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
+/**
+ * Sends an approved template (Twilio Content) with its variables, e.g.
+ * { "1": "Sara", "2": "#14 is ready…" }: the only way to write first once the
+ * 24 hours since their last message have passed.
+ */
+export async function sendWhatsAppTemplate(to: string, contentSid: string, variables: Record<string, string>): Promise<void> {
+  const sid = process.env.TWILIO_ACCOUNT_SID!;
+  const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
+  const from = process.env.TWILIO_WHATSAPP_FROM!;
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      From: from.startsWith("whatsapp:") ? from : `whatsapp:${from}`,
+      To: to.startsWith("whatsapp:") ? to : `whatsapp:${to}`,
+      ContentSid: contentSid,
+      ContentVariables: JSON.stringify(variables),
+    }),
+  });
+  if (!response.ok) throw new Error(`Twilio refused the template (${response.status}): ${(await response.text()).slice(0, 300)}`);
+}
+
 /**
  * Downloads media someone sent (a voice note): Twilio's media URLs need the
  * account's credentials, so only its own API host is fetched with them.

@@ -18,7 +18,8 @@ Each wake-up is a turn in the person's conversation (one at a time, like any rep
 only the assistant sees: why it woke, their local time and hours, how long since they last wrote. It checks
 the work involved (`read_task`, `find_tasks`) and replies with one short message, or exactly `QUIET` when
 there's nothing worth saying. Only the message is kept in the conversation. It goes out on WhatsApp while
-the window is open, otherwise into the app's chat with a push notification. If they're mid-conversation it
+the window is open, in the approved template once it has closed (docs/channels.md), otherwise into the
+app's chat with a push notification. If they're mid-conversation it
 waits two minutes.
 
 ## Their hours
