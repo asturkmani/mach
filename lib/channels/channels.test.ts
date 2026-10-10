@@ -105,6 +105,25 @@ describe("talking to the Chief of Staff over WhatsApp and email", () => {
     expect(Object.fromEntries(new URLSearchParams(sent[0].body))).toEqual({ messageId: "SM_in_1", channel: "whatsapp" });
   });
 
+  it("acknowledges before longer work, keeps typing, then answers", async () => {
+    await setUp();
+    const sent = stubProviders();
+    const model = scriptedModel([{ text: "On it: checking the board.", calls: [["find_tasks", { query: "board" }]] }, "Nothing on the board yet."]);
+    await handleWhatsApp({ sid: "SM_in_1", from: "+447700900123", body: "Anything on the board?", media: 0 }, { model, research: false });
+    const bodies = sent.filter((r) => r.url.endsWith("/Messages.json")).map((r) => new URLSearchParams(r.body).get("Body"));
+    expect(bodies).toEqual(["On it: checking the board.", "Nothing on the board yet."]);
+    // "typing…" again after the acknowledgement, which clears it on their phone.
+    expect(sent.map((r) => (r.url.includes("Typing") ? "typing" : "message"))).toEqual(["typing", "message", "typing", "message"]);
+  });
+
+  it("sends no empty reply when the acknowledgement was all it said", async () => {
+    await setUp();
+    const sent = stubProviders();
+    const model = scriptedModel([{ text: "On it.", calls: [["find_tasks", {}]] }, []]);
+    await handleWhatsApp({ sid: "SM_in_1", from: "+447700900123", body: "Look into it", media: 0 }, { model, research: false });
+    expect(sent.filter((r) => r.url.endsWith("/Messages.json")).map((r) => new URLSearchParams(r.body).get("Body"))).toEqual(["On it."]);
+  });
+
   it("answers two quick messages one after the other, keeping both in the conversation", async () => {
     await setUp();
     stubProviders();

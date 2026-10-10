@@ -32,9 +32,12 @@ people can change them in Settings → Account → Your hours.
 ## How it looks on WhatsApp
 
 When a message arrives, the assistant marks it read (blue ticks) and shows "typing…" until it replies
-(`showTyping` in `lib/channels/twilio.ts`, renewed every 20 seconds). Twilio can't send emoji reactions, so
-every reply starts with one status emoji instead: ✅ done, ⏳ working on it, ❓ needs them, ⚠️ a problem, or
-one for the subject when that says more (🎂, 📊, 💻, 📎, 📅).
+(`showTyping` in `lib/channels/twilio.ts`, renewed every 20 seconds). Twilio can't send emoji reactions.
+
+For anything that takes more than a moment (several tools, research, browsing, a task or an agent, coding),
+it first writes one line saying it's on it, then works. On WhatsApp and email, words written before a tool
+call go out straight away as that acknowledgement (`acknowledge` in `lib/agents/cos-turn.ts`), "typing…"
+comes back while it works, and the answer follows. Quick questions get the answer, with no acknowledgement.
 
 ## WhatsApp's 24 hours
 

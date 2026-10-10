@@ -8,7 +8,7 @@ import { keepIncomingFiles, nameFor, type IncomingFile } from "@/lib/channels/in
 import { MAX_FILE_BYTES } from "@/lib/files";
 import { findByEmail, findByPhone } from "@/lib/channels/senders";
 import { completeWhatsAppLink, LINK_MESSAGE } from "@/lib/channels/whatsapp-links";
-import { fetchTwilioMedia, keepTyping, sendWhatsApp } from "@/lib/channels/twilio";
+import { fetchTwilioMedia, keepTyping, sendWhatsApp, showTyping } from "@/lib/channels/twilio";
 import { findOrganizationByInbox } from "@/lib/orgs";
 import { MAX_AUDIO_BYTES, transcribeAudio } from "@/lib/transcribe";
 import type { LanguageModel, TranscriptionModel } from "ai";
@@ -94,14 +94,23 @@ export async function handleWhatsApp(message: WhatsAppMessage, options: TurnOpti
   if (!text) return stopTyping();
   let reply: string;
   try {
-    reply = await chiefOfStaffTurn(context, text, "whatsapp", { model: options.model, research: options.research, files });
+    reply = await chiefOfStaffTurn(context, text, "whatsapp", {
+      model: options.model,
+      research: options.research,
+      files,
+      // "On it…" goes out before longer work; "typing…" carries on after it.
+      acknowledge: async (ack) => {
+        await sendWhatsApp(message.from, ack);
+        if (message.sid) await showTyping(message.sid);
+      },
+    });
   } catch (error) {
     console.error("WhatsApp turn failed", error);
     reply = trouble();
   } finally {
     stopTyping();
   }
-  await sendWhatsApp(message.from, reply);
+  if (reply) await sendWhatsApp(message.from, reply);
   await catchUpConversation(context);
 }
 
@@ -149,11 +158,15 @@ export async function handleEmail(email: ReceivedEmail, options: TurnOptions = {
   if (!text) return;
   let reply: string;
   try {
-    reply = await chiefOfStaffTurn(context, text, "email", { ...options, files });
+    reply = await chiefOfStaffTurn(context, text, "email", {
+      ...options,
+      files,
+      acknowledge: (ack) => replyToEmail(email.inbox_id, email.message_id, ack).then(() => undefined),
+    });
   } catch (error) {
     console.error("Email turn failed", error);
     reply = trouble();
   }
-  await replyToEmail(email.inbox_id, email.message_id, reply);
+  if (reply) await replyToEmail(email.inbox_id, email.message_id, reply);
   await catchUpConversation(context);
 }

@@ -110,15 +110,13 @@ export function actorFor(context: Context): Actor | null {
   };
 }
 
+const ACKNOWLEDGE = `When they ask for something that takes more than a moment (several tool calls, research, browsing, building a page, starting a task or an agent, coding, anything multi-step), first write one short line saying you've got it and what you're doing ("On it: pulling Q3 from Masttro and checking it against the model."), then start the work, and finish with the answer. On WhatsApp and email that line goes out straight away, while you work. A quick question or a single quick action: just answer, no acknowledgement. Never acknowledge and then stop.`;
+
 function channelInstructions(channel: Channel): string {
   const where = channel === "whatsapp" ? "WhatsApp" : "email";
   return `This message came by ${where}, and your reply goes back the same way, as plain text. Keep it short: a few sentences or a short list, no tables or headings${
     channel === "whatsapp" ? ", *single asterisks* for bold" : ""
-  }.${
-    channel === "whatsapp"
-      ? " Start every WhatsApp message with one emoji that says where things stand, so they can tell at a glance: ✅ done, ⏳ started or still working on it, ❓ you need something from them, ⚠️ a problem or blocked; or one for what it's about when that says more (🎂 a birthday, 📊 numbers or a financial model, 💻 code, 📎 a file, 📅 a meeting). Exactly one, first, then the message; no other emojis unless they use them."
-      : ""
-  } Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give the link to the screen where they finish it, from the app's screens below. It's the same conversation as their chat panel in Mach1, so they can carry on in either.`;
+  }. Cards don't show there: when a tool shows one (credentials for an integration, a sign-in code, a profile suggestion to apply), say so and give the link to the screen where they finish it, from the app's screens below. It's the same conversation as their chat panel in Mach1, so they can carry on in either.`;
 }
 
 function onboardingInstructions({ organization }: Context): string {
@@ -260,6 +258,8 @@ ${personalInstructions(context)}
 ${organization.onboardingCompletedAt ? afterOnboardingInstructions(context) : onboardingInstructions(context)}
 
 ${workInstructions(context)}
+
+${ACKNOWLEDGE}
 ${context.channel ? `\n${channelInstructions(context.channel)}\n` : ""}${
     context.viewing
       ? `\nRight now they're looking at ${context.viewing} in Mach1, with this chat open beside it. When they say "this", "here" or "it" without saying what, they mean that.\n`

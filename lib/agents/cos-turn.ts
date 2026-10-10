@@ -134,7 +134,7 @@ export async function chiefOfStaffTurn(
   context: ChiefOfStaffContext,
   text: string,
   channel: Channel,
-  options: { model?: LanguageModel; research?: boolean; files?: FileUIPart[] } = {},
+  options: TurnOptions = {},
 ): Promise<string> {
   const { id } = await getOrCreateChat<UIMessage>(context.organization.id, context.user.id);
   // One reply at a time: a second message sent quickly waits for the first reply, then sees it.
@@ -148,13 +148,15 @@ export async function chiefOfStaffTurn(
   }
 }
 
-async function answer(
-  context: ChiefOfStaffContext,
-  chat: Chat<UIMessage>,
-  text: string,
-  channel: Channel,
-  options: { model?: LanguageModel; research?: boolean; files?: FileUIPart[] },
-): Promise<string> {
+type TurnOptions = {
+  model?: LanguageModel;
+  research?: boolean;
+  files?: FileUIPart[];
+  /** Sends what it says before it starts work ("On it…") straight away, rather than with the reply. */
+  acknowledge?: (text: string) => Promise<void>;
+};
+
+async function answer(context: ChiefOfStaffContext, chat: Chat<UIMessage>, text: string, channel: Channel, options: TurnOptions): Promise<string> {
   const question: UIMessage = {
     id: generateMessageId(),
     role: "user",
@@ -169,6 +171,8 @@ async function answer(
   await saveConversation(chat.id, older, messages);
 
   let finished: UIMessage[] = messages;
+  // What it writes, in order, and whether it already went out as an acknowledgement.
+  const said: { id: string; text: string; sent: boolean }[] = [];
   try {
     const stream = await createAgentUIStream({
       agent,
@@ -183,10 +187,30 @@ async function answer(
     for await (const chunk of stream) {
       // A failed model call ends the stream with an error chunk rather than throwing.
       if (chunk.type === "error") throw new Error(chunk.errorText);
+      if (chunk.type === "text-start") said.push({ id: chunk.id, text: "", sent: false });
+      if (chunk.type === "text-delta") {
+        const part = said.findLast((p) => p.id === chunk.id);
+        if (part) part.text += chunk.delta;
+      }
+      // Words before a tool call are its acknowledgement: they go out now, while it works.
+      if ((chunk.type === "tool-input-start" || chunk.type === "tool-input-available") && options.acknowledge) {
+        const early = said.filter((p) => !p.sent);
+        early.forEach((p) => (p.sent = true));
+        const ack = early.map((p) => p.text.trim()).filter(Boolean).join("\n\n");
+        if (ack) await options.acknowledge(ack).catch((error) => console.error("Couldn't send the acknowledgement", error));
+      }
     }
     await saveConversation(chat.id, older, await prepareHistory(finished, agent.tools));
   } finally {
     await close();
+  }
+  if (said.some((p) => p.sent)) {
+    // The acknowledgement already went out: the reply is what came after it (nothing more, if that's all it said).
+    return said
+      .filter((p) => !p.sent)
+      .map((p) => p.text.trim())
+      .filter(Boolean)
+      .join("\n\n");
   }
   return replyText(finished.slice(messages.length - 1)) || "Done.";
 }

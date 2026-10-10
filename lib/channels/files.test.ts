@@ -73,8 +73,6 @@ describe("files by WhatsApp and email", () => {
     const prompt = JSON.stringify(model.doGenerateCalls[0].prompt);
     expect(prompt).toContain("Which fund is bigger?");
     expect(prompt).toContain("B,250");
-    // Replies there lead with a status emoji (WhatsApp can't take reactions through Twilio).
-    expect(prompt).toContain("Start every WhatsApp message with one emoji");
   });
 
   it("keeps an email's attachments too", async () => {

@@ -8,8 +8,10 @@ const usage = {
   outputTokens: { total: 10, text: 10, reasoning: undefined },
 };
 
-/** One model step: a list of (parallel) tool calls, a final text reply, or an error to throw. */
-export type Step = Array<[toolName: string, input: object]> | string | Error;
+type Calls = Array<[toolName: string, input: object]>;
+
+/** One model step: a list of (parallel) tool calls, a final text reply, words then tool calls, or an error to throw. */
+export type Step = Calls | string | { text: string; calls: Calls } | Error;
 
 /** A mock model that plays back one step per call, repeating the last one if called again. */
 export function scriptedModel(steps: Step[]) {
@@ -45,13 +47,17 @@ export function scriptedModel(steps: Step[]) {
           warnings: [],
         };
       }
+      const calls = Array.isArray(step) ? step : step.calls;
       return {
-        content: step.map(([toolName, input], i) => ({
-          type: "tool-call" as const,
-          toolCallId: `${call}-${i}`,
-          toolName,
-          input: JSON.stringify(input),
-        })),
+        content: [
+          ...(Array.isArray(step) ? [] : [{ type: "text" as const, text: step.text }]),
+          ...calls.map(([toolName, input], i) => ({
+            type: "tool-call" as const,
+            toolCallId: `${call}-${i}`,
+            toolName,
+            input: JSON.stringify(input),
+          })),
+        ],
         finishReason: { unified: "tool-calls" as const, raw: undefined },
         usage,
         warnings: [],
