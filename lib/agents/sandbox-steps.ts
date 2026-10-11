@@ -372,6 +372,22 @@ export async function writeSkillScripts(context: AgentContext, scripts: Record<s
   await sandbox.writeFiles(files);
 }
 
+/**
+ * Runs a skill's tests in the job's sandbox, apart from the job's own files:
+ * its scripts in a scratch folder, and its test.sh, which passes by exiting 0.
+ */
+export async function runSkillTests(context: AgentContext, name: string, scripts: Record<string, string>): Promise<{ ok: boolean; log: string }> {
+  "use step";
+  if (!scripts["test.sh"]) return { ok: false, log: "No test.sh: add one built from a real example in the run, which exits 0 when the scripts give the expected output." };
+  const sandbox = await open(context);
+  const dir = `${JOB_DIR}/.skill-tests/${name}`;
+  const files = Object.entries(scripts).map(([path, content]) => ({ path: `${dir}/${path}`, content: Buffer.from(content) }));
+  await sandbox.run("mkdir", ["-p", ...new Set(files.map((f) => f.path.slice(0, f.path.lastIndexOf("/"))))]);
+  await sandbox.writeFiles(files);
+  const result = await sandbox.run("bash", ["test.sh"], { cwd: dir, timeoutMs: COMMAND_TIMEOUT_MS });
+  return { ok: result.exitCode === 0, log: await scrub(context, formatLog(result)) };
+}
+
 export async function writeSandboxFile(context: AgentContext, input: { path: string; content: string }): Promise<string> {
   "use step";
   const sandbox = await open(context);

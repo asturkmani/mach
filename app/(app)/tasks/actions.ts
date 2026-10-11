@@ -138,6 +138,9 @@ export async function pickOptionAction(taskId: string, index: number): Promise<T
 /** E: takes the recommended option, or marks the task done. Returns what to restore on undo. */
 export async function approveOrDoneAction(taskId: string): Promise<TaskActionResult> {
   const { organizationId, by } = await actorFor(taskId);
+  // A message of proposed changes: E applies them, through the same action as chat.
+  const card = await getTask(organizationId, taskId);
+  if ((card?.payload as { proposals?: boolean } | null)?.proposals && card?.options.length) return pickOptionAction(taskId, 0);
   return attempt(async () => {
     const before = await getTask(organizationId, taskId);
     if (!before) throw new WorkError("That task no longer exists.");

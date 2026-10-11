@@ -5,7 +5,16 @@ import { useActionState, useState, useTransition } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { archiveSkillAction, restoreSkillAction, saveSkillAction, shareSkillAction, type SkillActionResult } from "@/app/(app)/skills/actions";
+import Link from "next/link";
+
+import {
+  archiveSkillAction,
+  decideProposalAction,
+  restoreSkillAction,
+  saveSkillAction,
+  shareSkillAction,
+  type SkillActionResult,
+} from "@/app/(app)/skills/actions";
 import { useCloseForm, VisibilityToggle } from "@/components/kit";
 import { useShell } from "@/components/shell/shell";
 import { When } from "@/components/ui";
@@ -30,6 +39,61 @@ export type CompanySkillView = {
 };
 
 export type BaseSkillView = { name: string; description: string; body: string };
+
+export type ProposalView = {
+  from: number;
+  number: number;
+  why: string;
+  /** What it changes: a skill (new or not) or a profile section. */
+  what: string;
+  /** The new text, for a look before saying yes. */
+  text: string;
+  sourceNumber: number | null;
+};
+
+/** Changes Mach1 proposed after reviewing finished work, waiting on this person's yes. */
+export function Proposals({ proposals }: { proposals: ProposalView[] }) {
+  const { toast } = useShell();
+  const [pending, start] = useTransition();
+  const decide = (p: ProposalView, apply: boolean) =>
+    start(async () => {
+      const result = await decideProposalAction(p.from, p.number, apply);
+      toast(result.error ?? result.message ?? "Done");
+    });
+  return (
+    <ul className="space-y-3">
+      {proposals.map((p) => (
+        <li key={`${p.from}-${p.number}`} className="border border-line bg-raised px-4 py-3">
+          <p className="label mb-1">
+            {p.what}
+            {p.sourceNumber ? (
+              <>
+                {" "}
+                · from{" "}
+                <Link href={`/tasks/${p.sourceNumber}`} className="hover:text-ink">
+                  #{p.sourceNumber}
+                </Link>
+              </>
+            ) : null}
+          </p>
+          <p className="text-sm">{p.why}</p>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs text-faint">See the new text</summary>
+            <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap text-xs text-muted">{p.text}</pre>
+          </details>
+          <div className="mt-3 flex gap-2">
+            <button disabled={pending} onClick={() => decide(p, true)} className="btn">
+              Apply
+            </button>
+            <button disabled={pending} onClick={() => decide(p, false)} className="btn btn-ghost">
+              Skip
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function WriteSkillForm({ bases }: { bases: string[] }) {
   const close = useCloseForm();

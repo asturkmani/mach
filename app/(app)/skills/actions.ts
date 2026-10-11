@@ -45,3 +45,7 @@ export async function shareSkillAction(name: string, shareWithCompany: boolean):
 export async function archiveSkillAction(name: string): Promise<SkillActionResult> {
   return perform("skill.archive", { name });
 }
+
+export async function decideProposalAction(from: number, number: number, apply: boolean): Promise<SkillActionResult> {
+  return perform(apply ? "skill.apply_proposal" : "skill.skip_proposal", { from, numbers: [number] });
+}

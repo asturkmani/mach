@@ -20,7 +20,7 @@ import {
   type Wakeup,
 } from "@/lib/assistant/store";
 import { contextFor } from "@/lib/channels/senders";
-import { sendWhatsApp, sendWhatsAppTemplate, templateValue, twilioConfigured, whatsappTemplateSid } from "@/lib/channels/twilio";
+import { sendWhatsApp, sendWhatsAppButtons, sendWhatsAppTemplate, templateValue, twilioConfigured, whatsappTemplateSid } from "@/lib/channels/twilio";
 import { endReply, getOrCreateChat, takeTurn } from "@/lib/chats";
 import { pushToPeople } from "@/lib/push";
 import { getTask } from "@/lib/tasks";
@@ -100,12 +100,17 @@ export async function wakeTurn(context: ChiefOfStaffContext, wakeups: Wakeup[], 
   // Once the window has closed, WhatsApp only takes an approved template, with the message as one line in it.
   const template = !onWhatsApp && person.whatsapp ? whatsappTemplateSid() : null;
 
+  let proposing = false;
   const reasons = await Promise.all(
     wakeups.map(async (w) => {
       if (w.reason === "keepalive") return "keepalive";
       if (w.reason === "check_in") return `- You set yourself a check-in: ${w.note || "(no note)"}`;
       const task = w.taskId ? await getTask(organizationId, w.taskId, { viewer: person.id }) : null;
       if (!task) return "";
+      if ((task.payload as { proposals?: boolean } | null)?.proposals && task.status === "review") {
+        proposing = true;
+        return `- Mach1 reviewed finished work and proposes changes, card #${task.number} (${appUrl(`/tasks/${task.number}`)}):\n${task.description}\nTell them each change in one plain numbered line, and ask whether to apply them ("yes", "just 2", "skip 1"). Don't apply anything here.`;
+      }
       const state = task.status === "waiting" ? "needs their answer" : task.status === "review" ? "is ready for them to review" : `is now ${task.status}`;
       return `- Task #${task.number} "${task.title}" ${state} (${appUrl(`/tasks/${task.number}`)}).${w.note ? ` ${w.note}` : ""}`;
     }),
@@ -176,7 +181,9 @@ export async function wakeTurn(context: ChiefOfStaffContext, wakeups: Wakeup[], 
   };
   // The conversation as it is now (the turn is held, so nothing else changed it).
   await saveConversation(chat.id, older, [...recent, message]);
-  if (onWhatsApp) await sendWhatsApp(`+${person.whatsapp}`, text);
+  // Proposed changes can be answered with a tap: Apply all, Choose (they say which), or Skip.
+  if (onWhatsApp && proposing) await sendWhatsAppButtons(`+${person.whatsapp}`, text, ["Apply all", "Choose", "Skip"], "Apply these changes?");
+  else if (onWhatsApp) await sendWhatsApp(`+${person.whatsapp}`, text);
   else if (template) {
     await sendWhatsAppTemplate(`+${person.whatsapp}`, template, { "1": person.name.split(" ")[0] || person.name, "2": templateValue(text) });
   } else {

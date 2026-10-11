@@ -1,5 +1,6 @@
 import { knownSkills, SKILLS, toolsOf, type Skill } from "@/lib/agents/skills";
 import { companySkillsFor } from "@/lib/company-skills";
+import { saveRunLog, type RunStep } from "@/lib/learning/run-log";
 import { agentModel, builtinSkills, COORDINATOR_AGENT, getAgent } from "@/lib/agents/store";
 import { driveStats, listDrive } from "@/lib/drive";
 import { allowedFor, listIntegrations } from "@/lib/integrations";
@@ -414,6 +415,22 @@ export async function recordFailure(context: RunContext, message: string): Promi
 export async function keepLease(context: RunContext, activity?: string): Promise<boolean> {
   "use step";
   return renewRun(context.taskId, context.agentId, activity);
+}
+
+/** Records what a run did, for the review when its round closes (lib/learning). */
+export async function logRun(
+  context: RunContext,
+  run: { outcome: string; skillsPinned: string[]; skillsLoaded: string[]; steps: RunStep[]; modelSteps: number; startedAt: string },
+): Promise<void> {
+  "use step";
+  await saveRunLog(context.organizationId, {
+    ...run,
+    taskId: context.taskId,
+    agentId: context.agentId,
+    agentName: context.agentName,
+    personId: context.personId ?? null,
+    startedAt: new Date(run.startedAt),
+  });
 }
 
 /** How a run ended, as the reaction on the messages it answered. */

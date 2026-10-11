@@ -37,7 +37,6 @@ const SCREEN_ONLY: Record<string, string> = {
   saveAiKeyAction: "credentials never pass through chat",
   removeAiKeyAction: "AI keys are only managed on the screen",
   sendQueuedNowAction: "sends a message the person queued on the screen",
-  approveOrDoneAction: "the E shortcut: task.pick_option or task.set_status done",
   restoreAction: "the Z shortcut: undo on the screen",
   emailStep: "signing in",
   codeStep: "signing in",

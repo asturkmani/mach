@@ -82,6 +82,40 @@ export async function sendWhatsApp(to: string, text: string): Promise<void> {
   }
 }
 
+/** WhatsApp's limit on a message with reply buttons. */
+const QUICK_REPLY_MAX = 1024;
+
+/**
+ * Sends a message with up to three reply buttons (Twilio's twilio/quick-reply
+ * content, which needs no approval inside the 24-hour window). A tap comes
+ * back like a typed answer: the button's title. A message too long for
+ * buttons goes as text first, with the buttons under a short question.
+ */
+export async function sendWhatsAppButtons(to: string, text: string, buttons: string[], question = "What would you like to do?"): Promise<void> {
+  const body = whatsappText(text);
+  const withButtons = body.length <= QUICK_REPLY_MAX ? body : question;
+  if (withButtons !== body) await sendWhatsApp(to, text);
+  const sid = process.env.TWILIO_ACCOUNT_SID!;
+  const auth = Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
+  const content = await fetch("https://content.twilio.com/v1/Content", {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      friendly_name: `mach1-buttons-${Date.now()}`,
+      language: "en",
+      types: { "twilio/quick-reply": { body: withButtons, actions: buttons.slice(0, 3).map((title, i) => ({ title: title.slice(0, 20), id: `b${i + 1}` })) } },
+    }),
+  });
+  if (!content.ok) {
+    // Buttons are a convenience: without them, the words still go out, and a typed answer works the same.
+    console.error(`Twilio wouldn't make reply buttons (${content.status}): ${(await content.text()).slice(0, 300)}`);
+    if (withButtons === body) await sendWhatsApp(to, text);
+    return;
+  }
+  const { sid: contentSid } = (await content.json()) as { sid: string };
+  await sendWhatsAppTemplate(to, contentSid, {});
+}
+
 /** Sends one file on WhatsApp, from a link Twilio fetches (lib/file-links.ts), with an optional caption. */
 export async function sendWhatsAppFile(to: string, mediaUrl: string, caption = ""): Promise<void> {
   const sid = process.env.TWILIO_ACCOUNT_SID!;

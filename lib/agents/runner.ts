@@ -14,6 +14,7 @@ import {
   finishWork,
   handOff,
   keepLease,
+  logRun,
   personCommentCount,
   postUpdate,
   recordFailure,
@@ -42,6 +43,7 @@ import {
 import { exaTools } from "@/lib/research/tools";
 import { findSkillTool, getSkill, SKILL_TOOLS, SKILLS, toolsOf } from "@/lib/agents/skills";
 import { trimToolResults } from "@/lib/agents/trim";
+import { stepOf, type RunStep } from "@/lib/learning/run-log";
 import {
   browserTools,
   githubTools,
@@ -101,6 +103,9 @@ const reportFields = {
 
 type RunState = SandboxSession & {
   outcome?: RunOutcome;
+  /** What it did, for the run log. */
+  steps?: RunStep[];
+  modelSteps?: number;
   loaded?: Set<string>;
   /** The batch a coordinator's children started in this run belong to. */
   batch?: number;
@@ -363,7 +368,7 @@ class Interrupted extends Error {
  * Tools that first say what the agent is doing, so the task shows it live. A
  * person's Send now stops the run before the next tool does anything.
  */
-function narrated(context: RunContext, tools: ToolSet, interrupt: () => void): ToolSet {
+function narrated(context: RunContext, tools: ToolSet, interrupt: () => void, record?: (step: RunStep) => void): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, t]) => {
       const execute = t.execute;
@@ -377,7 +382,15 @@ function narrated(context: RunContext, tools: ToolSet, interrupt: () => void): T
               interrupt();
               return "Not done: a person sent a new message and asked you to stop. Your run ends here and starts again with their message.";
             }
-            return execute(input, options);
+            const detail = activityFor(name, input ?? {});
+            try {
+              const result = await execute(input, options);
+              record?.(stepOf(name, detail, result));
+              return result;
+            } catch (error) {
+              record?.({ tool: name, detail, ok: false });
+              throw error;
+            }
           },
         },
       ];
@@ -410,7 +423,8 @@ export async function runAgentOnTask(
   const begun = await beginRun(organizationId, taskId, agentId);
   if (!begun.ok) return begun.outcome;
   const { context } = begun;
-  const state: RunState = {};
+  const state: RunState = { steps: [], modelSteps: 0 };
+  const startedAt = new Date().toISOString();
   const catalogue = [...SKILLS, ...begun.companySkills];
   // Scripts of the skills pinned or loaded go into the sandbox the next time it's used, not before.
   const scripts = new Map<string, Record<string, string>>();
@@ -485,6 +499,7 @@ export async function runAgentOnTask(
             find_skill: findSkillTool(catalogue),
           },
       interrupt,
+      (step) => state.steps?.push(step),
     );
     // Tools a skill switches on stay off until one of its skills is pinned or loaded.
     const activeTools = () => {
@@ -506,6 +521,7 @@ export async function runAgentOnTask(
           interrupt();
           throw new Interrupted();
         }
+        state.modelSteps = (state.modelSteps ?? 0) + 1;
         const trimmed = trimToolResults(messages);
         return { activeTools: activeTools(), ...(trimmed === messages ? {} : { messages: trimmed }) };
       },
@@ -532,6 +548,18 @@ export async function runAgentOnTask(
       } catch (error) {
         console.error(`Couldn't close the sandbox for task ${context.taskId}`, error);
       }
+    }
+    try {
+      await logRun(context, {
+        outcome: outcome?.type ?? "failed",
+        skillsPinned: begun.skills,
+        skillsLoaded: [...(state.loaded ?? [])].filter((n) => !begun.skills.includes(n)),
+        steps: state.steps ?? [],
+        modelSteps: state.modelSteps ?? 0,
+        startedAt,
+      });
+    } catch (error) {
+      console.error(`Couldn't log the run on task ${context.taskId}`, error);
     }
     await endRun(context, begun.answering, outcome);
   }

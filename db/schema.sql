@@ -644,3 +644,57 @@ select s.id, 1,
   i.guide, 'From its guide.', 'Mach1'
 from skills s join integrations i on i.id = s.integration_id
 where not exists (select 1 from skill_versions v where v.skill_id = s.id);
+
+-- Learning on the job (docs/agent-design.md): every agent run is logged; when a round closes (a person
+-- replies on the result or marks it done, or a repeating run reports), the runs since the last review are
+-- reviewed: code builds a run record, Jev decides whether there's anything to learn, and if so the learner
+-- proposes changes to skills or the profile, which are applied only when the person says yes.
+create table if not exists run_log (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  task_id uuid not null references tasks (id) on delete cascade,
+  agent_id uuid references agents (id) on delete set null,
+  agent_name text not null default '',
+  person_id uuid references people (id) on delete set null, -- who the run worked for
+  outcome text not null default '',
+  skills_pinned text[] not null default '{}',
+  skills_loaded text[] not null default '{}',
+  steps jsonb not null default '[]'::jsonb, -- [{ tool, detail, ok, exit? }]
+  model_steps integer not null default 0,
+  started_at timestamptz not null,
+  ended_at timestamptz not null default now()
+);
+create index if not exists run_log_task on run_log (task_id, ended_at);
+alter table tasks add column if not exists reviewed_at timestamptz;
+
+create table if not exists learning_reviews (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  task_id uuid not null references tasks (id) on delete cascade,
+  record text not null,
+  gate jsonb not null default '{}'::jsonb, -- the gate's probabilities: the learner's labels make them an eval set
+  gate_model text not null default '',
+  learner_ran boolean not null default false,
+  outcome text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists skill_proposals (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  review_id uuid references learning_reviews (id) on delete cascade,
+  task_id uuid references tasks (id) on delete set null, -- the work it was learned from
+  number integer not null, -- its number in the message to the person
+  target text not null check (target in ('skill', 'profile')),
+  skill_name text, -- or the profile's section
+  change jsonb not null, -- the new version: description, body, scripts, kind, extends; or the section's content
+  why text not null, -- one line for the person
+  cites text[] not null default '{}',
+  person_id uuid references people (id) on delete set null, -- who's asked
+  message_task_id uuid references tasks (id) on delete set null, -- the card in their Needs you
+  status text not null default 'pending' check (status in ('pending', 'applied', 'skipped', 'replaced')),
+  decided_by text,
+  decided_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists skill_proposals_person on skill_proposals (organization_id, person_id, status);

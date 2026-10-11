@@ -387,6 +387,8 @@ Code checks every change the learner drafts:
 - **Citations.** Every changed line cites a step or message from the run.
 - **Where the text came from.** Nothing in a workflow skill comes from external text (a page, an email, an API response) unless a person's message on the task backs it.
 
+How the code does it today (`lib/learning/learner.ts`): a skill's scripts come with `test.sh`, run in the job's sandbox, which must exit 0; secrets are caught by the shapes keys and passwords take (private keys, `sk-…`, `AKIA…`, `ghp_…`, `password=…`); each change (not yet each line) must cite ids that exist in the run record; and a change to a workflow skill must cite a person's message (an M id) unless it's a script change with a passing test, which is how "a person's message backs it" is checked until the run record keeps the provenance of each line.
+
 #### Proposing changes
 
 The learner doesn't change anything itself. Once its changes pass the checks, they're summarised and sent to the person they concern, and each one is applied when that person says yes.
@@ -630,7 +632,7 @@ The six scenarios above, plus one for learning. Each is run against a test compa
 
 ## Code
 
-Where it will live:
+Where it lives (or will, for the phases still to come):
 
 | Path | |
 |---|---|
@@ -641,7 +643,8 @@ Where it will live:
 | `skills/<name>/` | Base skills: `SKILL.md` and scripts |
 | `lib/agents/skills.ts`, `lib/company-skills.ts`, `lib/actions/skills.ts` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `skill.save`, restoring versions |
 | `sandbox/` (template), `lib/skills/decisions.ts` | `mach.decide`, the proxy rule that lets it reach Jev, the decision history, retrieval and backtests |
-| `lib/learning/` | The run log, run records, the gate (Jev through AI Gateway), the learner, checks, summaries of proposed changes, applying them on a yes |
+| `lib/learning/` | The run log (`run-log.ts`), run records (`record.ts`), the gate (`gate.ts`), the learner and its checks (`learner.ts`), proposals and applying them on a yes (`proposals.ts`), the review (`review.ts`, run by `workflows/learning-review.ts`) |
+| `lib/ai/decide.ts` | Decisions: Jev through AI Gateway (`experimental_decide`), with the `background` model as fallback |
 | `lib/channels/twilio.ts` | Reply buttons (`twilio/quick-reply`) inside the WhatsApp window |
 | `lib/actions/skills.ts`, `app/(app)/skills/` | Skill actions (`skill.apply_proposal`, `skill.skip_proposal`, `skill.restore`, …) and the Skills page |
 | `lib/integrations.ts` | Integrations: limits by agent removed, guides moved to integration skills |

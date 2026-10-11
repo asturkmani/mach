@@ -15,7 +15,9 @@ import {
   needsAnswer,
   updateTask,
 } from "@/lib/tasks";
+import { reviewRoundStep, reviseProposalsStep } from "@/lib/learning/review-steps";
 import { agentRunWorkflow } from "@/workflows/agent-run";
+import { learningReviewWorkflow, proposalRevisionWorkflow } from "@/workflows/learning-review";
 import { scheduledRunWorkflow } from "@/workflows/scheduled-run";
 
 export { agentToWake } from "@/lib/tasks";
@@ -40,6 +42,31 @@ export async function dispatchRun(organizationId: string, taskId: string, agentI
     return;
   }
   await start(agentRunWorkflow, [organizationId, taskId, agentId]);
+}
+
+let reviews: ((work: Work) => void) | null = null;
+
+/** Tests run reviews (which call models) only when they ask to: with a scheduler set, they're skipped otherwise. */
+export function setReviewScheduler(schedule: ((work: Work) => void) | null): void {
+  reviews = schedule;
+}
+
+/** Reviews a round of work that just closed, in the background (lib/learning/review.ts). */
+export async function dispatchReview(organizationId: string, taskId: string): Promise<void> {
+  if (inline || reviews) {
+    reviews?.(async () => void (await reviewRoundStep(organizationId, taskId)));
+    return;
+  }
+  await start(learningReviewWorkflow, [organizationId, taskId]);
+}
+
+/** Has the learner revise proposed changes from a person's words, in the background. */
+export async function dispatchRevision(organizationId: string, messageTaskId: string, numbers: number[], words: string): Promise<void> {
+  if (inline || reviews) {
+    reviews?.(async () => void (await reviseProposalsStep(organizationId, messageTaskId, numbers, words)));
+    return;
+  }
+  await start(proposalRevisionWorkflow, [organizationId, messageTaskId, numbers, words]);
 }
 
 /** Starts one run of a recurring job, or a "Run again" of its script. */

@@ -6,7 +6,8 @@ import { defineAction } from "@/lib/actions/define";
 import { SKILLS } from "@/lib/agents/skills";
 import { appUrl } from "@/lib/app-url";
 import { listCompanySkills, listSkillVersions } from "@/lib/company-skills";
-import { archiveSkillAs, restoreSkillAs, saveSkillAs, shareSkillAs, skillFor } from "@/lib/operations";
+import { describeProposals, pendingProposals } from "@/lib/learning/proposals";
+import { archiveSkillAs, decideProposalsAs, restoreSkillAs, reviseProposalsAs, saveSkillAs, shareSkillAs, skillFor } from "@/lib/operations";
 
 // What the Skills screen does: the company's own skills (how it does its work
 // and how its systems work), next to Mach1's. Agents load them for the work;
@@ -14,6 +15,10 @@ import { archiveSkillAs, restoreSkillAs, saveSkillAs, shareSkillAs, skillFor } f
 // is in lib/operations.ts.
 
 const skillRef = z.string().min(1).describe("The skill's name, e.g. masttro-weekly-tagging.");
+const proposalRef = {
+  from: z.union([z.number().int().positive(), z.string().min(1)]).optional().describe("The number of the message with the changes (its card); the latest waiting on you if left out."),
+  numbers: z.array(z.number().int().positive()).optional().describe("Which of its numbered changes; all of them if left out."),
+};
 
 export const skillActions = [
   defineAction({
@@ -83,6 +88,35 @@ export const skillActions = [
       await shareSkillAs(actor, name, shareWithCompany);
       return shareWithCompany ? `${name} is the company's now.` : `${name} is yours only now.`;
     },
+  }),
+  defineAction({
+    name: "skill.proposals",
+    description: "List the changes to skills and the profile that Mach1 proposed after finished work, waiting on your yes.",
+    input: z.object({}),
+    run: async ({ actor }) => {
+      const pending = await pendingProposals(actor.organizationId, actor.personId);
+      if (!pending.length) return "No changes are waiting on you.";
+      const byMessage = Map.groupBy(pending, (p) => p.messageNumber);
+      return [...byMessage].map(([number, proposals]) => `#${number}:\n${describeProposals(proposals)}`).join("\n\n");
+    },
+  }),
+  defineAction({
+    name: "skill.apply_proposal",
+    description: "Apply changes Mach1 proposed (all of a message's, or the numbered ones): each becomes a new version of its skill or the profile.",
+    input: z.object(proposalRef),
+    run: ({ actor }, input) => decideProposalsAs(actor, "applied", input),
+  }),
+  defineAction({
+    name: "skill.skip_proposal",
+    description: "Skip changes Mach1 proposed (all of a message's, or the numbered ones). They aren't proposed again.",
+    input: z.object(proposalRef),
+    run: ({ actor }, input) => decideProposalsAs(actor, "skipped", input),
+  }),
+  defineAction({
+    name: "skill.revise_proposal",
+    description: "Have Mach1 revise proposed changes from what you said (\"yes, but only the trust, not the LLC\"), and send them again.",
+    input: z.object({ ...proposalRef, words: z.string().min(1).describe("Their words about the changes.") }),
+    run: ({ actor }, input) => reviseProposalsAs(actor, input),
   }),
   defineAction({
     name: "skill.archive",

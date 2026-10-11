@@ -68,6 +68,16 @@ app's chat with a push notification instead. To set one up:
 `{{1}}` is their first name and `{{2}}` the assistant's message on one line (at most 900 characters), always ending in a full stop or question mark. When they
 reply, the 24 hours start again and the conversation carries on as normal.
 
+### Reply buttons
+
+When the assistant tells someone about changes Mach1 proposes (docs/agent-design.md, Learning on the job)
+inside the 24-hour window, its message carries three reply buttons: Apply all, Choose and Skip. They're a
+Twilio `twilio/quick-reply` content made for the message through the Content API, which needs no approval
+inside a session (`sendWhatsAppButtons` in `lib/channels/twilio.ts`). A tap comes back like a typed answer
+(the button's title), so the Chief of Staff handles it like any reply. If Twilio won't make the buttons, the
+message goes out as plain text and a typed answer works the same. Outside the window there are no buttons:
+the template above carries the message, and the proposals wait as a card in Needs you.
+
 ### Email (AgentMail)
 
 1. **Get an API key:** add AgentMail from the Vercel Marketplace and connect it to the project, which sets `AGENTMAIL_API_KEY`. An account made on agentmail.to works too, with the key set by hand.

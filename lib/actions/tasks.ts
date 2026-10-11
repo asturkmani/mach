@@ -5,7 +5,7 @@ import { z } from "zod";
 import { agentFor, defineAction, fileFor, memberFor, taskFor, taskRef, type ActionScope } from "@/lib/actions/define";
 import { appUrl } from "@/lib/app-url";
 import { detachFromTask } from "@/lib/files";
-import { attachFileAs, OperationError } from "@/lib/operations";
+import { attachFileAs, decideProposalsAs, OperationError } from "@/lib/operations";
 import { addMessage, PRIORITIES, removeMember, setTaskVisibility, TASK_STATUSES, updateTask } from "@/lib/tasks";
 import {
   addToTask,
@@ -122,6 +122,10 @@ export const taskActions = [
       const index =
         typeof option === "number" ? option - 1 : found.options.findIndex((o) => o.label.trim().toLowerCase() === option.trim().toLowerCase());
       if (index < 0 || index >= found.options.length) throw new OperationError(`#${found.number} doesn't offer that option.`);
+      // A message of proposed changes: Apply all or Skip all, with the same rules as in chat.
+      if ((found.payload as { proposals?: boolean } | null)?.proposals) {
+        return decideProposalsAs(scope.actor, /^apply/i.test(found.options[index].label) ? "applied" : "skipped", { from: found.number });
+      }
       await pickOption(scope.actor.organizationId, found.id, by(scope), index);
       return `Picked "${found.options[index].label}" on #${found.number}.`;
     },

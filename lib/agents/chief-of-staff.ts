@@ -41,6 +41,7 @@ import {
   type LoginConfig,
 } from "@/lib/integrations";
 import { saveIntegrationSkill } from "@/lib/company-skills";
+import { describeProposals, type Proposal } from "@/lib/learning/proposals";
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
 import { workOverview, type ScheduledJob } from "@/lib/work-overview";
 import type { Page } from "@/lib/pages";
@@ -84,6 +85,8 @@ type Context = {
   pages?: Page[];
   /** The company's own skills the person you're talking to may use (theirs and the company's). */
   skills?: Skill[];
+  /** Changes Mach1 proposed after reviewing finished work, waiting on the person you're talking to. */
+  proposals?: (Pick<Proposal, "number" | "change" | "why"> & { messageNumber: number | null })[];
   /** What they're looking at in the app as they write, e.g. 'the "Net worth" page (…)'. */
   viewing?: string | null;
   /** Set when this turn's message came by WhatsApp or email rather than the app. */
@@ -249,6 +252,17 @@ function githubLine({ github, person }: Context): string {
   return `${person.name} ${github ? "needs to reconnect their GitHub" : "hasn't connected GitHub yet"}: before any GitHub work, send them ${appUrl("/connect/github")} to connect theirs (a minute; they choose which repositories Mach1 may use), then carry on once they say it's done.`;
 }
 
+/** Changes waiting on the person's yes, and how their answer in words becomes an action. */
+function proposalLines({ person, proposals = [] }: Context): string {
+  if (!person || !proposals.length) return "";
+  const byMessage = Map.groupBy(proposals, (p) => p.messageNumber);
+  return `
+Changes waiting on ${person.name}'s yes. After reviewing finished work, Mach1 proposed these; each message is a card in their Needs you:
+${[...byMessage].map(([number, list]) => `#${number}:\n${describeProposals(list)}`).join("\n")}
+When they answer about these in their own words ("yes", "just 2", "skip 1, apply the rest", "no"), apply or skip them with do_action skill.apply_proposal or skill.skip_proposal (from: the card's number; numbers: which). If an answer could mean two things, ask. "Yes, but…" with a change goes back to be revised: skill.revise_proposal with their words. Never apply anything they didn't say yes to.
+`;
+}
+
 /** What you know about the person you're talking to, and your conversation with them so far. */
 function hoursLine({ person, hours }: Context): string {
   if (!person || !hours) return "";
@@ -268,7 +282,7 @@ Keep these notes current (do_action me.set_notes, which replaces them, so keep w
 
 ${hoursLine(context)}
 You wake up by yourself to tell them when work of theirs is done or needs them, and you can set yourself a check-in with check_back_later ("I'll check on the import at 4 and tell you"): use it whenever you promise to come back to something or are waiting on work they care about, then keep the promise. You never message them in their quiet hours, and anything that can wait goes in their working hours.
-${earlier?.trim() ? `\nEarlier in your conversation with ${person.name} (a summary; the latest messages follow in full):\n${earlier.trim()}\n` : ""}`;
+${proposalLines(context)}${earlier?.trim() ? `\nEarlier in your conversation with ${person.name} (a summary; the latest messages follow in full):\n${earlier.trim()}\n` : ""}`;
 }
 
 export function chiefOfStaffInstructions(context: Context): string {

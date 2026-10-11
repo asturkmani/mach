@@ -1,4 +1,5 @@
-import { endRun } from "@/lib/agents/run-steps";
+import { reviewRoundClosedStep } from "@/lib/agents/follower-steps";
+import { endRun, logRun } from "@/lib/agents/run-steps";
 import { runAgentChain, type RunOptions } from "@/lib/agents/runner";
 import { beginScheduledRun, replayToAgent, reportReplay, type RunTrigger } from "@/lib/agents/schedule-steps";
 import { closeSandbox, replayScript, type ReplayResult } from "@/lib/agents/sandbox-steps";
@@ -21,9 +22,14 @@ export async function runScheduled(
 ): Promise<void> {
   const plan = await beginScheduledRun(organizationId, taskId, trigger);
   if (plan.type === "skip") return;
-  if (plan.type === "agent") return runAgentChain(organizationId, taskId, plan.agentId, options);
+  if (plan.type === "agent") {
+    await runAgentChain(organizationId, taskId, plan.agentId, options);
+    await reviewRoundClosedStep(organizationId, taskId);
+    return;
+  }
 
   const { context, label } = plan;
+  const startedAt = new Date().toISOString();
   let result: ReplayResult;
   try {
     result = await replayScript(context, label);
@@ -38,8 +44,18 @@ export async function runScheduled(
     }
     await endRun(context);
   }
+  await logRun(context, {
+    outcome: result.ok ? "finished" : "failed",
+    skillsPinned: [],
+    skillsLoaded: [],
+    steps: [{ tool: "run.sh", detail: `Replaying run.sh (${label})`, ok: result.ok }],
+    modelSteps: 0,
+    startedAt,
+  }).catch((error) => console.error(`Couldn't log the replay of task ${taskId}`, error));
   if (!result.ok) {
     await replayToAgent(context, result, label);
     await runAgentChain(organizationId, taskId, context.agentId, options);
   }
+  // The repeating run reported: its round closes.
+  await reviewRoundClosedStep(organizationId, taskId);
 }

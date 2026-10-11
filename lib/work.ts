@@ -1,7 +1,7 @@
 import "server-only";
 
 import { loginCodeFrom, sealLoginCode } from "@/lib/agents/browser-steps";
-import { agentToWake, dispatchRun, dispatchScheduled, startFollowers, startIfReady, wakeJob } from "@/lib/agents/dispatch";
+import { agentToWake, dispatchReview, dispatchRun, dispatchScheduled, startFollowers, startIfReady, wakeJob } from "@/lib/agents/dispatch";
 import { findAgentByName, listAgents, updateAgent, workerAgent, type Agent } from "@/lib/agents/store";
 import { attachToTask, listTaskFiles, MAX_FILE_BYTES, saveVersion } from "@/lib/files";
 import { rememberTimezone } from "@/lib/orgs";
@@ -211,8 +211,13 @@ export async function replyToTask(
     await dispatchRun(organizationId, task.id, agentId);
   }
   await answeredChild(organizationId, current, by);
+  // A person's reply on a result closes its round: the work is reviewed for anything worth keeping.
+  if (task.status === "review" && by.personId && closesRounds(task)) await dispatchReview(organizationId, task.id);
   return (await getTask(organizationId, task.id))!;
 }
+
+/** Work whose rounds are reviewed when they close: a task or job agents worked on, not a job's child (its job is). */
+const closesRounds = (task: Task) => task.kind === "task" && !task.parentTaskId && agentsOn(task).length > 0;
 
 /**
  * A person writing on their own child of a job (a question or a list from its
@@ -290,6 +295,8 @@ export async function setStatus(
     if (status === "review" || status === "done") await startFollowers(organizationId, task.id);
     // A job's child that's in (or cancelled) may be the last its coordinator waits for.
     await wakeJob(organizationId, task.id);
+    // Done closes the round: the work is reviewed for anything worth keeping.
+    if (status === "done" && closesRounds(task)) await dispatchReview(organizationId, task.id);
   }
   return (await getTask(organizationId, task.id))!;
 }

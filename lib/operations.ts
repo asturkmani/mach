@@ -11,6 +11,15 @@ import {
   type SkillDraft,
 } from "@/lib/company-skills";
 import { getDb } from "@/lib/db";
+import { dispatchRevision } from "@/lib/agents/dispatch";
+import {
+  applyChange,
+  closeIfDecided,
+  decide as decideProposal,
+  pendingProposals,
+  ProposalError,
+  proposalsOn,
+} from "@/lib/learning/proposals";
 import { workos } from "@/lib/workos";
 
 
@@ -37,7 +46,7 @@ import {
 import { findSource, removeSource, saveSource, updateSource } from "@/lib/research/store";
 import { SourceError, sourceLabel, type ResearchSource, type SourceKind } from "@/lib/research/sources";
 import { personalSandboxName, sandboxes } from "@/lib/sandbox";
-import { addMessage, canSeeTask } from "@/lib/tasks";
+import { addMessage, canSeeTask, getTask, getTaskByNumber } from "@/lib/tasks";
 import { rerunScript, WorkError } from "@/lib/work";
 
 // What people can do to the company's things, with who may do it, in one
@@ -431,4 +440,79 @@ export async function archiveSkillAs(actor: Actor, name: string): Promise<void> 
   const skill = await skillFor(actor, name);
   mayChange(actor, skill);
   await archiveSkill(skill.id);
+}
+
+// ---------------------------------------------------------------------------
+// Proposed changes from a review: the person they were sent to says yes or no. A change to a skill is
+// applied by whoever may change it (its owner, or an admin for the company's own); what was learned
+// about one of the company's systems, by the person the work was for.
+
+/** The proposals on one message (by its card's number), or the latest message waiting on this person. */
+async function proposalMessage(actor: Actor, from?: number | string) {
+  const pending = await pendingProposals(actor.organizationId, actor.personId);
+  if (from !== undefined) {
+    const card = await getTaskByNumber(actor.organizationId, Number(String(from).replace(/^#/, "")), { viewer: actor.personId });
+    if (!card || !(card.payload as { proposals?: boolean } | null)?.proposals) throw new OperationError(`#${from} isn't a message of proposed changes.`);
+    return { card, proposals: await proposalsOn(actor.organizationId, card.id) };
+  }
+  const latest = pending.at(-1);
+  if (!latest?.messageTaskId) throw new OperationError("No changes are waiting on you.");
+  const card = (await getTask(actor.organizationId, latest.messageTaskId))!;
+  return { card, proposals: await proposalsOn(actor.organizationId, card.id) };
+}
+
+export async function decideProposalsAs(
+  actor: Actor,
+  decision: "applied" | "skipped",
+  input: { from?: number | string; numbers?: number[] },
+): Promise<string> {
+  const { card, proposals } = await proposalMessage(actor, input.from);
+  const chosen = proposals.filter((p) => p.status === "pending" && (!input.numbers?.length || input.numbers.includes(p.number)));
+  if (!chosen.length) throw new OperationError(input.numbers?.length ? `#${card.number} has no change ${input.numbers.join(" or ")} waiting.` : `Nothing on #${card.number} is waiting.`);
+  const source = chosen[0].taskId ? await getTask(actor.organizationId, chosen[0].taskId) : null;
+  const done: string[] = [];
+  const refused: string[] = [];
+  for (const proposal of chosen) {
+    if (proposal.personId !== actor.personId && !actor.isAdmin) {
+      refused.push(`${proposal.number} is for someone else`);
+      continue;
+    }
+    if (decision === "applied") {
+      const change = proposal.change;
+      if (change.target === "skill") {
+        const existing = await getCompanySkill(actor.organizationId, change.name);
+        const learnedAboutASystem = existing?.kind === "integration" && existing.ownerPersonId === null && proposal.personId === actor.personId;
+        if (existing && !learnedAboutASystem) {
+          try {
+            mayChange(actor, existing);
+          } catch (error) {
+            refused.push(`${proposal.number}: ${(error as Error).message.replace(/\.$/, "")}`);
+            continue;
+          }
+        }
+      }
+      try {
+        done.push(`${proposal.number} (${await applyChange(actor.organizationId, proposal, { name: actor.name, personId: actor.personId }, source)})`);
+      } catch (error) {
+        if (error instanceof ProposalError || error instanceof SkillError) {
+          refused.push(`${proposal.number}: ${error.message.replace(/\.$/, "")}`);
+          continue;
+        }
+        throw error;
+      }
+    } else done.push(String(proposal.number));
+    await decideProposal(proposal.id, decision, actor.name);
+  }
+  await closeIfDecided(actor.organizationId, card.id);
+  return [done.length ? `${decision === "applied" ? "Applied" : "Skipped"} ${done.join(", ")}.` : "", refused.length ? `Not done: ${refused.join("; ")}.` : ""]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** "Yes, but only the trust": the learner revises the changes from their words and sends them again. */
+export async function reviseProposalsAs(actor: Actor, input: { from?: number | string; numbers?: number[]; words: string }): Promise<string> {
+  const { card, proposals } = await proposalMessage(actor, input.from);
+  if (!proposals.some((p) => p.status === "pending" && (p.personId === actor.personId || actor.isAdmin))) throw new OperationError(`Nothing on #${card.number} is waiting on you.`);
+  await dispatchRevision(actor.organizationId, card.id, input.numbers ?? [], input.words);
+  return `I'll revise them as you said and send them again (#${card.number}).`;
 }

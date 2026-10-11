@@ -4,7 +4,7 @@
 // stands in for a model until a call is made (CompanyModel), so adding or
 // removing a key changes the models straight away.
 
-export const ROLES = ["chat", "worker", "coder", "browser", "planner", "background"] as const;
+export const ROLES = ["chat", "worker", "coder", "browser", "planner", "background", "learner"] as const;
 export type Role = (typeof ROLES)[number];
 export type Lineup = "anthropic" | "openai";
 
@@ -20,10 +20,12 @@ const ASTRA = "openai/gpt-6-astra";
  * chat: the Chief of Staff, fast above all (it hands heavy work on).
  * worker, coder, browser: agents doing the work. planner: thinking a big
  * job through first. background: summaries and suggestions nobody waits on.
+ * learner: reviewing work to propose changes to skills; learned skills
+ * compound, so it runs on the planner model.
  */
 export const LINEUPS: Record<Lineup, Record<Role, string>> = {
-  anthropic: { chat: HAIKU, worker: SONNET, coder: SONNET, browser: SONNET, planner: OPUS, background: HAIKU },
-  openai: { chat: LUNA_FAST, worker: SOL, coder: SOL, browser: ASTRA, planner: ASTRA, background: LUNA },
+  anthropic: { chat: HAIKU, worker: SONNET, coder: SONNET, browser: SONNET, planner: OPUS, background: HAIKU, learner: OPUS },
+  openai: { chat: LUNA_FAST, worker: SOL, coder: SOL, browser: ASTRA, planner: ASTRA, background: LUNA, learner: ASTRA },
 };
 
 const PREFIX = "mach1/";
