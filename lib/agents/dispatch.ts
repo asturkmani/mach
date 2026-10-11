@@ -4,7 +4,17 @@ import { start } from "workflow/api";
 
 import { runAgentChain, type RunOptions } from "@/lib/agents/runner";
 import { runScheduled, type RunTrigger } from "@/lib/agents/scheduled";
-import { addMessage, agentsOn, followersReady, getTask, updateTask } from "@/lib/tasks";
+import {
+  addMessage,
+  agentsOn,
+  claimJobWake,
+  followersReady,
+  getTask,
+  inFlight,
+  listChildren,
+  needsAnswer,
+  updateTask,
+} from "@/lib/tasks";
 import { agentRunWorkflow } from "@/workflows/agent-run";
 import { scheduledRunWorkflow } from "@/workflows/scheduled-run";
 
@@ -59,8 +69,36 @@ export async function startIfReady(organizationId: string, taskId: string): Prom
 export async function startFollowers(organizationId: string, taskId: string): Promise<void> {
   const delivered = await getTask(organizationId, taskId);
   for (const id of await followersReady(organizationId, taskId)) {
-    await updateTask(organizationId, id, { status: "ready" });
+    const follower = await updateTask(organizationId, id, { status: "ready" });
     await addMessage(id, { author: "Mach1", kind: "event", body: `Starting: #${delivered?.number} is delivered.` });
-    await startIfReady(organizationId, id);
+    // A job's child for a person goes to them now; their assistant or a notification tells them.
+    if (follower?.assigneeKind === "person") await updateTask(organizationId, id, { status: "waiting" });
+    else await startIfReady(organizationId, id);
   }
+}
+
+/**
+ * A job's coordinator wakes when nothing it started is still in flight (the
+ * batch is in), or straight away when a child done by the Worker asks
+ * something or fails. Only while it's waiting on its children: a job that
+ * asked the person, or reported, waits for them instead.
+ */
+export async function wakeJob(organizationId: string, taskId: string): Promise<void> {
+  const task = await getTask(organizationId, taskId);
+  if (!task) return;
+  const jobId = task.parentTaskId ?? task.id;
+  const children = await listChildren(organizationId, jobId);
+  if (children.length === 0) return;
+  const asking = children.filter(needsAnswer);
+  if (asking.length === 0 && children.some(inFlight)) return;
+  const job = task.parentTaskId ? await getTask(organizationId, jobId) : task;
+  const coordinator = job && agentsOn(job).find((a) => a.status === "active");
+  if (!job || !coordinator || !(await claimJobWake(organizationId, job.id))) return;
+  const list = (tasks: { number: number }[]) => tasks.map((t) => `#${t.number}`).join(", ");
+  await addMessage(job.id, {
+    author: "Mach1",
+    kind: "event",
+    body: asking.length ? `${list(asking)} needs the coordinator.` : `Everything started is in: ${list(children.filter((c) => c.status !== "cancelled"))}.`,
+  });
+  await dispatchRun(organizationId, job.id, coordinator.id);
 }

@@ -583,3 +583,14 @@ alter table tasks add column if not exists model text;
 
 -- Every agent in the company may use every integration now; only the limit to chosen people's work stays.
 alter table integrations drop column if exists agent_ids;
+
+-- Jobs (docs/agent-design.md): a task with child tasks, run by the coordinator. A child has one assignee
+-- (the Worker, a person, or a script) and belongs to a batch: the children started in one coordinator run.
+-- The coordinator wakes when nothing it started is still in flight, or a child needs an answer.
+alter table tasks add column if not exists parent_task_id uuid references tasks (id) on delete cascade;
+alter table tasks add column if not exists assignee_kind text check (assignee_kind in ('worker', 'person', 'script'));
+alter table tasks add column if not exists batch integer;
+create index if not exists tasks_parent on tasks (parent_task_id) where parent_task_id is not null;
+
+-- One of each of Mach1's own agents per company (the Worker, the Coordinator), even when two runs need it at once.
+create unique index if not exists agents_org_builtin on agents (organization_id, builtin) where builtin is not null and status <> 'archived';

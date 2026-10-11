@@ -18,7 +18,8 @@ describe("base skills", () => {
   });
 
   it("say which tools they switch on and which model their work runs on", () => {
-    expect(toolsOf(["research"])).toEqual(expect.arrayContaining(["exa_search", "investigate"]));
+    expect(toolsOf(["research"])).toEqual(["exa_search"]);
+    expect(modelOf(["coordinating"])).toBe("planner");
     expect(SKILL_TOOLS.has("exa_search")).toBe(true);
     expect(modelOf(["presentations", "coding-in-github"])).toBe("coder");
     expect(modelOf(["presentations"])).toBeUndefined();

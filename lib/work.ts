@@ -1,7 +1,7 @@
 import "server-only";
 
 import { loginCodeFrom, sealLoginCode } from "@/lib/agents/browser-steps";
-import { agentToWake, dispatchRun, dispatchScheduled, startFollowers, startIfReady } from "@/lib/agents/dispatch";
+import { agentToWake, dispatchRun, dispatchScheduled, startFollowers, startIfReady, wakeJob } from "@/lib/agents/dispatch";
 import { knownSkills } from "@/lib/agents/skills";
 import { findAgentByName, listAgents, updateAgent, workerAgent, type Agent } from "@/lib/agents/store";
 import { attachToTask, listTaskFiles, MAX_FILE_BYTES, saveVersion } from "@/lib/files";
@@ -210,7 +210,18 @@ export async function replyToTask(
     // If no run takes it after all (the one working just ended), this one does.
     await dispatchRun(organizationId, task.id, agentId);
   }
+  await answeredChild(organizationId, current, by);
   return (await getTask(organizationId, task.id))!;
+}
+
+/**
+ * A person writing on their own child of a job (a question or a list from its
+ * coordinator) has answered it: it's in, and the coordinator picks it up.
+ */
+async function answeredChild(organizationId: string, task: Task, by: Actor): Promise<void> {
+  if (task.assigneeKind !== "person" || !by.personId || task.status !== "waiting") return;
+  if (!task.members.some((m) => m.type === "person" && m.id === by.personId)) return;
+  await setStatus(organizationId, task.id, "review", by, "Answered.");
 }
 
 /**
@@ -242,6 +253,7 @@ export async function pickOption(organizationId: string, taskId: string, by: Act
   if (agentsOn(task).length === 0) {
     await addMessage(task.id, { author: by.name, personId: by.personId, kind: "comment", body: option.label });
     await updateTask(organizationId, task.id, { options: [] });
+    await answeredChild(organizationId, task, by);
     return (await getTask(organizationId, task.id))!;
   }
   return replyToTask(organizationId, task.id, by, option.label);
@@ -276,6 +288,8 @@ export async function setStatus(
     });
     if (status === "ready") await startIfReady(organizationId, task.id);
     if (status === "review" || status === "done") await startFollowers(organizationId, task.id);
+    // A job's child that's in (or cancelled) may be the last its coordinator waits for.
+    await wakeJob(organizationId, task.id);
   }
   return (await getTask(organizationId, task.id))!;
 }

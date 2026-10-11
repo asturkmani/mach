@@ -1,5 +1,5 @@
 import { knownSkills, toolsOf } from "@/lib/agents/skills";
-import { agentModel, builtinSkills, getAgent } from "@/lib/agents/store";
+import { agentModel, builtinSkills, COORDINATOR_AGENT, getAgent } from "@/lib/agents/store";
 import { driveStats, listDrive } from "@/lib/drive";
 import { allowedFor, listIntegrations } from "@/lib/integrations";
 import { contentTypeFor, isText, listTaskFiles, readVersion, saveVersion } from "@/lib/files";
@@ -8,12 +8,14 @@ import {
   firstSentence,
   lastLines,
   MAX_AGENT_TURNS,
+  MAX_COORDINATOR_TURNS,
   normalizeOptions,
   personAbout,
   taskBrief,
   timeIn,
   type BriefDrive,
   type BriefFile,
+  type JobBrief,
   type RunContext,
   type RunOutcome,
 } from "@/lib/agents/prompts";
@@ -35,6 +37,7 @@ import {
   QUEUED,
   countPersonComments,
   getTask,
+  listChildren,
   listMessages,
   reactToMessages,
   releaseRun,
@@ -70,10 +73,14 @@ export type BegunRun =
       answering: string[];
       /** The skills pinned to the task (or implied by an older built-in agent), already in its instructions. */
       skills: string[];
-      /** The tools those skills switch on (e.g. exa_search, investigate). */
+      /** The tools those skills switch on (e.g. exa_search). */
       skillTools: string[];
       /** The research sources saved as high signal for whoever it works for, and the company's, for its prompts. */
       highSignal: string;
+      /** It's a job's coordinator: it gets the job's tools instead of the work's. */
+      coordinating: boolean;
+      /** It may turn its task into a job (not a job's child, not the coordinator). */
+      canEscalate: boolean;
     };
 
 export type BriefImage = { name: string; mediaType: string; data: string };
@@ -96,7 +103,8 @@ export async function beginRun(
   if (agent.status !== "active") return skip(`${agent.name} is ${agent.status}.`);
   if (task.status === "done" || task.status === "cancelled") return skip("The task is closed.");
 
-  if (task.agentTurns >= MAX_AGENT_TURNS) {
+  const coordinating = agent.builtin === COORDINATOR_AGENT;
+  if (task.agentTurns >= (coordinating ? MAX_COORDINATOR_TURNS : MAX_AGENT_TURNS)) {
     await updateTask(organizationId, task.id, {
       status: "waiting",
       summary: `Agents have taken ${task.agentTurns} turns in a row without a person. Check the thread and say how to go on.`,
@@ -107,17 +115,20 @@ export async function beginRun(
 
   const context: RunContext = { organizationId, taskId: task.id, agentId: agent.id, agentName: agent.name };
   const skills = knownSkills([...task.skills, ...builtinSkills(agent)]);
-  const model = task.model || agentModel(agent, organization.models, skills);
+  // A model set on the task was chosen for its work, not for a coordinator planning it.
+  const model = (agent.builtin !== COORDINATOR_AGENT && task.model) || agentModel(agent, organization.models, skills);
   if (!(await claimRun(organizationId, task.id, agent.id))) return { ok: false, outcome: { type: "busy" } };
 
-  const [profile, messages, files, schedule, drive, integrations] = await Promise.all([
+  const [profile, messages, files, schedule, drive, integrations, job] = await Promise.all([
     loadProfile(organizationId),
     listMessages(task.id),
     briefFiles(organizationId, task.id),
     getSchedule(task.id),
     briefDrive(organizationId),
     listIntegrations(organizationId),
+    jobBrief(organizationId, task, coordinating),
   ]);
+  const canEscalate = !coordinating && !task.parentTaskId && task.kind === "task";
   const others = agentsOn(task).filter((m) => m.id !== agent.id);
   const images = await newImages(organizationId, messages, agent.id);
   // The people's messages since this agent last wrote, and any still showing its 👀 or ⏳ (one
@@ -159,9 +170,13 @@ export async function beginRun(
       agent,
       profile,
       skills,
-      brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations: usable, workingFor, highSignal }),
+      coordinating,
+      canEscalate,
+      brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations: usable, workingFor, highSignal, job }),
     }),
-    prompt: `Work on task #${task.number} now. End with finish, ask${others.length ? " or hand_off" : ""}.`,
+    prompt: coordinating
+      ? `Run job #${task.number} now. End with wait_for_children, ask or finish.`
+      : `Work on task #${task.number} now. End with finish, ask${others.length ? ", hand_off" : ""}${canEscalate ? " or escalate" : ""}.`,
     otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
     sources: usable.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
     logins: usable.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
@@ -170,6 +185,30 @@ export async function beginRun(
     skills,
     skillTools: toolsOf(skills),
     highSignal,
+    coordinating,
+    canEscalate,
+  };
+}
+
+/** For a job, its children with their latest word; for a child, the job it's part of. */
+async function jobBrief(organizationId: string, task: Task, coordinating: boolean): Promise<JobBrief | undefined> {
+  if (task.parentTaskId) {
+    const parent = await getTask(organizationId, task.parentTaskId);
+    return parent ? { kind: "child", parent: { number: parent.number, title: parent.title } } : undefined;
+  }
+  const all = await listChildren(organizationId, task.id);
+  if (all.length === 0 && !coordinating) return undefined;
+  // Children done in earlier rounds (a repeating job's past runs) are counted, not listed.
+  const children = all.filter((c) => c.status !== "done");
+  return {
+    kind: "job",
+    done: all.length - children.length,
+    children: await Promise.all(
+      children.map(async (child) => ({
+        task: child,
+        latest: (await listMessages(child.id)).findLast((m) => m.kind === "result" || m.kind === "ask" || (m.kind === "comment" && !!m.personId)),
+      })),
+    ),
   };
 }
 

@@ -42,7 +42,7 @@ company brought an Anthropic key, else OpenAI on Mach1's account:
 | --- | --- | --- |
 | Chief of Staff (`chat`) | Haiku 5.5, no thinking | GPT-6 Luna Fast, low reasoning |
 | Agents, skills that need code (`model: coder`), browser (`worker`, `coder`, `browser`) | Sonnet 5.5, medium thinking | GPT-6.1 Sol, medium (browser: GPT-6 Astra) |
-| Planning big jobs (`planner`) | Opus 5.5, high | GPT-6 Astra, high |
+| Running jobs: the Coordinator (`planner`) | Opus 5.5, high | GPT-6 Astra, high |
 | Summaries, page ideas (`background`) | Haiku 5.5 | GPT-6 Luna |
 
 A role is stored as `mach1/<role>` and resolved in each model call (`CompanyModel`), so adding or removing

@@ -12,6 +12,8 @@ import type { Task, TaskMessage } from "@/lib/tasks";
 
 /** Agent runs allowed in a row before a person has to step in again. */
 export const MAX_AGENT_TURNS = 6;
+/** A job's coordinator wakes for each batch of its children, so it gets more turns before a person must step in. */
+export const MAX_COORDINATOR_TURNS = 30;
 
 /** People read the summary as one line in their inbox. */
 export const SUMMARY_MAX = 140;
@@ -20,6 +22,8 @@ export type RunOutcome =
   | { type: "asked" }
   | { type: "finished" }
   | { type: "handed_off"; agentId: string }
+  /** A job's coordinator ended its run to wait for its children. */
+  | { type: "waiting" }
   /** A person sent a message with Send now: the run stopped so it can start again with it. */
   | { type: "interrupted" }
   | { type: "busy" }
@@ -141,6 +145,7 @@ export function taskBrief({
   integrations,
   workingFor,
   highSignal,
+  job,
 }: {
   task: Task;
   messages: TaskMessage[];
@@ -153,6 +158,8 @@ export function taskBrief({
   workingFor?: WorkingFor | null;
   /** The research sources saved as high signal for them, and the company's (sourcesBrief). */
   highSignal?: string;
+  /** A job's children with their latest word, or the job a child is part of. */
+  job?: JobBrief;
 }): string {
   const members = task.members
     .map((m) =>
@@ -202,7 +209,7 @@ ${thread || "(empty)"}
 ${fileList ? `\nFiles on this task (latest versions):\n${fileList}` : ""}
 ${task.memory ? `\nJob notes (NOTES.md, kept from earlier runs):\n${clip(task.memory, 8000)}` : ""}
 </task>
-
+${jobListing(job)}
 <drive>
 ${driveListing(drive)}
 </drive>
@@ -210,6 +217,27 @@ ${driveListing(drive)}
 <data_sources>
 ${integrationListing(integrations)}
 </data_sources>${loginListing(integrations)}${workingForListing(workingFor)}${highSignal ? `\n\n${highSignal}` : ""}`;
+}
+
+export type JobBrief =
+  | { kind: "job"; done?: number; children: { task: Task; latest?: Pick<TaskMessage, "kind" | "author" | "body"> }[] }
+  | { kind: "child"; parent: Pick<Task, "number" | "title"> };
+
+/** A job's children for its coordinator, or for a child, the job it's part of. */
+function jobListing(job?: JobBrief): string {
+  if (!job) return "";
+  if (job.kind === "child") {
+    return `\n<job number="${job.parent.number}">\nThis task is part of job #${job.parent.number}, ${job.parent.title}, run by the Coordinator. It started this task for the person the job is for. Your finish and ask go to the Coordinator, not to people: report compressed results (the findings, dated, each marked fact, estimate or opinion, with numbered sources) and attach your deliverables. If the work needs a different plan, say so in your report.\n</job>\n`;
+  }
+  const earlier = job.done ? `\n(${job.done} children from earlier rounds are done and not listed.)` : "";
+  if (job.children.length === 0) return `\n<children>\nNo children yet.${earlier}\n</children>\n`;
+  const lines = job.children.map(({ task: c, latest }) => {
+    const who = c.assigneeKind === "person" ? c.members.find((m) => m.type === "person")?.name ?? "a person" : `Worker${c.skills.length ? `: ${c.skills.join(", ")}` : ""}`;
+    const after = c.waitsFor.length ? `, after #${c.waitsFor.join(", #")}` : "";
+    const word = latest ? `\n  Latest ${latest.kind === "ask" ? "question" : latest.kind === "comment" ? "reply" : "result"} from ${latest.author}: ${clip(latest.body, 1500)}` : "";
+    return `- #${c.number} ${c.title} (${who}, batch ${c.batch}${after}) · ${c.status}${c.summary ? ` · ${c.summary}` : ""}${word}`;
+  });
+  return `\n<children>\nThis job's children, oldest first (read_child for a child's full result and files):\n${lines.join("\n")}${earlier}\n</children>\n`;
 }
 
 export type WorkingFor = {
@@ -247,6 +275,8 @@ export function agentInstructions({
   profile,
   brief,
   skills = [],
+  coordinating = false,
+  canEscalate = false,
 }: {
   organization: Organization;
   agent: Agent;
@@ -254,6 +284,10 @@ export function agentInstructions({
   brief: string;
   /** Skills pinned to the task: their full text goes in now, so the agent follows them without loading them. */
   skills?: string[];
+  /** It's a job's coordinator: it plans and starts children rather than doing the work. */
+  coordinating?: boolean;
+  /** It may turn its task into a job (a task of its own, not a job's child). */
+  canEscalate?: boolean;
 }): string {
   const pinned = pinnedSkills(skills);
   const who =
@@ -264,7 +298,53 @@ export function agentInstructions({
   return `${who}
 ${agent.description ? `\nYour job:\n${agent.description}\n` : ""}${agent.instructions ? `\nYour instructions:\n${agent.instructions}\n` : ""}
 You work on tasks in Mach1, where people and agents run the company together. Everyone on a task sees its thread. Your task is below; read all of it, including what other agents have already done, before you act.
+${coordinating ? coordinatorWork() : `${workerWork(organization)}
 
+How to end your run (call exactly one of these):
+- finish: the work is done, or done as far as you can take it. Report the result.
+- ask: you need a decision only a person can make (taste, money, anything outward-facing or hard to undo). Decide everything else yourself and say what you decided. Ask everything you need in one go, and never ask again what the thread already answers.
+- hand_off: another agent on this task should take the next step. Say exactly what they should do.${
+    canEscalate
+      ? "\n- escalate: the work needs a plan or needs to go wide (you found eight issues, not one, or the question splits into six). It becomes a job: the Coordinator takes over, starting from what you found."
+      : ""
+  }`}
+
+How to write it. People see your task as one row among many in their inbox and usually decide from that row:
+- summary: one sentence that says what happened and what you need from them, e.g. "Q4 model is done: revenue up 18% to $11.2B. Share it with Lina?". Not background and not the title again.
+- report or question: lead with the result or the decision needed, in plain sentences. Keep a report on your own work under 250 words; when the task asked for a write-up, the write-up is the deliverable and can be as long as it needs, with headings and tables.
+- options: when anything is left for them to decide, give one to three next moves, each something you would start on straight away, with exactly one recommended. They are the answers to your summary's question. When nothing is left to decide, give none.
+- context and progress: keep them current so anyone can pick the task up from the summary alone.
+
+Skills you can load with use_skill:
+${skillList()}
+${pinned ? `\n<skills>\nThis task pins these skills. They're already loaded: follow them.\n\n${pinned}\n</skills>\n` : ""}
+Today's date: ${today}.${organization.timezone ? ` Company timezone: ${organization.timezone}.` : ""}
+
+<company_profile>
+${profile}
+</company_profile>
+
+${brief}`;
+}
+
+/** How a job's coordinator works: it runs the job rather than doing the work. */
+function coordinatorWork(): string {
+  return `
+How to work:
+- This task is a job. You don't do the work yourself: you plan it, start it as child tasks (start_child), check what comes back (read_child), send weak work back or answer questions (message_child), and report once. Follow the coordinating skill (already loaded).
+- Your children are listed under <children> below, with their latest word. A child can't see this job's thread: its brief carries everything it needs.
+- Use post_update for the plan and for milestones on the job's thread. Save a short table or summary with save_output, and put a child's deliverable on the job with collect_file.
+- When people want the job done regularly, call set_schedule; each run lands on this job, and you plan it again from what the last one left.
+
+How to end your run (call exactly one of these):
+- wait_for_children: you started children, or sent some back, and need what they bring. You wake when they're in, or straight away when one asks something or fails.
+- ask: you need a decision only a person can make. Decide everything else yourself. Ask everything you need in one go.
+- finish: the job is done: report the result once, with what each part found and what's still open. Only when no child is still working.`;
+}
+
+/** How an agent doing the work works: its sandbox, the drive, data sources, websites and recurring jobs. */
+function workerWork(organization: Organization): string {
+  return `
 How to work:
 - Do the work yourself with your tools. Look things up instead of asking. Load a skill when the work matches one.
 - Save short text deliverables (a list, a draft, a small table) with save_output. For anything you compute, use your sandbox (below).
@@ -301,29 +381,7 @@ Recurring jobs:
 - When people want something done regularly ("every weekday at 4pm", "each Monday"), call set_schedule, then do the first run now. Each run lands on this same task and works in this same sandbox with the same files, notes and drive. Use the timezone they mention, else the company's (${organization.timezone ?? "not known yet, so ask"}).
 - For work code can do, use mode script and make run.sh do the whole job end to end: fetch fresh data, compute, and write the deliverables under fixed names in outputs/ (option-flow.png, not option-flow-2026-10-07.png) so each run becomes their next version. Make it print one line starting with "SUMMARY:" that states this run's result in a sentence; it becomes the inbox line. Test it with run_command ("bash run.sh") before you finish. Later runs replay run.sh without you; you're woken only when it fails.
 - Use mode agent for work that needs judgment each time (a weekly news digest).
-- When the newest thread entry is a scheduled run, do that run's work and report that run's result. If you were woken because run.sh failed, fix it, run it, and report the result.
-
-How to end your run (call exactly one of these):
-- finish: the work is done, or done as far as you can take it. Report the result.
-- ask: you need a decision only a person can make (taste, money, anything outward-facing or hard to undo). Decide everything else yourself and say what you decided. Ask everything you need in one go, and never ask again what the thread already answers.
-- hand_off: another agent on this task should take the next step. Say exactly what they should do.
-
-How to write it. People see your task as one row among many in their inbox and usually decide from that row:
-- summary: one sentence that says what happened and what you need from them, e.g. "Q4 model is done: revenue up 18% to $11.2B. Share it with Lina?". Not background and not the title again.
-- report or question: lead with the result or the decision needed, in plain sentences. Keep a report on your own work under 250 words; when the task asked for a write-up, the write-up is the deliverable and can be as long as it needs, with headings and tables.
-- options: when anything is left for them to decide, give one to three next moves, each something you would start on straight away, with exactly one recommended. They are the answers to your summary's question. When nothing is left to decide, give none.
-- context and progress: keep them current so anyone can pick the task up from the summary alone.
-
-Skills you can load with use_skill:
-${skillList()}
-${pinned ? `\n<skills>\nThis task pins these skills. They're already loaded: follow them.\n\n${pinned}\n</skills>\n` : ""}
-Today's date: ${today}.${organization.timezone ? ` Company timezone: ${organization.timezone}.` : ""}
-
-<company_profile>
-${profile}
-</company_profile>
-
-${brief}`;
+- When the newest thread entry is a scheduled run, do that run's work and report that run's result. If you were woken because run.sh failed, fix it, run it, and report the result.`;
 }
 
 export function firstSentence(text: string, max = SUMMARY_MAX): string {

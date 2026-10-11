@@ -75,7 +75,7 @@
     "path": "/tasks/{number}",
     "title": "Task",
     "where": "Home → click a task",
-    "what": "One task: its thread (reply, @-mention people and agents, attach files), status, priority, the people and agents on it, its schedule (Repeats), its files, Private/Company, and Archive, Later and Done."
+    "what": "One task: its thread (reply, @-mention people and agents, attach files), status, priority, the people and agents on it, a job's parts or the job it's part of, its schedule (Repeats), its files, Private/Company, and Archive, Later and Done."
   },
   {
     "path": "/team",

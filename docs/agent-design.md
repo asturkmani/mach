@@ -129,7 +129,7 @@ The agent of a **job**: a task with child tasks. It runs on the job's own task i
    - Starts the children that can start now.
    - Ends.
 2. **Later runs.** Children started together form a batch.
-   - It wakes once when the whole batch has delivered, not once per child, because every turn it takes is on the planner model.
+   - It wakes once when the whole batch has delivered, not once per child, because every turn it takes is on the planner model. In code: it wakes when nothing it started is still in flight, and only one wake-up is taken however many children finish at once.
    - It also wakes as soon as a child asks something or fails, or a person writes on the job.
    - In each run it reviews what came back, answers a child or sends it back with a reply, starts the next children, or asks the person.
 3. **Last run.** Puts the result together (a file, a deck, a table) and reports with `finish`. This is the only report the person gets.
@@ -464,7 +464,7 @@ Who gets what: ● always, ○ when a skill switches it on, – never.
 | `escalate` | – | ● | – |
 | `finish`, `ask`, `post_update` | – | ● | ● |
 | `attach_file`, `save_output`, `set_schedule`, `stop_schedule` | – | ● | ● |
-| `start_child`, `message_child`, `cancel_child` | – | – | ● |
+| `start_child`, `message_child`, `cancel_child`, `read_child`, `collect_file`, `wait_for_children` | – | – | ● |
 | `request_approval` | – | ● | ● |
 
 "Setup only" means the chat agent keeps its own sandbox and browser only for setting up integrations, where it reads docs behind a sign-in. All other code and browser work goes to a worker.
@@ -476,7 +476,9 @@ Who gets what: ● always, ○ when a skill switches it on, – never.
 | `spawn_worker` | title, brief, why, context?, deliverable?, skills, `wait`?, model? (`coder` or `planner`), people?, files?, priority?, repeat?, after?, share? | Starts a task for the Worker with those skills pinned. With `wait`, it runs inline in the person's sandbox for up to 3 minutes; if it needs longer, it becomes the task. Code work checks the person's GitHub first. Until defined agents become skills (phase 4), `agent?` names one to do it instead. Replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist` (shipped in phase 2) |
 | `start_job` | title, request, skills?, people?, files?, repeat?, share? | Starts a job: a task for the coordinator, with the request as its brief. Replaces `plan_job` |
 | `start_child` | assignee (worker, person or script), title, brief, skills?, after?, files? | A child task on the job, created for the person the job is for. Children started in one step are one batch |
-| `message_child`, `cancel_child` | child, text | Reply on a child (an answer, or "redo this"), or stop it |
+| `message_child`, `cancel_child` | child, text | Reply on a child (an answer, or "redo this"), or stop it (and any child waiting for it) |
+| `read_child`, `collect_file` | child, file name | A child's full result and files; put a child's deliverable on the job |
+| `wait_for_children` | note? | Ends the coordinator's run until what it started is in. Refused while a child waits on it, or when nothing is running |
 | `escalate` | why, what it found | Turns the worker's task into a job. A coordinator takes over |
 | `use_skill` | name | Loads a skill: its text, its scripts into the sandbox, the tools it switches on, and any company skill that extends it |
 | `find_skill` | words | Searches the catalogue, once it's too long to list |
@@ -582,11 +584,12 @@ Prompts ask agents to get approval before changing other systems. With no limits
    - Until jobs exist, the research skill keeps `investigate`, so briefs don't get worse in between.
 2. **One hand-off.** `spawn_worker` (with `wait`) replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist`. `create_task` is left for work only people do. A stored chat that called a retired tool keeps the message, with the call as a note.
 3. **Jobs.**
-   - Parent and child tasks, with worker, person and script children.
+   - Parent and child tasks, with worker and person children. (Script children move to phase 4: they run a skill's scripts.)
    - `escalate`, which needs a coordinator to take over (moved here from phase 2).
    - Batches that wake the coordinator once, and one report per job.
    - In-depth research moves to jobs. `plan_job` and `investigate` go.
 4. **Learning on the job.**
+   - Script children: a skill's script run without a model, with a worker woken to fix it if it fails.
    - Company skills with scripts and tests, and integration skills taking over from guides.
    - The run log, run records, the gate (Jev, with the `background` model as fallback) and the learner, with its checks.
    - `mach.decide` in the sandbox template, the decision history, retrieval of past cases, and backtested thresholds.
@@ -633,7 +636,7 @@ Where it will live:
 |---|---|
 | `lib/agents/chief-of-staff.ts` | The chat agent: routing rules, `spawn_worker`, `start_job` |
 | `lib/agents/runner.ts`, `run-steps.ts` | The worker and the coordinator (same runtime), `escalate`, trimming, child events, the gate in `narrated()` |
-| `lib/agents/jobs.ts` | Jobs and children: `start_child`, `message_child`, batches, waking the coordinator, carry-over |
+| `lib/agents/job-steps.ts`, `wakeJob` in `lib/agents/dispatch.ts` | Jobs and children: `start_child`, `message_child`, batches, waking the coordinator, `escalate` |
 | `lib/agents/approvals.ts` | `request_approval`, tool effects, the browser step check |
 | `skills/<name>/` | Base skills: `SKILL.md` and scripts |
 | `lib/skills/` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `save_skill`, restoring versions, script tests |

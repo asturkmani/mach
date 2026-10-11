@@ -46,6 +46,7 @@ const transport = new DefaultChatTransport<ChiefOfStaffMessage>({
 const REFRESHING_TOOLS = new Set([
   "create_task",
   "spawn_worker",
+  "start_job",
   "create_agent",
   "suggest_profile_update",
   "update_section",
@@ -491,6 +492,17 @@ function ToolPart({
     );
   }
 
+  if (part.type === "tool-start_job" && done && "task" in part.output) {
+    const { task, agent } = part.output;
+    return (
+      <Link href={`/tasks/${task.number}`} className="block border border-line bg-raised px-3.5 py-3 hover:border-muted">
+        <p className="label mb-1">Job #{task.number} started</p>
+        <p className="text-[15px]">{task.title}</p>
+        <p className="mt-1 text-xs text-muted">{agent} is planning it</p>
+      </Link>
+    );
+  }
+
   if (part.type === "tool-suggest_profile_update" && done && part.output.suggestion) {
     const { suggestion } = part.output;
     return <SuggestionCard suggestion={suggestion} status={suggestionStatus[suggestion.id]} />;
@@ -544,6 +556,7 @@ function ToolPart({
           : `Still missing: ${part.output.missing.join(", ")}`
         : "Checking onboarding",
     create_task: `Creating task: ${input.title ?? ""}`,
+    start_job: `Starting a job: ${truncate(input.title ?? "", 50)}`,
     spawn_worker: input.wait ? `Asking the Worker: ${truncate(input.title ?? "", 50)}` : `Starting: ${truncate(input.title ?? "", 50)}`,
     create_agent: `Created agent: ${input.name ?? ""}`,
     suggest_profile_update: `Suggesting a change to ${input.section ?? "the profile"}`,

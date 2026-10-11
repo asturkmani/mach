@@ -2,7 +2,7 @@ import { WorkflowAgent } from "@ai-sdk/workflow";
 
 import { startFollowersStep } from "@/lib/agents/follower-steps";
 import { CompanyModel } from "@/lib/ai/company-model";
-import { hasToolCall, isStepCount, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
+import { isStepCount, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
 
 import { SUMMARY_MAX, type RunContext, type RunOutcome } from "@/lib/agents/prompts";
@@ -25,8 +25,22 @@ import {
 } from "@/lib/agents/run-steps";
 import { askForLoginCode } from "@/lib/agents/browser-steps";
 import { attachSandboxFile, closeSandbox } from "@/lib/agents/sandbox-steps";
-import { exaTools, investigateTool } from "@/lib/research/tools";
-import { SKILL_TOOLS, toolsOf } from "@/lib/agents/skills";
+import {
+  batchFor,
+  cancelChild,
+  cantWait,
+  closeChildren,
+  collectFile,
+  escalateTask,
+  messageChild,
+  readChild,
+  startChild,
+  stillWorking,
+  waitForChildren,
+  wakeJobStep,
+} from "@/lib/agents/job-steps";
+import { exaTools } from "@/lib/research/tools";
+import { SKILL_TOOLS, SKILLS, toolsOf } from "@/lib/agents/skills";
 import { trimToolResults } from "@/lib/agents/trim";
 import {
   browserTools,
@@ -85,7 +99,75 @@ const reportFields = {
     .describe("The steps done so far, one per line, oldest first, at most six lines. Send the whole list."),
 };
 
-type RunState = SandboxSession & { outcome?: RunOutcome; loaded?: Set<string> };
+type RunState = SandboxSession & {
+  outcome?: RunOutcome;
+  loaded?: Set<string>;
+  /** The batch a coordinator's children started in this run belong to. */
+  batch?: number;
+};
+
+const SKILL_NAMES = SKILLS.map((s) => s.name) as [string, ...string[]];
+const childNumber = z.number().int().positive().describe("The child's task number.");
+
+/** A job's coordinator's tools: its children, and ending its run to wait for them. */
+function jobTools(context: RunContext, state: RunState, end: (outcome: RunOutcome) => void) {
+  const batch = async () => (state.batch ??= await batchFor(context));
+  return {
+    start_child: tool({
+      description:
+        "Start part of the job as a child task: for the Worker (with the skills that part needs), or for one person on the team (a question, or a list to go through). The children you start in one run are a batch. The child can't see this job: its brief carries everything.",
+      inputSchema: z.object({
+        assignee: z.enum(["worker", "person"]),
+        person: z.string().optional().describe("For a person's child: their exact name."),
+        title: z.string().min(1).max(100).describe("The outcome, starting with a verb."),
+        brief: z
+          .string()
+          .min(1)
+          .describe("What to do, the inputs (files, data sources, earlier children's results), what done looks like and what to report back. Everything it needs: it can't see the job."),
+        skills: z.array(z.enum(SKILL_NAMES)).optional().describe("For the Worker: the skills this part needs."),
+        after: z.array(z.number().int().positive()).optional().describe("Numbers of this job's children it needs first: it starts once they're delivered."),
+        files: z.array(z.string()).optional().describe("Names of files on this job it should start from."),
+      }),
+      execute: async (input) => startChild(context, input, await batch()),
+    }),
+    message_child: tool({
+      description:
+        "Write on a child: answer its question, or send it back with exactly what to redo. A Worker's child goes back to work; a person's child asks them again.",
+      inputSchema: z.object({ child: childNumber, text: z.string().min(1) }),
+      execute: async (input) => messageChild(context, input, await batch()),
+    }),
+    cancel_child: tool({
+      description: "Stop a child you no longer need, and any child that waits for it.",
+      inputSchema: z.object({ child: childNumber, why: z.string().optional() }),
+      execute: (input) => cancelChild(context, input),
+    }),
+    read_child: tool({
+      description: "A child's full result or question, and its files (small text files in full).",
+      inputSchema: z.object({ child: childNumber }),
+      execute: (input) => readChild(context, input),
+    }),
+    collect_file: tool({
+      description: "Put a child's deliverable on the job, so the job's report carries it.",
+      inputSchema: z.object({ child: childNumber, name: z.string().min(1).describe("The file's name on the child.") }),
+      execute: (input) => collectFile(context, input),
+    }),
+    wait_for_children: tool({
+      description:
+        "End your run to wait for the children you started or sent back. You wake when they're all in, or straight away when one asks something or fails.",
+      inputSchema: z.object({
+        note: z.string().optional().describe("A short note for the job's thread, e.g. the plan for this batch."),
+        progress: reportFields.progress,
+      }),
+      execute: async (input) => {
+        const why = await cantWait(context);
+        if (why) return why;
+        const result = await waitForChildren(context, input);
+        end({ type: "waiting" });
+        return result;
+      },
+    }),
+  } satisfies ToolSet;
+}
 
 /** The tools of an agent on a task: delivering files, reporting, asking, handing off and scheduling. */
 function taskTools(
@@ -93,6 +175,7 @@ function taskTools(
   otherAgents: { id: string; name: string }[],
   using: SandboxUser,
   end: (outcome: RunOutcome) => void,
+  { canEscalate = false }: { canEscalate?: boolean } = {},
 ) {
   return {
     attach_file: tool({
@@ -161,6 +244,23 @@ function taskTools(
         return result;
       },
     }),
+    ...(canEscalate
+      ? {
+          escalate: tool({
+            description:
+              "Turn this task into a job when it needs a plan or needs to go wide (you found eight issues, not one, or the question splits into six). The Coordinator takes over, starting from what you found, and your run ends.",
+            inputSchema: z.object({
+              why: z.string().min(1).describe("Why one worker isn't enough, in a sentence."),
+              found: z.string().min(1).describe("What you found so far, that the plan should start from."),
+            }),
+            execute: async (input) => {
+              const coordinatorId = await escalateTask(context, input);
+              end({ type: "handed_off", agentId: coordinatorId });
+              return "It's a job now: the Coordinator takes it from here. Your run ends.";
+            },
+          }),
+        }
+      : {}),
     ...(otherAgents.length > 0
       ? {
           hand_off: tool({
@@ -230,8 +330,20 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
       return `Searching X: ${clipped(input.query, 40) || "the latest posts"}`;
     case "reddit_search":
       return `Searching Reddit: ${clipped(input.query, 40)}`;
-    case "investigate":
-      return `Investigating: ${clipped(input.question, 48)}`;
+    case "start_child":
+      return `Starting: ${clipped(input.title, 48)}`;
+    case "message_child":
+      return `Writing to #${input.child}`;
+    case "read_child":
+      return `Reading #${input.child}`;
+    case "cancel_child":
+      return `Cancelling #${input.child}`;
+    case "collect_file":
+      return `Collecting ${fileName(input.name)} from #${input.child}`;
+    case "wait_for_children":
+      return "Waiting on the job's parts";
+    case "escalate":
+      return "Turning this into a job";
     case "ask":
       return "Writing a question";
     case "finish":
@@ -313,28 +425,47 @@ export async function runAgentOnTask(
     const research = options.research === false ? {} : { ...researchTools(context), ...exaTools() };
     // Skills loaded during the run switch on their tools from the next step (pinned ones from the start).
     state.loaded = new Set(begun.skills);
-    const tools = narrated(context, {
-        ...taskTools(context, begun.otherAgents, using, end),
-        ...sandboxTools(context, using),
-        ...integrationTools(context, using, { sources: begun.sources, logins: begun.logins }),
-        ...browserTools(context, using, begun.logins, async (login) => {
-          // The people on the task are asked for the code; their reply finishes the sign-in on the next run.
-          const asked = await askForLoginCode(context, login);
-          end({ type: "asked" });
-          return { text: asked, needsCode: login };
-        }, { durable: true, heartbeat: () => keepLease(context, "Using the browser") }),
-        ...githubTools(context),
-        ...research,
-        // Research sends questions to sub-researchers, on the same model, each with the research tools.
-        investigate: investigateTool(context, {
-          model,
-          research,
-          highSignal: begun.highSignal,
-          durable: true,
-          heartbeat: () => keepLease(context, "Investigating"),
-        }),
-        use_skill: skillTool(undefined, (name) => state.loaded?.add(name)),
-      }, interrupt);
+    const task = taskTools(context, begun.otherAgents, using, end, { canEscalate: begun.canEscalate });
+    const tools = narrated(
+      context,
+      begun.coordinating
+        ? {
+            // The coordinator runs the job: no sandbox, browser or research of its own; its children do the work.
+            post_update: task.post_update,
+            save_output: task.save_output,
+            set_schedule: task.set_schedule,
+            stop_schedule: task.stop_schedule,
+            ask: task.ask,
+            // The job reports once, at the end.
+            finish: {
+              ...task.finish,
+              execute: async (input: Parameters<typeof task.finish.execute>[0], options: Parameters<typeof task.finish.execute>[1]) => {
+                const busy = await stillWorking(context);
+                if (busy) return busy;
+                const reported = await task.finish.execute(input, options);
+                await closeChildren(context);
+                return reported;
+              },
+            },
+            ...jobTools(context, state, end),
+            use_skill: skillTool(undefined, (name) => state.loaded?.add(name)),
+          }
+        : {
+            ...task,
+            ...sandboxTools(context, using),
+            ...integrationTools(context, using, { sources: begun.sources, logins: begun.logins }),
+            ...browserTools(context, using, begun.logins, async (login) => {
+              // The people on the task are asked for the code; their reply finishes the sign-in on the next run.
+              const asked = await askForLoginCode(context, login);
+              end({ type: "asked" });
+              return { text: asked, needsCode: login };
+            }, { durable: true, heartbeat: () => keepLease(context, "Using the browser") }),
+            ...githubTools(context),
+            ...research,
+            use_skill: skillTool(undefined, (name) => state.loaded?.add(name)),
+          },
+      interrupt,
+    );
     // Tools a skill switches on stay off until one of its skills is pinned or loaded.
     const activeTools = () => {
       const on = new Set(toolsOf([...(state.loaded ?? [])]));
@@ -345,8 +476,9 @@ export async function runAgentOnTask(
       instructions: begun.instructions,
       // No activeTools here: it would fix the set for the whole run. prepareStep picks them before every step.
       tools,
-      // A run also ends when a tool ended it (e.g. a sign-in that asked for a code).
-      stopWhen: [isStepCount(40), hasToolCall("ask", "finish", "hand_off"), () => state.outcome !== undefined],
+      // A run ends when a tool ended it: finish, ask, hand_off, a sign-in that asked for a code. Not on the
+      // call alone, since a coordinator's finish is refused while its children still work.
+      stopWhen: [isStepCount(40), () => state.outcome !== undefined],
       // Long runs keep their lease fresh before each model call (and say they're thinking), and stop
       // there if a person pressed Send now.
       prepareStep: async ({ messages }) => {
@@ -359,6 +491,11 @@ export async function runAgentOnTask(
       },
     });
     const result = await agent.generate({ prompt: withImages(begun.prompt, begun.images) });
+    // A coordinator that stopped with words while its children work is waiting for them, not reporting.
+    if (!state.outcome && begun.coordinating && !(await cantWait(context))) {
+      await waitForChildren(context, { note: result.text });
+      state.outcome = { type: "waiting" };
+    }
     outcome = state.outcome ?? (await reportText(context, result.text));
     return outcome;
   } catch (error) {
@@ -401,11 +538,16 @@ export async function runAgentChain(
       next = outcome.agentId;
     } else if (outcome.type === "interrupted") {
       next = await agentForLatestMessage(organizationId, taskId);
-    } else if ((outcome.type === "asked" || outcome.type === "finished") && (await personCommentCount(taskId)) > commentsBefore) {
+    } else if (
+      (outcome.type === "asked" || outcome.type === "finished" || outcome.type === "waiting") &&
+      (await personCommentCount(taskId)) > commentsBefore
+    ) {
       next = current;
     } else {
       next = undefined;
     }
   }
   await startFollowersStep(organizationId, taskId);
+  // A job's child that delivered or needs an answer, or a job whose children came in during its run, wakes the job.
+  await wakeJobStep(organizationId, taskId);
 }

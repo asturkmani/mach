@@ -21,6 +21,9 @@ export type TaskOption = { label: string; recommended?: boolean };
 
 export type TaskVisibility = "company" | "private";
 
+/** Who a job's child is for: the Worker, a person, or a script that runs without a model. */
+export type AssigneeKind = "worker" | "person" | "script";
+
 /**
  * Whether the person in parameter `param` (e.g. "$2") may see task t: every
  * company task, and a private one they created, are on, or were mentioned on.
@@ -76,6 +79,13 @@ export type Task = {
   skills: string[];
   /** The model chosen for it when it was started (an AI Gateway id or a role, mach1/coder), or null for the default. */
   model: string | null;
+  /** The job it's part of, when it's a job's child (docs/agent-design.md). */
+  parentTaskId: string | null;
+  parentNumber: number | null;
+  /** A child's one assignee: the Worker, a person, or a script. Null for a task that isn't a child. */
+  assigneeKind: AssigneeKind | null;
+  /** The children started in one coordinator run share a batch, which wakes the job once when it's all delivered. */
+  batch: number | null;
   /** Who @-mentioned the person this list is for, when that's why it needs them. */
   mentionedBy?: string | null;
   createdAt: Date;
@@ -139,6 +149,10 @@ type TaskRow = {
   waits_for: number[];
   skills: string[] | null;
   model: string | null;
+  parent_task_id: string | null;
+  parent_number: number | null;
+  assignee_kind: AssigneeKind | null;
+  batch: number | null;
   mentioned_by?: string | null;
   created_at: Date;
   updated_at: Date;
@@ -163,7 +177,8 @@ const TASK_COLUMNS = `t.id, t.number, t.kind, t.title, t.description, t.summary,
   exists (select 1 from task_schedules s where s.task_id = t.id and not s.paused) as repeats, t.pending_login,
   t.reply_by_whatsapp, t.visibility, t.created_at, t.updated_at, t.closed_at,
   array(select d.number from tasks d where d.id = any(t.waits_for) order by d.number) as waits_for,
-  t.skills, t.model`;
+  t.skills, t.model, t.parent_task_id, (select p.number from tasks p where p.id = t.parent_task_id) as parent_number,
+  t.assignee_kind, t.batch`;
 
 /** Sorts urgent first, then high, medium, low. */
 export const PRIORITY_ORDER = `case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`;
@@ -203,6 +218,10 @@ function toTask(row: TaskRow, members: TaskMember[]): Task {
     waitsFor: row.waits_for ?? [],
     skills: row.skills ?? [],
     model: row.model ?? null,
+    parentTaskId: row.parent_task_id ?? null,
+    parentNumber: row.parent_number ?? null,
+    assigneeKind: row.assignee_kind ?? null,
+    batch: row.batch ?? null,
     mentionedBy: row.mentioned_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -290,14 +309,61 @@ export async function canSeeTask(organizationId: string, taskId: string, personI
   return Boolean(await getTask(organizationId, taskId, { viewer: personId }));
 }
 
+/** A job's children done by the Worker or a script are shown on the job, not in lists of their own. */
+const NOT_A_WORKERS_CHILD = `(t.parent_task_id is null or t.assignee_kind = 'person')`;
+
+/** A job's children, oldest first. */
+export async function listChildren(organizationId: string, jobId: string): Promise<Task[]> {
+  const rows = await getDb().query<TaskRow>(
+    `select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.parent_task_id = $2 order by t.number`,
+    [organizationId, jobId],
+  );
+  return withMembers(rows);
+}
+
+/**
+ * Claims a job's wake-up: a coordinator waiting on its children (in progress, no run) becomes ready. Only
+ * one of several children finishing at the same moment gets it, so the coordinator wakes once.
+ */
+export async function claimJobWake(organizationId: string, jobId: string): Promise<boolean> {
+  const rows = await getDb().query(
+    `update tasks set status = 'ready', updated_at = now()
+     where organization_id = $1 and id = $2 and status = 'in_progress' and run_agent_id is null and archived_at is null
+     returning id`,
+    [organizationId, jobId],
+  );
+  return rows.length > 0;
+}
+
+/** Moves a child into the coordinator's current batch (when it's sent back or answered). */
+export async function setBatch(taskId: string, batch: number): Promise<void> {
+  await getDb().query("update tasks set batch = $2 where id = $1", [taskId, batch]);
+}
+
+/** A job's child still being worked on: by its worker (or waiting to start), or waiting on its person's answer. */
+export const inFlight = (child: Pick<Task, "status" | "assigneeKind">) =>
+  child.status === "backlog" || child.status === "ready" || child.status === "in_progress" || (child.status === "waiting" && child.assigneeKind === "person");
+
+/** A job's child done by the Worker that's waiting on the coordinator: it asked something, or its run failed. */
+export const needsAnswer = (child: Pick<Task, "status" | "assigneeKind">) => child.status === "waiting" && child.assigneeKind !== "person";
+
+/** The batch the next children a coordinator starts belong to. */
+export async function nextBatch(jobId: string): Promise<number> {
+  const [row] = await getDb().query<{ next: number }>(
+    "select coalesce(max(batch), 0) + 1 as next from tasks where parent_task_id = $1",
+    [jobId],
+  );
+  return row.next;
+}
+
 /** Every task in the organization (that the viewer may see), open ones first. Closed tasks are limited to the most recent. */
 export async function listTasks(organizationId: string, { closedLimit = 30, viewer }: { closedLimit?: number } & Viewer = {}): Promise<Task[]> {
   const rows = await getDb().query<TaskRow>(
-    `(select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
+    `(select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null and ${NOT_A_WORKERS_CHILD}
         and t.status not in ('done', 'cancelled') and ($3::uuid is null or ${visibleTo("$3")})
       order by ${PRIORITY_ORDER}, t.updated_at desc)
      union all
-     (select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null
+     (select ${TASK_COLUMNS} from tasks t where t.organization_id = $1 and t.archived_at is null and ${NOT_A_WORKERS_CHILD}
         and t.status in ('done', 'cancelled') and ($3::uuid is null or ${visibleTo("$3")})
       order by t.closed_at desc nulls last limit $2)`,
     [organizationId, closedLimit, viewer ?? null],
@@ -570,6 +636,10 @@ export type NewTask = {
   skills?: string[];
   /** The model it runs on, if not the default. */
   model?: string;
+  /** A job's child: the job, its assignee and its batch. */
+  parentTaskId?: string;
+  assigneeKind?: AssigneeKind;
+  batch?: number;
 };
 
 export async function createTask(organizationId: string, input: NewTask): Promise<Task> {
@@ -583,9 +653,9 @@ export async function createTask(organizationId: string, input: NewTask): Promis
       const [row] = await db.query<{ id: string }>(
         `insert into tasks (organization_id, number, kind, title, description, summary, status, priority, options,
                             payload, created_by_person_id, created_by_agent_id, reply_by_whatsapp, visibility, waits_for,
-                            skills, model)
+                            skills, model, parent_task_id, assignee_kind, batch)
          values ($1, (select coalesce(max(number), 0) + 1 from tasks where organization_id = $1), $2, $3, $4, $5, $6,
-                 $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14::uuid[], $15::text[], $16)
+                 $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14::uuid[], $15::text[], $16, $17, $18, $19)
          returning id`,
         [
           organizationId,
@@ -604,6 +674,9 @@ export async function createTask(organizationId: string, input: NewTask): Promis
           input.waitsFor ?? [],
           [...new Set(input.skills ?? [])],
           input.model ?? null,
+          input.parentTaskId ?? null,
+          input.assigneeKind ?? null,
+          input.batch ?? null,
         ],
       );
       id = row.id;
@@ -670,6 +743,8 @@ const NOTIFY_STATUS: Partial<Record<TaskStatus, string>> = { waiting: "needs you
 /** A task just started waiting on its people: a push notification to each of them (who turned them on). */
 async function notifyNeeded(organizationId: string, task: Task): Promise<void> {
   if (task.laterUntil && task.laterUntil > new Date()) return;
+  // A job's child done by the Worker or a script reports to the job's coordinator, not to people.
+  if (task.parentTaskId && task.assigneeKind !== "person") return;
   const people = task.members.filter((m) => m.type === "person").map((m) => m.id);
   await wakeAssistants(organizationId, task, people);
   if (!pushConfigured()) return;
@@ -687,7 +762,8 @@ async function notifyNeeded(organizationId: string, task: Task): Promise<void> {
  * in working hours when it's ready to review. Push covers everyone else.
  */
 async function wakeAssistants(organizationId: string, task: Task, personIds: string[]): Promise<void> {
-  const ids = [...new Set([...personIds, ...(task.createdByPersonId ? [task.createdByPersonId] : [])])];
+  // A person's child of a job is for that person only, not whoever asked for the job.
+  const ids = [...new Set([...personIds, ...(task.createdByPersonId && !task.parentTaskId ? [task.createdByPersonId] : [])])];
   try {
     const reachable = await getDb().query<{ id: string }>(
       `select id from people where organization_id = $1 and id = any($2::uuid[]) and whatsapp is not null and workos_user_id is not null and status = 'active'`,

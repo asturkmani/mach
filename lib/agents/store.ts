@@ -109,7 +109,8 @@ function cleanModel(model: string | undefined): string | null {
  * one, e.g. coding-in-github runs on the coder; lib/ai/lineup.ts).
  */
 export function agentModel(agent: Pick<Agent, "model" | "builtin">, company: CompanyModels = {}, skills: readonly string[] = []): string {
-  const role = modelOf([...skills, ...builtinSkills(agent)]);
+  // An agent's own playbook decides first: the Coordinator plans on the planner even on a coding job.
+  const role = modelOf([...builtinSkills(agent), ...skills]);
   return agent.model || company.agents || roleModel(role ?? "worker");
 }
 
@@ -134,6 +135,7 @@ export async function createAgent(organizationId: string, input: AgentInput & { 
 }
 
 export const WORKER_AGENT = "worker";
+export const COORDINATOR_AGENT = "coordinator";
 export const INTEGRATIONS_AGENT = "integrations";
 export const CODING_AGENT = "coding";
 export const RESEARCH_AGENT = "research";
@@ -151,6 +153,8 @@ export function builtinSkills(agent: Pick<Agent, "builtin">): string[] {
       return ["research"];
     case INTEGRATIONS_AGENT:
       return ["connecting-integrations"];
+    case COORDINATOR_AGENT:
+      return ["coordinating"];
     default:
       return [];
   }
@@ -163,6 +167,16 @@ export function workerAgent(organizationId: string): Promise<Agent> {
     role: "Does the work, with the skills each task needs",
     description:
       "Mach1's agent for any piece of work: research and briefs, analysis and models, code changes in GitHub, data pulls and pipelines, documents and decks, and work on websites. Each task says which skills it needs, and it reads them before it starts.",
+  });
+}
+
+/** Mach1's Coordinator: the agent of a job, made the first time one starts. */
+export function coordinatorAgent(organizationId: string): Promise<Agent> {
+  return builtinAgent(organizationId, COORDINATOR_AGENT, {
+    name: "Coordinator",
+    role: "Plans and runs jobs, and reports once",
+    description:
+      "Mach1's agent for jobs: work with several deliverables that depend on each other, people or approvals in it, or in-depth research. It plans the job, starts the work as child tasks (the Worker with the skills each part needs, or people), checks what comes back, and reports once.",
   });
 }
 
@@ -188,9 +202,17 @@ async function builtinAgent(organizationId: string, builtin: string, profile: Ag
   }
   let name = profile.name;
   for (let n = 2; await findAgentByName(organizationId, name); n++) name = `${profile.name} ${n}`;
-  const agent = await createAgent(organizationId, { ...profile, name });
-  await getDb().query("update agents set builtin = $2 where id = $1", [agent.id, builtin]);
-  return { ...agent, builtin };
+  // Made with its builtin in the same insert: two runs needing it at once (a coordinator starting
+  // children in parallel) can't make two. The one that loses finds the other's.
+  const [row] = await getDb().query<AgentRow>(
+    `insert into agents (organization_id, kind, name, role, description, instructions, builtin)
+     values ($1, 'defined', $2, $3, $4, '', $5) on conflict do nothing returning ${COLUMNS}`,
+    [organizationId, name, profile.role?.trim() ?? "", profile.description?.trim() ?? "", builtin],
+  );
+  if (row) return toAgent(row);
+  const made = await findBuiltinAgent(organizationId, builtin);
+  if (made) return made;
+  throw new Error(`Couldn't make the ${profile.name} agent: the name ${name} was just taken.`);
 }
 
 export async function updateAgent(

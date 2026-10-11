@@ -46,10 +46,11 @@ Its playbook is the `research` skill (`skills/research/SKILL.md`), which any age
 
 1. **Frame**: restate the question as a brief (the decision it informs, the scope, what a good answer holds)
    and split it into three to six questions.
-2. **Gather**: high-signal sources first, then wider. The Worker sends each question to a sub-researcher
-   with `investigate`, several at once; each searches, reads the best sources and comes back with dated
-   findings labelled Fact, Estimate or Opinion and numbered sources. It follows up on the gaps, two or three
-   rounds at most. Numbers are calculated in its sandbox, not in its head.
+2. **Gather**: high-signal sources first, then wider: two to four searches per question, then the best
+   sources in full. Numbers are calculated in its sandbox, not in its head. In-depth research is a job
+   (`start_job` with the research skill): the Coordinator frames it, starts one Worker child per question as
+   one batch, and each comes back with compressed findings (dated, labelled Fact, Estimate or Opinion, with
+   numbered sources); it runs a second round for the gaps that matter, two at most, then writes the brief.
 3. **Think**: what's missing, where sources disagree, the strongest case against its own view, and whether
    sentiment on X and Reddit agrees with the numbers.
 4. **Write**: a brief as a file on the task (an outline per kind: company, sector, fund or manager, person,
@@ -63,9 +64,9 @@ FinRobot, and report outlines like those in [anthropics/financial-services](http
 
 ## The tools
 
-Every agent and the Chief of Staff have them (`researchTools` in `lib/agents/toolkit.ts`). `exa_search` and
-`investigate` belong to the `research` skill: a run has them once the skill is pinned to its task or loaded
-with `use_skill` (and its sub-researchers have Exa too).
+Every agent and the Chief of Staff have them (`researchTools` in `lib/agents/toolkit.ts`). `exa_search`
+belongs to the `research` skill: a run has it once the skill is pinned to its task or loaded with
+`use_skill`.
 
 | Tool | What | Where it comes from |
 | --- | --- | --- |
@@ -74,7 +75,6 @@ with `use_skill` (and its sub-researchers have Exa too).
 | `market_data` | Quotes (stocks, FX, indices, crypto), profile and key numbers, price history with drawdown and volatility, statements, news, holders and insider trades, analysts | Yahoo Finance through [yahoo-finance2](https://github.com/gadicc/yahoo-finance2): free, delayed, unofficial |
 | `x_search` | Posts on X by search terms, by chosen or saved accounts, or those accounts' latest; the last week or back to 2006 | X's API through its [TypeScript SDK](https://docs.x.com/xdks/typescript/overview) (the posts, their authors and engagement, most engaged first, saved accounts marked ★), else Grok's `x_search` on xAI's API |
 | `reddit_search` | Reddit threads, in chosen or saved subreddits or by chosen users | Mach1's Reddit app if it has one (scores and top comments), else Grok's web search of reddit.com |
-| `investigate` | One question to a sub-researcher with all the above | The run's own model (`lib/research/tools.ts`) |
 
 **Web search: Parallel and Exa.** Both run on AI Gateway, so there's no other account or key, and billing is
 Mach1's AI Gateway credit. Parallel is the everyday `web_search`: it takes the objective in words and returns
@@ -94,8 +94,8 @@ without one, searches go through Grok's web search. Yahoo Finance needs nothing.
 
 **Costs**: Parallel about $5 and Exa about $7 per thousand searches on AI Gateway; X's API $0.005 per post read
 (so up to $0.125 a search; reading the same post again within a day is free); Grok about $5 per thousand posts
-its search reads, plus tokens; Yahoo Finance is free. A brief with `investigate` runs several
-sub-researchers, so it costs more than a quick answer.
+its search reads, plus tokens; Yahoo Finance is free. A research job runs a worker per question
+and the Coordinator on the planner model, so it costs more than a brief from one worker.
 
 ## High-signal sources
 
@@ -126,6 +126,6 @@ and integrations don't get them.
 | `lib/research/sources.ts`, `store.ts` | Saved sources: reading what people type or paste, labels, the prompt listing, storage |
 | `lib/research/market.ts` | Yahoo Finance, trimmed to the numbers that matter |
 | `lib/research/x.ts`, `grok.ts`, `reddit.ts` | X through its API or Grok, Grok's search tools on xAI's API, Reddit through its API or Grok |
-| `lib/research/steps.ts`, `tools.ts` | The tools (durable steps on tasks), and `investigate` |
+| `lib/research/steps.ts`, `tools.ts` | The tools (durable steps on tasks) |
 | `lib/actions/research.ts`, `app/(app)/research/` | `source.add`, `source.update`, `source.remove`, `source.list`, and the Research screen |
 | `lib/agents/store.ts` (`workerAgent`), `lib/agents/chief-of-staff.ts` (`spawn_worker`) | The Worker, and handing research to it |

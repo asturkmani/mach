@@ -44,7 +44,7 @@ describe("research: the Worker with the research skill", () => {
     expect(agentModel(worker, {}, ["research"])).toBe("mach1/worker");
   });
 
-  it("starts from the saved sources and sends questions to sub-researchers", async () => {
+  it("starts from the saved sources, knowing who it's for and why", async () => {
     const person = await sara();
     const researcher = await workerAgent(ORG);
     const task = await createTask(ORG, {
@@ -56,15 +56,12 @@ describe("research: the Worker with the research skill", () => {
       createdBy: { personId: person.id },
     });
     const steps: Step[] = [
-      [["investigate", { question: "How has HBM pricing moved since June 2026?", look_at: "SemiAnalysis first" }]],
-      // The sub-researcher's report, on the same (scripted) model.
-      "1. Findings:\n- Fact: HBM contract prices up 18% since June [1]\n3. Sources:\n[1] ★ SemiAnalysis, HBM update, 2026-09-30, https://semianalysis.com/hbm",
       [["finish", { summary: "HBM prices are up 18% since June: the shortage looks mostly priced in.", report: "HBM contract prices rose 18% since June…" }]],
     ];
     const model = scriptedModel(steps);
     expect(await runAgentOnTask(ORG, task.id, researcher.id, { model, research: false })).toEqual({ type: "finished" });
 
-    const [lead, investigator] = model.doGenerateCalls.map((call) => JSON.stringify(call.prompt));
+    const [lead] = model.doGenerateCalls.map((call) => JSON.stringify(call.prompt));
     expect(lead).toContain("This task pins these skills. They're already loaded");
     expect(lead).toContain('<skill name=\\"research\\">');
     // It knows who it's working for, and the company, without being told.
@@ -74,17 +71,12 @@ describe("research: the Worker with the research skill", () => {
     expect(lead).toContain("The sources Sara trusts most");
     expect(lead).toContain("@DeItaone: breaking macro");
     expect(lead).toContain("semianalysis.com: semis supply chain (the company's)");
-    expect(investigator).toContain("You investigate one question for the Researcher");
-    expect(investigator).toContain("How has HBM pricing moved since June 2026?");
-    expect(investigator).toContain("Where to look: SemiAnalysis first");
-    expect(investigator).toContain("@DeItaone");
-    expect(JSON.stringify(model.doGenerateCalls[2].prompt)).toContain("HBM contract prices up 18% since June");
 
     expect((await getTask(ORG, task.id))!.summary).toBe("HBM prices are up 18% since June: the shortage looks mostly priced in.");
     expect((await listMessages(task.id)).map((m) => m.author)).toContain("Worker");
   });
 
-  it("searches with Exa and sends out sub-researchers once the research skill is pinned or loaded; otherwise not", async () => {
+  it("searches with Exa once the research skill is pinned or loaded; otherwise not", async () => {
     const person = await sara();
     const worker = await workerAgent(ORG);
     const analyst = await createAgent(ORG, { name: "Analyst" });
@@ -95,15 +87,15 @@ describe("research: the Worker with the research skill", () => {
       return model.doGenerateCalls.map((call) => (call.tools ?? []).map((t) => t.name));
     };
     const [pinned] = await toolsOf(worker.id, ["research"]);
-    expect(pinned).toEqual(expect.arrayContaining(["web_search", "exa_search", "x_search", "reddit_search", "market_data", "investigate"]));
+    expect(pinned).toEqual(expect.arrayContaining(["web_search", "exa_search", "x_search", "reddit_search", "market_data"]));
+    expect(pinned).not.toContain("investigate");
     // Loading the skill mid-run switches its tools on from the next step.
     const [before, after] = await toolsOf(worker.id, [], [[["use_skill", { name: "research" }]], [["finish", { summary: "Done.", report: "Done." }]]]);
     expect(before).not.toContain("exa_search");
-    expect(after).toEqual(expect.arrayContaining(["exa_search", "investigate"]));
+    expect(after).toContain("exa_search");
     const [shared] = await toolsOf(analyst.id);
     expect(shared).toEqual(expect.arrayContaining(["web_search", "x_search", "market_data"]));
     expect(shared).not.toContain("exa_search");
-    expect(shared).not.toContain("investigate");
   });
 
   async function chat(steps: Step[]) {

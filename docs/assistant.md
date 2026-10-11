@@ -80,16 +80,35 @@ message: the old call becomes a short note of what it did (`lib/agents/history.t
 | `lib/assistant/wake.ts` | The wake-up turn, run from the cron tick (`app/api/cron/tick`) every minute |
 | `lib/agents/specialist.ts` | `spawn_worker` with `wait`: the Worker (or a defined agent) answering while the Chief of Staff waits |
 
-## Big jobs: the coordinator
+## Jobs: the coordinator
 
-Before a big job (several steps or agents, several deliverables, days of work), the Chief of Staff calls
-`plan_job` (`lib/agents/planner.ts`): the company's planner model (Opus 5.5 at high, or GPT-6 Astra;
-`lib/ai/lineup.ts`) writes what to ask first, the steps, who does each (the Worker with which skills, a
-defined agent, or people) and which need which, from the profile, skills, agents, data sources, files and
-open tasks. The Chief of Staff asks the questions, or starts each step with `spawn_worker` (or `create_task`
-for people), later ones with `after` (the task numbers they need). A task that waits stays in backlog (`tasks.waits_for`) and starts by itself once everything it
-waits for is delivered, in review or done (`startFollowers` in `lib/agents/dispatch.ts`, run when a
-status changes and when an agent's run ends).
+Work too big for one worker (several deliverables that depend on each other, a process with people or an
+approval in it, in-depth research, or work whose shape nobody knows until someone looks) is a **job**: the
+Chief of Staff starts it with `start_job`, and a worker on a task of its own can turn its task into one with
+`escalate`, the Coordinator starting from what it found. A job is a task with child tasks, run by the
+Coordinator, a built-in agent on the planner model (Opus 5.5 at high, or GPT-6 Astra; `lib/ai/lineup.ts`)
+that follows the `coordinating` skill. It doesn't do the work itself:
+
+- **First run**: it asks the person what only they can settle (`ask`, on the job), writes the plan on the
+  job's thread, starts the children that can start now (`start_child`) and ends with `wait_for_children`.
+- **Children** each have one assignee: the Worker, with the skills that part needs, or one person on the team
+  (a question, or a list to go through). They're created for the person the job is for (whose accounts a run
+  may use follows from it), with the job's visibility. A Worker's child doesn't notify anyone: its `finish`
+  and `ask` go to the Coordinator, and it's shown on the job, not in lists. A person's child is in that
+  person's inbox only, and their reply on it is their answer. `after` orders them as it does tasks.
+- **Waking**: the Coordinator wakes once nothing it started is still in flight (the batch is in), or straight
+  away when a Worker's child asks something or fails (`wakeJob` in `lib/agents/dispatch.ts`, run when a run
+  ends and when a status changes). Only one wake-up is taken however many children finish at once (the job
+  moves from in progress to ready atomically). It answers or sends work back with `message_child`, reads a
+  child's full result with `read_child`, starts the next batch, or cancels what it no longer needs.
+- **Last run**: it puts the result together (`collect_file` brings a child's deliverable onto the job) and
+  reports once with `finish`, which is refused while children still work.
+- **Limits**: 8 children in a batch, 40 in a job; children can't start jobs; a Coordinator gets 30 runs before
+  a person must step in (the 6-run limit still holds on each child, and its messages don't reset it).
+
+Two separate pieces of work are two `spawn_worker` calls; one that needs another's result first passes
+`after`. A task that waits stays in backlog (`tasks.waits_for`) and starts by itself once everything it
+waits for is delivered, in review or done (`startFollowers` in `lib/agents/dispatch.ts`).
 
 ## Everything from chat
 

@@ -56,6 +56,10 @@ type Detail = TaskView & {
   timezone: string | null;
   createdAt: string;
   members: TaskMember[];
+  /** The job this task is part of, if it's one of a job's children. */
+  job: { number: number; title: string } | null;
+  /** A job's children: the parts its coordinator started, for the Worker or for people. */
+  children: { number: number; title: string; status: TaskStatus; summary: string; who: string }[];
 };
 
 export type { FileView };
@@ -499,6 +503,29 @@ export function TaskDetail({
               </select>
             </div>
           </Property>
+          {task.job && (
+            <Property label="Part of job">
+              <Link href={`/tasks/${task.job.number}`} className="text-sm hover:text-ink">
+                #{task.job.number} {task.job.title}
+              </Link>
+            </Property>
+          )}
+          {task.children.length > 0 && (
+            <Property label="The job's parts">
+              <ul className="space-y-2">
+                {task.children.map((c) => (
+                  <li key={c.number} className="text-sm">
+                    <Link href={`/tasks/${c.number}`} className="hover:text-ink">
+                      #{c.number} {c.title}
+                    </Link>
+                    <p className="text-xs text-muted">
+                      {c.who} · {STATUS_WORDS[c.status]}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </Property>
+          )}
           {task.kind === "task" && (
             <Property label="Repeats">
               <RepeatsPanel

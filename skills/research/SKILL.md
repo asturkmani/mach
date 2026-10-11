@@ -1,10 +1,15 @@
 ---
 name: research
-tools: [exa_search, investigate]
+tools: [exa_search]
 description: "Researching anything for a decision (companies and markets, people and organisations, products and vendors, topics and events): framing the questions, starting from the sources people saved as high signal, the web, market data, X and Reddit, and writing a sourced brief that leads with the insight."
 ---
 
 Research is for someone who will do something with it: find what's true, what matters for them and what to do about it, and show where every claim comes from. Quick questions get a few searches and a short answer; a brief gets the whole method below.
+
+Who does what:
+- One worker on a question: the whole method below, start to finish.
+- In-depth research is a job. Its coordinator frames the question (step 1), starts one worker child per question as one batch, runs a second round for the gaps that matter (two rounds at most) and writes the brief (steps 3 to 5).
+- A worker child on one of those questions does step 2 for its question and reports compressed findings, not everything it read: each finding on one line with its date, marked Fact, Estimate or Opinion, ending with its source's number; then what's still unknown; then the numbered sources, ★ on high-signal ones.
 
 1. Frame it, before any search
 - Start from who it's for and why: the request (its Why, What matters and What they want back, when the Chief of Staff sent it), who you're working for and their role, and the company profile (what the company does and cares about). Research for their decision, not the topic in general: a CFO choosing a bank and a founder writing a pitch need different answers about the same bank.
@@ -18,8 +23,7 @@ Research is for someone who will do something with it: find what's true, what ma
   - web_search and fetch_page: filings (SEC EDGAR, Companies House), results, investor presentations, regulators, industry data, news. Primary sources over news, news over commentary.
   - exa_search (this skill switches it on): finding things by what they are, described in words. Category company for companies like a description ("European payments startups that raised a Series A this year"), people for executives, investors and founders and their backgrounds, financial report for filings and results, news, research paper. Good for due diligence, comparables and finding who's who.
   - x_search: what investors, analysts, operators and the company itself say, and what's breaking. Give it search terms, not a sentence ('$MU (HBM OR guidance)'); with no terms and saved_only, it brings the saved accounts' latest posts. Engagement shows how far a view travelled, not whether it's right. reddit_search: retail and practitioner views, product and customer feedback.
-- If you have investigate, send each question to a sub-researcher, several in one step, with the context it needs. Read what comes back, then send follow-ups for the gaps that matter. Two or three rounds at most.
-- Without it: two to four searches per question, then read the best sources in full.
+- Two to four searches per question, independent ones together, then read the two to four best sources in full.
 - Calculate with code (run_code), never in your head: growth, margins, multiples, returns, scenarios.
 
 3. Think before you write

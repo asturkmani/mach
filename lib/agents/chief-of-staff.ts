@@ -10,7 +10,6 @@ import {
 import { z } from "zod";
 
 import { actionCatalog } from "@/lib/actions";
-import { planJob } from "@/lib/agents/planner";
 import { roleModel } from "@/lib/ai/lineup";
 import { actionTools } from "@/lib/agents/action-tools";
 import { pageTools } from "@/lib/agents/page-tools";
@@ -32,7 +31,7 @@ import {
 } from "@/lib/agents/toolkit";
 import { askSpecialist } from "@/lib/agents/specialist";
 import { companyModel } from "@/lib/ai/company-model";
-import { createAgent, findAgentByName, workerAgent, type Agent } from "@/lib/agents/store";
+import { coordinatorAgent, createAgent, findAgentByName, workerAgent, type Agent } from "@/lib/agents/store";
 import { findFiles, listTaskFiles, type LibraryFile } from "@/lib/files";
 import {
   IntegrationError,
@@ -59,7 +58,7 @@ import { getGitHubConnection } from "@/lib/github";
 import { updateProfile } from "@/lib/profile/store";
 import { describeSchedule, getSchedule } from "@/lib/schedules";
 import type { SessionUser } from "@/lib/session";
-import { findTasks, getTaskByNumber, isRunning, listMessages, PRIORITIES, TASK_STATUSES, type Task } from "@/lib/tasks";
+import { findTasks, getTaskByNumber, isRunning, listChildren, listMessages, PRIORITIES, TASK_STATUSES, type Task } from "@/lib/tasks";
 import { createTaskWithTeam, replyToTask, resolveTeam, suggestProfileUpdate, WorkError } from "@/lib/work";
 import { elapsed, taskState } from "@/lib/work-overview";
 
@@ -180,12 +179,12 @@ function workInstructions(context: Context): string {
 1. If what you already have, or one quick tool, covers it, answer yourself.
 2. If it's one change in the app, do it with do_action.
 3. If it's one deliverable and one kind of work ("do a review of…", "draft…", "find…", "fix…"), hand it to the Worker with spawn_worker instead of doing the work in chat. Load the writing-tasks skill first. Pin the skills the work needs: it reads them before it starts, and can load others itself. If the answer is likely within a few minutes, pass wait and answer here; otherwise it's a task that reports back to their inbox (and here on WhatsApp when they asked there): tell them that in one line. A defined agent whose role fits can take it instead (spawn_worker's agent).
-4. A big job (several deliverables that depend on each other, a process with people or an approval in it, in-depth research, or work whose shape nobody knows until someone looks) gets planned first with plan_job.
-5. If unsure between 3 and 4, one worker is enough.
+4. If it's a job (several deliverables that depend on each other, a process with people or an approval in it, in-depth research, or work whose shape nobody knows until someone looks), start it with start_job. The Coordinator plans it, asks what it must first, starts the work as tasks for the Worker and for people, and reports once. Tell them in one line.
+5. If unsure between 3 and 4, one worker is enough: it turns its task into a job itself if it needs one.
 - create_task is for work only people do: a to-do for someone on the team, with no agent on it.
 - Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company"): task.set_visibility.
-- Planning (acknowledge first: it takes a minute or two): if the plan has things to ask first, ask them in one message and wait. Otherwise start its steps: spawn_worker for each step an agent does, with its skills, and create_task for steps only people do; later steps with after set to the numbers of the tasks they need, so they start by themselves as those are delivered. Then tell them the plan in a few lines with the task numbers.
-- Workers can't see this conversation: the brief carries everything the work needs. Say why they want it (the decision or work it's for), what matters that it can't know and what they want back. Pass on only what the work needs, nothing personal it doesn't.
+- Two separate pieces of work are two spawn_worker calls. One that needs another's result first: pass after with the earlier task's number, and it starts by itself once that's delivered.
+- Workers and the Coordinator can't see this conversation: the brief carries everything the work needs. Say why they want it (the decision or work it's for), what matters that it can't know and what they want back. Pass on only what the work needs, nothing personal it doesn't.
 - If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
 - For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on spawn_worker. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the worker builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
 - Jobs share a company data drive: datasets one job saves there are available to every other job.
@@ -208,7 +207,7 @@ Code and GitHub: each person connects their own GitHub (Settings → Account), a
 
 Research: the Worker, with the research skill, looks into anything the company needs to know (companies and markets, people and organisations, products and vendors, topics and events) across the web, filings, market data, X and Reddit, starting with the sources each person saved as high signal.
 - Everyday lookups answer yourself: a price or a quick number (market_data), what one account or a few are saying (x_search), a fact (web_search).
-- A question that needs judgment across several sources ("what's the market saying about Micron's guidance?", "is this vendor any good?") goes to spawn_worker with the research skill and wait: it answers here in a few minutes. Real research ("a brief on…", "dig into…", "compare…", due diligence, a primer) is spawn_worker with research and no wait: a task it reports back on with a written, sourced brief. A regular digest ("every Monday, what my sources say about AI chips") is that with repeat (mode agent).
+- A question that needs judgment across several sources ("what's the market saying about Micron's guidance?", "is this vendor any good?") goes to spawn_worker with the research skill and wait: it answers here in a few minutes. A brief on one thing ("a brief on…", "compare these three…") is spawn_worker with research and no wait: a task it reports back on with a written, sourced brief. In-depth research (due diligence, a primer on a sector, several questions that each need real digging) is start_job with the research skill: the Coordinator splits it across workers and writes one brief. A regular digest ("every Monday, what my sources say about AI chips") is spawn_worker with research and repeat (mode agent).
 - Brief it like a good manager: it gets the company profile and who it's for (their name and role) by itself. In what matters, pass what they already know or think, constraints, names, tickers or links they gave, and sources to use or avoid.
 - High-signal sources: when someone says a website, an X account, a subreddit or a Reddit user is worth following, or to look at it first, save it with do_action source.add, with why in the note (theirs unless they say it's for everyone). source.list shows them; the Research screen has them too.
 
@@ -226,7 +225,7 @@ function appInstructions(context: Context): string {
   );
   return `The app: you can do from chat everything ${name} can do on Mach1's screens, as them and with their permissions (${
     context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
-  }). Besides your own tools (spawn_worker, create_task, reply_on_task, save_person, create_agent, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
+  }). Besides your own tools (spawn_worker, start_job, create_task, reply_on_task, save_person, create_agent, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
 ${actionCatalog({ isAdmin: Boolean(context.isAdmin) })}
 ${claudeLine(context)}Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
 ${appMapLines()}
@@ -718,11 +717,20 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
       execute: async ({ number, messages: count = 12 }) => {
         const task = await getTaskByNumber(orgId, number, { viewer: context.person?.id });
         if (!task) return `There's no task #${number}.`;
-        const [thread, schedule, files] = await Promise.all([listMessages(task.id), getSchedule(task.id), listTaskFiles(orgId, task.id)]);
+        const [thread, schedule, files, children] = await Promise.all([
+          listMessages(task.id),
+          getSchedule(task.id),
+          listTaskFiles(orgId, task.id),
+          listChildren(orgId, task.id),
+        ]);
         const now = Date.now();
         const latest = thread.slice(-count);
         return [
           `#${task.number} ${task.title} (${appUrl(`/tasks/${task.number}`)})`,
+          task.parentNumber ? `Part of job #${task.parentNumber}.` : "",
+          children.length
+            ? `Children (a job):\n${children.map((c) => `- #${c.number} ${c.title}: ${c.status}${c.summary ? `, ${c.summary}` : ""}`).join("\n")}`
+            : "",
           `Status: ${task.status}; ${taskState(task, now)}. Priority ${task.priority}. Updated ${elapsed(task.updatedAt, now)} ago.${task.archivedAt ? " Archived." : ""}`,
           `On it: ${task.members.map((m) => `${m.name}${m.type === "agent" ? " (agent)" : ""}`).join(", ") || "no one"}`,
           task.summary ? `Summary: ${task.summary}` : "",
@@ -984,26 +992,72 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
   } satisfies ToolSet;
 }
 
-/** Planning a big job before it starts. */
-function planTools(context: Context) {
+/** Starting a job: work too big for one worker, run by the Coordinator. */
+function jobTools(context: Context) {
   const orgId = context.organization.id;
   return {
-    plan_job: tool({
+    start_job: tool({
       description:
-        "Think a big job through before starting it (several deliverables that depend on each other, a process with people or approvals in it, in-depth research, or they ask you to plan): the company's planner, a stronger model, writes what to ask first, the steps, who does each with which skills, and which wait for which. Takes a minute or two.",
+        "Start a job: work with several deliverables that depend on each other, a process with people or an approval in it, in-depth research, or work whose shape nobody knows until someone looks. The Coordinator plans it (asking anything it must first, on the job), starts the work as child tasks for the Worker and for people, checks what comes back, and reports once. It works for the person you're talking to and can't see this conversation: the request carries everything.",
       inputSchema: z.object({
-        request: z.string().min(1).describe("The whole job in their words plus everything you know (deadlines, files, who's involved): the planner can't see your conversation."),
+        title: z.string().min(1).max(100).describe("The outcome, starting with a verb."),
+        request: z.string().min(1).describe("The whole job in their words plus everything you know: deadlines, files, people involved, formats."),
+        why: z.string().min(1).describe("The decision or work it's for."),
+        context: z.string().optional().describe("What matters that it can't see: what they already know or think, constraints, names and links."),
+        deliverable: z.string().optional().describe("What they want back at the end."),
+        skills: z
+          .array(z.enum(SKILL_NAMES))
+          .optional()
+          .describe("Skills the Coordinator should read to plan it, e.g. research for in-depth research. Each child gets its own."),
+        people: z.array(z.string()).optional().describe("Exact names of other people to put on the job."),
+        files: z.array(z.string()).optional().describe("Exact names of company files it starts from."),
+        shareWithCompany: z.boolean().optional().describe("Share it with the whole company. Otherwise only they and the people on it see it."),
+        repeat: z
+          .object({
+            cron: z.string().describe("Five-field cron in the timezone, e.g. '0 9 * * 1' for Mondays at 09:00."),
+            timezone: z.string().describe("IANA timezone, e.g. Europe/London."),
+          })
+          .optional()
+          .describe("A job that runs again on a schedule, planned again from what the last run left. The first run starts now."),
       }),
-      execute: async ({ request }) =>
-        planJob(orgId, {
-          request,
-          askedBy: context.person?.name ?? context.user.name,
-          profile: context.profile,
-          agents: context.agents ?? [],
-          integrations: context.integrations ?? [],
-          files: context.files ?? [],
-          openTasks: context.openTasks ?? [],
-        }),
+      execute: async (input): Promise<{ error: string } | { task: { number: number; title: string }; agent: string; repeats: string | null }> => {
+        try {
+          const found = await findFiles(orgId, input.files ?? [], { viewer: context.person?.id });
+          const missing = (input.files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
+          if (missing.length) return { error: `No company file called ${missing.join(", ")}.` };
+          const team = await resolveTeam(orgId, { people: input.people });
+          const coordinator = await coordinatorAgent(orgId);
+          const task = await createTaskWithTeam(orgId, {
+            title: input.title,
+            description: briefFor({ brief: input.request, why: input.why, context: input.context, deliverable: input.deliverable }, context.person),
+            personIds: team.people.map((p) => p.id),
+            agentIds: [coordinator.id],
+            skills: input.skills,
+            inputFileIds: found.map((f) => f.id),
+            schedule: input.repeat ? { ...input.repeat, mode: "agent" } : undefined,
+            replyByWhatsApp: context.channel === "whatsapp",
+            visibility: input.shareWithCompany ? "company" : "private",
+            by: { name: context.user.name, personId: context.person?.id },
+          });
+          return {
+            task: { number: task.number, title: task.title },
+            agent: coordinator.name,
+            repeats: input.repeat ? describeSchedule(input.repeat.cron, input.repeat.timezone) : null,
+          };
+        } catch (error) {
+          if (error instanceof WorkError) return { error: error.message };
+          throw error;
+        }
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text" as const,
+        value:
+          "error" in output
+            ? `Not started: ${output.error}`
+            : `Started job #${output.task.number}: the ${output.agent} is planning it. It asks anything it needs on the job, starts the work and reports once${
+                context.channel === "whatsapp" ? ", here on WhatsApp too" : ""
+              }.${output.repeats ? ` Repeats: ${output.repeats}.` : ""}`,
+      }),
     }),
   } satisfies ToolSet;
 }
@@ -1041,7 +1095,7 @@ export function createChiefOfStaff(
     })),
     ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),
     ...githubTools(workspace),
-    ...planTools(context),
+    ...jobTools(context),
     ...actionTools(actorFor(context), { whatsapp: context.channel === "whatsapp" ? context.person?.whatsapp : null }),
     ...(options.research === false ? {} : researchTools(workspace)),
     use_skill: skillTool(),

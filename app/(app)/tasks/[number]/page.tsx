@@ -9,9 +9,9 @@ import { getSchedule } from "@/lib/schedules";
 import { blobConnected } from "@/lib/storage";
 import { requireAppContext } from "@/lib/session";
 import { toView } from "@/lib/task-view";
-import { getTaskByNumber, listInbox, listMessages, markMentionsSeen } from "@/lib/tasks";
+import { getTaskByNumber, listChildren, listInbox, listMessages, markMentionsSeen } from "@/lib/tasks";
 
-// @map Task | Home → click a task | One task: its thread (reply, @-mention people and agents, attach files), status, priority, the people and agents on it, its schedule (Repeats), its files, Private/Company, and Archive, Later and Done.
+// @map Task | Home → click a task | One task: its thread (reply, @-mention people and agents, attach files), status, priority, the people and agents on it, a job's parts or the job it's part of, its schedule (Repeats), its files, Private/Company, and Archive, Later and Done.
 const versionView = (v: FileVersion) => ({
   id: v.id,
   version: v.version,
@@ -32,7 +32,7 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
   // Opening the task answers any @-mention of this person on it.
   await markMentionsSeen(task.id, person.id);
 
-  const [messages, taskFiles, library, people, agents, inbox, schedule] = await Promise.all([
+  const [messages, taskFiles, library, people, agents, inbox, schedule, children] = await Promise.all([
     listMessages(task.id),
     listTaskFiles(organization.id, task.id),
     listLibrary(organization.id, { viewer: person.id }),
@@ -40,7 +40,9 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
     listAgents(organization.id),
     listInbox(organization.id, person.id),
     getSchedule(task.id),
+    listChildren(organization.id, task.id),
   ]);
+  const job = task.parentNumber ? await getTaskByNumber(organization.id, task.parentNumber, { viewer: person.id }) : null;
   // After answering, the next row in the inbox opens, like moving down the list.
   const position = inbox.findIndex((t) => t.id === task.id);
   const next = inbox.filter((t) => t.id !== task.id)[Math.max(0, position)] ?? null;
@@ -80,6 +82,15 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
         timezone: organization.timezone,
         createdAt: new Date(task.createdAt).toISOString(),
         members: task.members,
+        // Only a job they may see: a person's part of someone's private job doesn't show the job.
+        job: job && { number: job.number, title: job.title },
+        children: children.map((c) => ({
+          number: c.number,
+          title: c.title,
+          status: c.status,
+          summary: c.summary,
+          who: c.assigneeKind === "person" ? (c.members.find((m) => m.type === "person")?.name ?? "A person") : "Worker",
+        })),
       }}
       messages={messages.map((m) => ({ ...m, createdAt: new Date(m.createdAt).toISOString() }))}
       files={files}
