@@ -5,6 +5,7 @@ import type { z } from "zod";
 
 import { agentRef, fileRef, personRef, taskRef, type Action, type ActionScope } from "@/lib/actions/define";
 import { researchActions } from "@/lib/actions/research";
+import { skillActions } from "@/lib/actions/skills";
 import { taskActions } from "@/lib/actions/tasks";
 import { OperationError, type Actor } from "@/lib/operations";
 
@@ -13,7 +14,7 @@ import { OperationError, type Actor } from "@/lib/operations";
 // do_action. A test (actions.test.ts) fails when a screen's server action
 // doesn't go through here, so nothing new is missing from chat.
 
-export const ACTIONS: Action[] = [...taskActions, ...companyActions, ...researchActions];
+export const ACTIONS: Action[] = [...taskActions, ...companyActions, ...researchActions, ...skillActions];
 
 const byName = new Map(ACTIONS.map((a) => [a.name, a]));
 

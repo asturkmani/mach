@@ -594,3 +594,40 @@ create index if not exists tasks_parent on tasks (parent_task_id) where parent_t
 
 -- One of each of Mach1's own agents per company (the Worker, the Coordinator), even when two runs need it at once.
 create unique index if not exists agents_org_builtin on agents (organization_id, builtin) where builtin is not null and status <> 'archived';
+
+-- Company skills (docs/agent-design.md): how this company does a piece of work (workflow skills) and how one
+-- of its systems works (integration skills), learned on the job or written by people. Base skills live in
+-- the repo (skills/<name>/SKILL.md). Every change is a new version, and any version can be restored. A skill
+-- is the company's (owner_person_id null) or one person's; private ones only their owner sees.
+create table if not exists skills (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  name text not null,
+  kind text not null default 'workflow' check (kind in ('workflow', 'integration')),
+  integration_id uuid references integrations (id) on delete set null,
+  owner_person_id uuid references people (id) on delete set null,
+  visibility text not null default 'company' check (visibility in ('company', 'private')),
+  version integer not null default 1, -- the version in use
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists skills_org_name on skills (organization_id, name) where archived_at is null;
+
+create table if not exists skill_versions (
+  id uuid primary key default gen_random_uuid(),
+  skill_id uuid not null references skills (id) on delete cascade,
+  version integer not null,
+  description text not null,
+  body text not null,
+  tools text[] not null default '{}',
+  model text,
+  extends text,
+  scripts jsonb not null default '{}'::jsonb, -- path under the skill's folder → its text, tests included
+  note text not null default '', -- why this version, in a line
+  author text not null default '',
+  author_person_id uuid references people (id) on delete set null,
+  source_task_id uuid references tasks (id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (skill_id, version)
+);

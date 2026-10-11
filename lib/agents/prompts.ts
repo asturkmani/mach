@@ -1,5 +1,5 @@
 import type { Agent } from "@/lib/agents/store";
-import { pinnedSkills, skillList } from "@/lib/agents/skills";
+import { pinnedSkills, skillList, SKILLS, type Skill } from "@/lib/agents/skills";
 import type { DriveFile } from "@/lib/drive";
 import type { ApiConfig, Integration, LoginConfig } from "@/lib/integrations";
 import type { Organization } from "@/lib/orgs";
@@ -275,6 +275,7 @@ export function agentInstructions({
   profile,
   brief,
   skills = [],
+  catalogue = SKILLS,
   coordinating = false,
   canEscalate = false,
 }: {
@@ -284,12 +285,14 @@ export function agentInstructions({
   brief: string;
   /** Skills pinned to the task: their full text goes in now, so the agent follows them without loading them. */
   skills?: string[];
+  /** The skills it may load: Mach1's, and the company's it may see. */
+  catalogue?: readonly Skill[];
   /** It's a job's coordinator: it plans and starts children rather than doing the work. */
   coordinating?: boolean;
   /** It may turn its task into a job (a task of its own, not a job's child). */
   canEscalate?: boolean;
 }): string {
-  const pinned = pinnedSkills(skills);
+  const pinned = pinnedSkills(skills, catalogue);
   const who =
     agent.kind === "worker"
       ? `You are ${agent.name}, a general worker agent at ${organization.name}${agent.role ? ` (${agent.role})` : ""}. You were made for this one task: do it well and nothing else.`
@@ -316,7 +319,7 @@ How to write it. People see your task as one row among many in their inbox and u
 - context and progress: keep them current so anyone can pick the task up from the summary alone.
 
 Skills you can load with use_skill:
-${skillList()}
+${skillList(catalogue)}
 ${pinned ? `\n<skills>\nThis task pins these skills. They're already loaded: follow them.\n\n${pinned}\n</skills>\n` : ""}
 Today's date: ${today}.${organization.timezone ? ` Company timezone: ${organization.timezone}.` : ""}
 

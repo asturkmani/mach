@@ -4,7 +4,8 @@ import { stepCountIs, ToolLoopAgent, type LanguageModel } from "ai";
 
 import type { AgentContext } from "@/lib/agents/prompts";
 import { companyModel } from "@/lib/ai/company-model";
-import { knownSkills, pinnedSkills, toolsOf } from "@/lib/agents/skills";
+import { findSkillTool, knownSkills, pinnedSkills, SKILLS, toolsOf } from "@/lib/agents/skills";
+import { companySkillsFor } from "@/lib/company-skills";
 import { agentModel, builtinSkills, type Agent } from "@/lib/agents/store";
 import { integrationTools, researchTools, sandboxTools, skillTool, type SandboxUser } from "@/lib/agents/toolkit";
 import { listIntegrations } from "@/lib/integrations";
@@ -48,8 +49,9 @@ export async function askSpecialist(
   },
   { budgetMs = BUDGET_MS }: { budgetMs?: number } = {},
 ): Promise<SpecialistAnswer> {
-  const skills = knownSkills([...(input.skills ?? []), ...builtinSkills(agent)]);
-  const model = testModel ?? agentModel(agent, company, skills);
+  const catalogue = [...SKILLS, ...(await companySkillsFor(workspace.organizationId, workspace.personId))];
+  const skills = knownSkills([...builtinSkills(agent), ...(input.skills ?? [])], catalogue);
+  const model = testModel ?? agentModel(agent, company, skills, catalogue);
   if (!model) return { needsTask: `${agent.name} has no model set.` };
   const context: AgentContext = { ...workspace, agentId: agent.id, agentName: agent.name };
   const [integrations, sources] = await Promise.all([
@@ -75,14 +77,15 @@ Today's date: ${new Date().toISOString().slice(0, 10)}.
 <company_profile>
 ${input.profile}
 </company_profile>${sources.length ? `\n\n${sourcesBrief(sources, input.askedBy)}` : ""}${
-      skills.length ? `\n\n<skills>\nFollow these skills (already loaded):\n\n${pinnedSkills(skills)}\n</skills>` : ""
+      skills.length ? `\n\n<skills>\nFollow these skills (already loaded):\n\n${pinnedSkills(skills, catalogue)}\n</skills>` : ""
     }`,
     tools: {
       ...(input.research === false ? {} : researchTools(context)),
-      ...(input.research === false || !toolsOf(skills).includes("exa_search") ? {} : exaTools()),
+      ...(input.research === false || !toolsOf(skills, catalogue).includes("exa_search") ? {} : exaTools()),
       ...integrationTools(context, using, allowed),
       ...sandboxTools(context, using),
-      use_skill: skillTool(),
+      use_skill: skillTool(catalogue),
+      find_skill: findSkillTool(catalogue),
     },
     stopWhen: stepCountIs(20),
   });

@@ -24,7 +24,7 @@ import {
   type BriefImage,
 } from "@/lib/agents/run-steps";
 import { askForLoginCode } from "@/lib/agents/browser-steps";
-import { attachSandboxFile, closeSandbox } from "@/lib/agents/sandbox-steps";
+import { attachSandboxFile, closeSandbox, writeSkillScripts } from "@/lib/agents/sandbox-steps";
 import {
   batchFor,
   cancelChild,
@@ -40,7 +40,7 @@ import {
   wakeJobStep,
 } from "@/lib/agents/job-steps";
 import { exaTools } from "@/lib/research/tools";
-import { SKILL_TOOLS, SKILLS, toolsOf } from "@/lib/agents/skills";
+import { findSkillTool, getSkill, SKILL_TOOLS, SKILLS, toolsOf } from "@/lib/agents/skills";
 import { trimToolResults } from "@/lib/agents/trim";
 import {
   browserTools,
@@ -106,7 +106,6 @@ type RunState = SandboxSession & {
   batch?: number;
 };
 
-const SKILL_NAMES = SKILLS.map((s) => s.name) as [string, ...string[]];
 const childNumber = z.number().int().positive().describe("The child's task number.");
 
 /** A job's coordinator's tools: its children, and ending its run to wait for them. */
@@ -124,7 +123,7 @@ function jobTools(context: RunContext, state: RunState, end: (outcome: RunOutcom
           .string()
           .min(1)
           .describe("What to do, the inputs (files, data sources, earlier children's results), what done looks like and what to report back. Everything it needs: it can't see the job."),
-        skills: z.array(z.enum(SKILL_NAMES)).optional().describe("For the Worker: the skills this part needs."),
+        skills: z.array(z.string()).optional().describe("For the Worker: the skills this part needs, Mach1's or the company's (find_skill)."),
         after: z.array(z.number().int().positive()).optional().describe("Numbers of this job's children it needs first: it starts once they're delivered."),
         files: z.array(z.string()).optional().describe("Names of files on this job it should start from."),
       }),
@@ -322,6 +321,8 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
       return "Setting the schedule";
     case "stop_schedule":
       return "Stopping the schedule";
+    case "find_skill":
+      return `Looking for a skill: ${clipped(input.words, 40)}`;
     case "use_skill":
       return `Reading the ${input.name} playbook`;
     case "market_data":
@@ -414,7 +415,25 @@ export async function runAgentOnTask(
   if (!begun.ok) return begun.outcome;
   const { context } = begun;
   const state: RunState = {};
-  const using = sandboxUser(context, state);
+  const catalogue = [...SKILLS, ...begun.companySkills];
+  // Scripts of the skills pinned or loaded go into the sandbox the next time it's used, not before.
+  const scripts = new Map<string, Record<string, string>>();
+  const withScripts = (names: Iterable<string>) => {
+    for (const name of names) {
+      const found = getSkill(name, catalogue)?.scripts;
+      if (found) scripts.set(name, found);
+    }
+  };
+  withScripts(begun.skills);
+  const sandbox = sandboxUser(context, state);
+  const using: SandboxUser = (work) =>
+    sandbox(async () => {
+      if (scripts.size) {
+        await writeSkillScripts(context, Object.fromEntries(scripts));
+        scripts.clear();
+      }
+      return work();
+    });
   const end = (ended: RunOutcome) => (state.outcome = ended);
   const interrupt = () => end({ type: "interrupted" });
   let outcome: RunOutcome | undefined;
@@ -448,7 +467,8 @@ export async function runAgentOnTask(
               },
             },
             ...jobTools(context, state, end),
-            use_skill: skillTool(undefined, (name) => state.loaded?.add(name)),
+            use_skill: skillTool(catalogue, (names) => names.forEach((n) => state.loaded?.add(n))),
+            find_skill: findSkillTool(catalogue),
           }
         : {
             ...task,
@@ -462,13 +482,17 @@ export async function runAgentOnTask(
             }, { durable: true, heartbeat: () => keepLease(context, "Using the browser") }),
             ...githubTools(context),
             ...research,
-            use_skill: skillTool(undefined, (name) => state.loaded?.add(name)),
+            use_skill: skillTool(catalogue, (names) => {
+              names.forEach((n) => state.loaded?.add(n));
+              withScripts(names);
+            }),
+            find_skill: findSkillTool(catalogue),
           },
       interrupt,
     );
     // Tools a skill switches on stay off until one of its skills is pinned or loaded.
     const activeTools = () => {
-      const on = new Set(toolsOf([...(state.loaded ?? [])]));
+      const on = new Set(toolsOf([...(state.loaded ?? [])], catalogue));
       return Object.keys(tools).filter((name) => !SKILL_TOOLS.has(name) || on.has(name));
     };
     const agent = new WorkflowAgent({

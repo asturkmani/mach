@@ -359,6 +359,19 @@ export async function readSandboxFile(context: AgentContext, input: { path: stri
   return clip(await scrub(context, bytes.toString("utf8")), 20_000);
 }
 
+/** Copies skills' scripts into the job's folder, each skill in skills/<name>/ (lib/agents/skills.ts scriptsDir). */
+export async function writeSkillScripts(context: AgentContext, scripts: Record<string, Record<string, string>>): Promise<void> {
+  "use step";
+  const sandbox = await open(context);
+  const files = Object.entries(scripts).flatMap(([name, paths]) =>
+    Object.entries(paths).map(([path, content]) => ({ path: `${JOB_DIR}/skills/${name}/${path}`, content: Buffer.from(content) })),
+  );
+  if (!files.length) return;
+  const dirs = [...new Set(files.map((f) => f.path.slice(0, f.path.lastIndexOf("/"))))];
+  await sandbox.run("mkdir", ["-p", ...dirs]);
+  await sandbox.writeFiles(files);
+}
+
 export async function writeSandboxFile(context: AgentContext, input: { path: string; content: string }): Promise<string> {
   "use step";
   const sandbox = await open(context);

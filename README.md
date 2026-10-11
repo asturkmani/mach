@@ -147,7 +147,8 @@ pnpm build
 | `lib/agents/sandbox-steps.ts`, `lib/sandbox.ts`, `sandbox/` | Sandbox tools, the job sandbox provider and the template's setup |
 | `lib/agents/scheduled.ts`, `schedule-steps.ts`, `lib/schedules.ts` | Recurring jobs: replaying run.sh or waking the agent, and schedule storage |
 | `lib/files.ts`, `lib/drive.ts`, `lib/storage.ts`, `lib/previews.ts` | The file library, the company drive, Blob or Postgres storage, and previews |
-| `skills/*/SKILL.md`, `lib/skills.json`, `lib/agents/skills.ts` | Base skills (playbooks) as files, collected at build time (`npm run skills`), and loading them |
+| `skills/*/SKILL.md`, `lib/skills.json`, `lib/agents/skills.ts` | Base skills (playbooks) as files, collected at build time (`npm run skills`), and loading them with the company's |
+| `lib/company-skills.ts`, `lib/actions/skills.ts`, `app/(app)/skills/` | The company's own skills: versions, owners, sharing, restoring, and the Skills screen |
 | `lib/agents/templates.ts`, `store.ts` | Agent templates and agent storage, with the one Worker |
 | `lib/agents/trim.ts` | Trimming old tool results in long runs |
 | `lib/research/` | Research: market data (Yahoo Finance), X and Reddit search, and saved high-signal sources |

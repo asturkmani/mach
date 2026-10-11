@@ -246,7 +246,7 @@ For a new decision, code puts the closest past cases with their final answers in
 | | Base skills | Company skills |
 |---|---|---|
 | **Who writes them** | Mach1's developers | Learned on the job, or written by people |
-| **Where they live** | The repo: `skills/<name>/`, collected at build time like `lib/app-map.json` | Postgres (`skills`, `skill_versions`). Scripts are versioned files in the file library |
+| **Where they live** | The repo: `skills/<name>/`, collected at build time like `lib/app-map.json` | Postgres (`skills`, `skill_versions`). Scripts are kept with each version, so restoring a version restores its scripts |
 | **Who sees them** | Every company | The company. Private ones only their owner, with the same rules as tasks |
 | **How they change** | With a deploy | A new version each time: proposed by the learner and applied when the owner says yes, or written by people. Any version can be restored |
 | **Names** | Plain: `research` | Can't reuse a base skill's name |
@@ -404,7 +404,7 @@ The learner doesn't change anything itself. Once its changes pass the checks, th
 - **Unanswered** proposals stay in Needs you. A later review of the same skill replaces them with one updated proposal. Until a change is applied, runs use the current version. If a broken script fails again next week, a worker fixes it again, and the proposal is still waiting.
 - **Limits that still hold.** Even an applied change can't widen what work may do outside Mach1. Every write outside it still needs an approval in code (Gates in code), whatever a skill says.
 
-Skills can also be written from chat: "here's how we do month-end, save it". The chat agent saves it with `save_skill`, since the person asked.
+Skills can also be written from chat: "here's how we do month-end, save it". The chat agent saves it with `do_action skill.save`, since the person asked; the Skills page does the same.
 
 ### Where knowledge goes
 
@@ -460,7 +460,7 @@ Who gets what: ● always, ○ when a skill switches it on, – never.
 | `github_api` | ● (theirs) | ● | – |
 | `save_page`, `read_page`, `refresh_page`, `share_page` | – | ○ | – |
 | `use_skill`, `find_skill` | ● | ● | ● |
-| `save_skill` | ● | – | – |
+| `do_action skill.save` (saving a skill someone wrote) | ● | – | – |
 | `escalate` | – | ● | – |
 | `finish`, `ask`, `post_update` | – | ● | ● |
 | `attach_file`, `save_output`, `set_schedule`, `stop_schedule` | – | ● | ● |
@@ -482,7 +482,7 @@ Who gets what: ● always, ○ when a skill switches it on, – never.
 | `escalate` | why, what it found | Turns the worker's task into a job. A coordinator takes over |
 | `use_skill` | name | Loads a skill: its text, its scripts into the sandbox, the tools it switches on, and any company skill that extends it |
 | `find_skill` | words | Searches the catalogue, once it's too long to list |
-| `save_skill` | name, text or an edit, why | From chat ("save this as a skill"): saves the skill the person described. Agents on tasks don't have it; the learner proposes changes instead |
+| `skill.save` (an action, not a tool) | name, description, text, extends?, share?, why | From chat (`do_action`) or the Skills page: saves the skill the person described, theirs unless shared. Agents on tasks don't have it; the learner proposes changes instead |
 | `request_approval` | what, items or a file | Asks the person to approve exact content. Returns an approval that later writes must name |
 
 Gone: `hand_off`, `plan_job`, `ask_specialist`, `start_coding`, `start_research`, `investigate`, `create_agent`, `read_integration_guide` and `save_integration_guide`. Agents read an integration's skill with `use_skill`, and the learner proposes changes to it.
@@ -593,7 +593,7 @@ Prompts ask agents to get approval before changing other systems. With no limits
    - Company skills with scripts and tests, and integration skills taking over from guides.
    - The run log, run records, the gate (Jev, with the `background` model as fallback) and the learner, with its checks.
    - `mach.decide` in the sandbox template, the decision history, retrieval of past cases, and backtested thresholds.
-   - `save_skill` from chat, summaries of proposed changes applied on a yes, and the Skills page with its actions.
+   - `skill.save` from chat and the Skills page, summaries of proposed changes applied on a yes, and the Skills page with its actions.
    - Workflow skills saved by repeating jobs, `extends`, and `find_skill`.
    - Defined agents become workflow skills, and the Team page lists people only.
 5. **Gates.** Tool effects, `request_approval`, the proxy refusing writes without an approval, the step check for the browser, cost approval, and ledgers.
@@ -639,7 +639,7 @@ Where it will live:
 | `lib/agents/job-steps.ts`, `wakeJob` in `lib/agents/dispatch.ts` | Jobs and children: `start_child`, `message_child`, batches, waking the coordinator, `escalate` |
 | `lib/agents/approvals.ts` | `request_approval`, tool effects, the browser step check |
 | `skills/<name>/` | Base skills: `SKILL.md` and scripts |
-| `lib/skills/` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `save_skill`, restoring versions, script tests |
+| `lib/agents/skills.ts`, `lib/company-skills.ts`, `lib/actions/skills.ts` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `skill.save`, restoring versions |
 | `sandbox/` (template), `lib/skills/decisions.ts` | `mach.decide`, the proxy rule that lets it reach Jev, the decision history, retrieval and backtests |
 | `lib/learning/` | The run log, run records, the gate (Jev through AI Gateway), the learner, checks, summaries of proposed changes, applying them on a yes |
 | `lib/channels/twilio.ts` | Reply buttons (`twilio/quick-reply`) inside the WhatsApp window |

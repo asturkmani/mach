@@ -72,6 +72,12 @@
     "what": "The company's data sources and website logins: credentials are entered here (never in a chat), plus whose work may use each (every agent can), and testing them."
   },
   {
+    "path": "/skills",
+    "title": "Skills",
+    "where": "Left menu → Skills",
+    "what": "The company's own skills (how it does its work and how its systems work) with every version, restoring, sharing, retiring and writing a new one; and Mach1's skills."
+  },
+  {
     "path": "/tasks/{number}",
     "title": "Task",
     "where": "Home → click a task",

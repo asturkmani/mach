@@ -17,7 +17,7 @@ import { appMapLines } from "@/lib/app-map";
 import { invitePersonAs, OperationError, type Actor } from "@/lib/operations";
 import { personAbout, personLine, type AgentContext } from "@/lib/agents/prompts";
 import { appUrl } from "@/lib/app-url";
-import { SKILLS, skillList } from "@/lib/agents/skills";
+import { findSkillTool, getSkill, knownSkills, SKILLS, skillList, type Skill } from "@/lib/agents/skills";
 import {
   browserTools,
   githubTools,
@@ -81,6 +81,8 @@ type Context = {
   integrations?: Integration[];
   /** The company's pages: reports on its data. */
   pages?: Page[];
+  /** The company's own skills the person you're talking to may use (theirs and the company's). */
+  skills?: Skill[];
   /** What they're looking at in the app as they write, e.g. 'the "Net worth" page (…)'. */
   viewing?: string | null;
   /** Set when this turn's message came by WhatsApp or email rather than the app. */
@@ -297,8 +299,8 @@ ${
       : "- Use update_section for every other section, passing the complete new body (markdown, no \"## \" heading). It replaces what was there, so keep anything that should stay.\n- Use set_company_name only if they correct the company's name."
   }
 
-Skills you can load with use_skill:
-${skillList()}
+Skills: playbooks for kinds of work (Mach1's) and for how this company does its work and how its systems work (the company's own). Load one with use_skill before doing that kind of work yourself, and pin the ones a worker needs. When someone describes how they do a piece of work and wants it kept ("here's how we do month-end, save it"), load writing-skills and save it with do_action skill.save; it's theirs unless they share it. The Skills screen has them all, with every version.
+${skillList(catalogueOf(context))}
 
 Sections: ${SECTIONS.join(", ")}.
 
@@ -444,7 +446,14 @@ type SpawnOutput =
       github?: string;
     };
 
-const SKILL_NAMES = SKILLS.map((s) => s.name) as [string, ...string[]];
+/** Every skill the person you're talking to may use: Mach1's and the company's they can see. */
+const catalogueOf = (context: Pick<Context, "skills">): Skill[] => [...SKILLS, ...(context.skills ?? [])];
+
+/** Names that aren't skills they may use, said for the model. */
+function unknownSkills(context: Pick<Context, "skills">, names: readonly string[] = []): string | null {
+  const unknown = names.filter((n) => !knownSkills([n], catalogueOf(context)).length);
+  return unknown.length ? `There's no skill called ${unknown.join(", ")}. Look for it with find_skill.` : null;
+}
 
 function workTools(context: Context, research: { workspace: AgentContext; using: SandboxUser; enabled: boolean }) {
   const orgId = context.organization.id;
@@ -538,7 +547,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           .describe("What matters that it can't see: what they already know or think, constraints, names and links from the conversation, sources to use or avoid. Only what the work needs."),
         deliverable: z.string().optional().describe("What they want back, e.g. 'a pull request', 'a one-page brief', 'a spreadsheet with three cases'."),
         skills: z
-          .array(z.enum(SKILL_NAMES))
+          .array(z.string())
           .describe("The skills the work needs, read before it starts: e.g. coding-in-github for a code change, research for research, excel-models, presentations, data-pipelines. Can be empty."),
         wait: z
           .boolean()
@@ -574,6 +583,8 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
       }),
       execute: async (input): Promise<SpawnOutput> => {
         const { title, skills, wait, repeat, after, files, people, priority, shareWithCompany } = input;
+        const notSkills = unknownSkills(context, skills);
+        if (notSkills) return { error: notSkills };
         try {
           let agent: Agent;
           if (input.agent) {
@@ -584,7 +595,8 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             agent = await workerAgent(orgId);
           }
           let github: string | undefined;
-          if (skills.includes("coding-in-github")) {
+          // Code work, or a company's own way of it, runs as the person, with their GitHub.
+          if (skills.some((n) => n === "coding-in-github" || getSkill(n, catalogueOf(context))?.extends === "coding-in-github")) {
             if (!context.person) return { error: "Only a signed-in team member can start code changes." };
             const connection = await getGitHubConnection(orgId, context.person.id);
             if (connection?.status !== "connected") {
@@ -1006,7 +1018,7 @@ function jobTools(context: Context) {
         context: z.string().optional().describe("What matters that it can't see: what they already know or think, constraints, names and links."),
         deliverable: z.string().optional().describe("What they want back at the end."),
         skills: z
-          .array(z.enum(SKILL_NAMES))
+          .array(z.string())
           .optional()
           .describe("Skills the Coordinator should read to plan it, e.g. research for in-depth research. Each child gets its own."),
         people: z.array(z.string()).optional().describe("Exact names of other people to put on the job."),
@@ -1021,6 +1033,8 @@ function jobTools(context: Context) {
           .describe("A job that runs again on a schedule, planned again from what the last run left. The first run starts now."),
       }),
       execute: async (input): Promise<{ error: string } | { task: { number: number; title: string }; agent: string; repeats: string | null }> => {
+        const notSkills = unknownSkills(context, input.skills);
+        if (notSkills) return { error: notSkills };
         try {
           const found = await findFiles(orgId, input.files ?? [], { viewer: context.person?.id });
           const missing = (input.files ?? []).filter((name) => !found.some((f) => f.name.toLowerCase() === name.trim().toLowerCase()));
@@ -1098,7 +1112,8 @@ export function createChiefOfStaff(
     ...jobTools(context),
     ...actionTools(actorFor(context), { whatsapp: context.channel === "whatsapp" ? context.person?.whatsapp : null }),
     ...(options.research === false ? {} : researchTools(workspace)),
-    use_skill: skillTool(),
+    use_skill: skillTool(catalogueOf(context)),
+    find_skill: findSkillTool(catalogueOf(context)),
   };
   // Every tool stays in the type (and in stored chats); only the ones that fit
   // the moment are offered to the model.

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { modelOf } from "@/lib/agents/skills";
+import { modelOf, SKILLS, type Skill } from "@/lib/agents/skills";
 import { roleModel } from "@/lib/ai/lineup";
 import { getDb } from "@/lib/db";
 import type { CompanyModels } from "@/lib/orgs";
@@ -108,9 +108,14 @@ function cleanModel(model: string | undefined): string | null {
  * agents, else Mach1's for the work (the role of the first skill that names
  * one, e.g. coding-in-github runs on the coder; lib/ai/lineup.ts).
  */
-export function agentModel(agent: Pick<Agent, "model" | "builtin">, company: CompanyModels = {}, skills: readonly string[] = []): string {
+export function agentModel(
+  agent: Pick<Agent, "model" | "builtin">,
+  company: CompanyModels = {},
+  skills: readonly string[] = [],
+  catalogue: readonly Skill[] = SKILLS,
+): string {
   // An agent's own playbook decides first: the Coordinator plans on the planner even on a coding job.
-  const role = modelOf([...builtinSkills(agent), ...skills]);
+  const role = modelOf([...builtinSkills(agent), ...skills], catalogue);
   return agent.model || company.agents || roleModel(role ?? "worker");
 }
 

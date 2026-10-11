@@ -1,4 +1,5 @@
-import { knownSkills, toolsOf } from "@/lib/agents/skills";
+import { knownSkills, SKILLS, toolsOf, type Skill } from "@/lib/agents/skills";
+import { companySkillsFor } from "@/lib/company-skills";
 import { agentModel, builtinSkills, COORDINATOR_AGENT, getAgent } from "@/lib/agents/store";
 import { driveStats, listDrive } from "@/lib/drive";
 import { allowedFor, listIntegrations } from "@/lib/integrations";
@@ -75,6 +76,8 @@ export type BegunRun =
       skills: string[];
       /** The tools those skills switch on (e.g. exa_search). */
       skillTools: string[];
+      /** The company's skills this run may load, besides Mach1's. */
+      companySkills: Skill[];
       /** The research sources saved as high signal for whoever it works for, and the company's, for its prompts. */
       highSignal: string;
       /** It's a job's coordinator: it gets the job's tools instead of the work's. */
@@ -114,9 +117,6 @@ export async function beginRun(
   }
 
   const context: RunContext = { organizationId, taskId: task.id, agentId: agent.id, agentName: agent.name };
-  const skills = knownSkills([...task.skills, ...builtinSkills(agent)]);
-  // A model set on the task was chosen for its work, not for a coordinator planning it.
-  const model = (agent.builtin !== COORDINATOR_AGENT && task.model) || agentModel(agent, organization.models, skills);
   if (!(await claimRun(organizationId, task.id, agent.id))) return { ok: false, outcome: { type: "busy" } };
 
   const [profile, messages, files, schedule, drive, integrations, job] = await Promise.all([
@@ -145,11 +145,17 @@ export async function beginRun(
   await reactToMessages(agent.id, answering, "👀");
   // Who this run is for: what of theirs it may use (their GitHub) follows from it.
   const forId = workingForId(task, messages, answering);
-  const [forPerson, github, sources] = await Promise.all([
+  const [forPerson, github, sources, companySkills] = await Promise.all([
     forId ? getPerson(organizationId, forId) : null,
     forId ? getGitHubConnection(organizationId, forId) : null,
     listSources(organizationId, { viewer: forId }),
+    // The company's skills this run may load: the company's, and those of the person it works for.
+    companySkillsFor(organizationId, forId),
   ]);
+  const catalogue = [...SKILLS, ...companySkills];
+  const skills = knownSkills([...builtinSkills(agent), ...task.skills], catalogue);
+  // A model set on the task was chosen for its work, not for a coordinator planning it.
+  const model = (agent.builtin !== COORDINATOR_AGENT && task.model) || agentModel(agent, organization.models, skills, catalogue);
   if (forPerson) context.personId = forPerson.id;
   // Only the integrations the person it works for may use (and this agent).
   const usable = integrations.filter((i) => allowedFor(i, forPerson?.id));
@@ -170,6 +176,7 @@ export async function beginRun(
       agent,
       profile,
       skills,
+      catalogue,
       coordinating,
       canEscalate,
       brief: taskBrief({ task, messages, files, agent, schedule, drive, integrations: usable, workingFor, highSignal, job }),
@@ -183,7 +190,8 @@ export async function beginRun(
     images,
     answering,
     skills,
-    skillTools: toolsOf(skills),
+    skillTools: toolsOf(skills, catalogue),
+    companySkills,
     highSignal,
     coordinating,
     canEscalate,

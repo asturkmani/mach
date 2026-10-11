@@ -3,6 +3,7 @@
 import {
   Bell,
   BellOff,
+  BookOpen,
   Building,
   ChevronDown,
   FolderOpen,
@@ -46,6 +47,7 @@ type Item = { href: string; label: string; icon: LucideIcon; count?: number; acc
 export const MAIN_PAGES: Item[] = [
   { href: "/pages", label: "Pages", icon: PanelsTopLeft },
   { href: "/research", label: "Research", icon: Telescope },
+  { href: "/skills", label: "Skills", icon: BookOpen },
   { href: "/team", label: "Team", icon: Users },
   { href: "/files", label: "Files", icon: FolderOpen },
 ];

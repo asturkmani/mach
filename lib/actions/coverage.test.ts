@@ -64,7 +64,7 @@ function functionsIn(source: string): { name: string; exported: boolean; body: s
   });
 }
 
-const registry = ["tasks.ts", "company.ts", "research.ts"].map((f) => readFileSync(join(process.cwd(), "lib/actions", f), "utf8")).join("\n");
+const registry = ["tasks.ts", "company.ts", "research.ts", "skills.ts"].map((f) => readFileSync(join(process.cwd(), "lib/actions", f), "utf8")).join("\n");
 const sharedOperations = new Set([...registry.matchAll(/\b(\w+As)\(/g)].map((m) => m[1]));
 const chiefOfStaff = readFileSync(join(process.cwd(), "lib/agents/chief-of-staff.ts"), "utf8");
 
@@ -99,7 +99,7 @@ describe("every screen action is open to the Chief of Staff", () => {
   });
 
   it("names only actions and tools that exist", () => {
-    const named = serverActions.flatMap((a) => [...a.source.matchAll(/"((?:task|person|agent|file|page|integration|company|me|source)\.[a-z_]+)"/g)].map((m) => m[1]));
+    const named = serverActions.flatMap((a) => [...a.source.matchAll(/"((?:task|person|agent|file|page|integration|company|me|source|skill)\.[a-z_]+)"/g)].map((m) => m[1]));
     expect(named.filter((name) => !getAction(name))).toEqual([]);
     for (const tool of Object.values(CHAT_TOOL).flat()) expect(chiefOfStaff, tool).toContain(`    ${tool}: tool({`);
     const exported = new Set(serverActions.map((a) => a.name));

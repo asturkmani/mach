@@ -2,7 +2,6 @@ import "server-only";
 
 import { loginCodeFrom, sealLoginCode } from "@/lib/agents/browser-steps";
 import { agentToWake, dispatchRun, dispatchScheduled, startFollowers, startIfReady, wakeJob } from "@/lib/agents/dispatch";
-import { knownSkills } from "@/lib/agents/skills";
 import { findAgentByName, listAgents, updateAgent, workerAgent, type Agent } from "@/lib/agents/store";
 import { attachToTask, listTaskFiles, MAX_FILE_BYTES, saveVersion } from "@/lib/files";
 import { rememberTimezone } from "@/lib/orgs";
@@ -133,7 +132,8 @@ export async function createTaskWithTeam(
     replyByWhatsApp: input.replyByWhatsApp,
     visibility: input.visibility ?? (input.by.personId ? "private" : "company"),
     waitsFor,
-    skills: knownSkills(input.skills),
+    // Callers check the names against the skills the person may use (Mach1's and the company's).
+    skills: [...new Set(input.skills ?? [])],
     model: input.model,
   });
   for (const fileId of input.inputFileIds ?? []) await attachToTask(organizationId, task.id, fileId, "input");

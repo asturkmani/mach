@@ -1,5 +1,6 @@
 import { firstSentence, lastLines, type RunContext } from "@/lib/agents/prompts";
-import { knownSkills } from "@/lib/agents/skills";
+import { knownSkills, SKILLS } from "@/lib/agents/skills";
+import { companySkillsFor } from "@/lib/company-skills";
 import { coordinatorAgent, workerAgent } from "@/lib/agents/store";
 import { attachToTask, contentTypeFor, isText, listTaskFiles, readVersion } from "@/lib/files";
 import { listPeople } from "@/lib/people";
@@ -82,6 +83,10 @@ export async function startChild(context: RunContext, input: ChildInput, batch: 
     if (!person) return `Not started: name a person on the team (${everyone.map((p) => p.name).join(", ")}).`;
     personId = person.id;
   }
+  // Skills the person the job is for may use: Mach1's and the company's they can see.
+  const catalogue = [...SKILLS, ...(await companySkillsFor(organizationId, job.createdByPersonId))];
+  const unknown = (input.skills ?? []).filter((n) => !knownSkills([n], catalogue).length);
+  if (unknown.length) return `Not started: there's no skill called ${unknown.join(", ")}. Look for it with find_skill.`;
   const waiting = before.some((c) => c!.status !== "review" && c!.status !== "done");
   const worker = input.assignee === "worker" ? await workerAgent(organizationId) : null;
   const task = await createTask(organizationId, {
@@ -95,7 +100,7 @@ export async function startChild(context: RunContext, input: ChildInput, batch: 
     agents: worker ? [worker.id] : [],
     visibility: job.visibility,
     waitsFor: before.map((c) => c!.id),
-    skills: worker ? knownSkills(input.skills) : [],
+    skills: worker ? knownSkills(input.skills, catalogue) : [],
     parentTaskId: job.id,
     assigneeKind: input.assignee,
     batch,

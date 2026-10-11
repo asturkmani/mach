@@ -148,7 +148,7 @@ describe("work on tasks", () => {
       title: "Model Micron's 2027 EPS",
       description: "Bull, base and bear.",
       workerRole: "Financial analysis",
-      skills: ["excel-models", "financial-analysis", "no-such-skill"],
+      skills: ["excel-models", "financial-analysis"],
       by,
     });
     const worker = await workerAgent(ORG);

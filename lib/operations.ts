@@ -1,5 +1,16 @@
 import "server-only";
 
+import {
+  archiveSkill,
+  getCompanySkill,
+  restoreSkillVersion,
+  saveCompanySkill,
+  setSkillVisibility,
+  SkillError,
+  type CompanySkill,
+  type SkillDraft,
+} from "@/lib/company-skills";
+import { getDb } from "@/lib/db";
 import { workos } from "@/lib/workos";
 
 
@@ -60,7 +71,8 @@ async function asOperation<T>(work: () => Promise<T>): Promise<T> {
       error instanceof PageError ||
       error instanceof IntegrationError ||
       error instanceof WorkError ||
-      error instanceof SourceError
+      error instanceof SourceError ||
+      error instanceof SkillError
     ) {
       throw new OperationError(error.message);
     }
@@ -351,4 +363,72 @@ export async function setCompanyModelsAs(actor: Actor, models: CompanyModels): P
     if (id?.trim() && !MODEL_ID.test(id.trim())) throw new OperationError(`${id} isn't a model id. Use provider/model, e.g. anthropic/claude-sonnet-4.5.`);
   }
   await setCompanyModels(actor.organizationId, models);
+}
+
+// ---------------------------------------------------------------------------
+// Skills: a company skill is changed by its owner, or for the company's own by an admin.
+
+/** A company skill the person may see, by name; any other is "doesn't exist". */
+export async function skillFor(actor: Actor, name: string): Promise<CompanySkill> {
+  const skill = await getCompanySkill(actor.organizationId, name, { viewer: actor.personId });
+  if (!skill) throw new OperationError(`There's no skill of the company's called ${name}.`);
+  return skill;
+}
+
+function mayChange(actor: Actor, skill: CompanySkill): void {
+  if (skill.ownerPersonId === actor.personId) return;
+  if (actor.isAdmin && (skill.ownerPersonId === null || skill.visibility === "company")) return;
+  throw new OperationError(
+    skill.ownerPersonId ? `${skill.name} is ${skill.ownerName ?? "someone else"}'s: they or an admin can change it.` : `Only an admin can change the company's ${skill.name}.`,
+  );
+}
+
+/** Saves a skill someone wrote (or a change to one they may change). New skills are theirs unless they share them. */
+export async function saveSkillAs(
+  actor: Actor,
+  input: SkillDraft & { shareWithCompany?: boolean; note?: string; sourceTaskId?: string },
+): Promise<CompanySkill> {
+  return asOperation(async () => {
+    const existing = await getCompanySkill(actor.organizationId, input.name, { viewer: actor.personId });
+    if (existing) mayChange(actor, existing);
+    else {
+      // Someone else's private skill keeps its name.
+      const [taken] = await getDb().query("select 1 from skills where organization_id = $1 and name = $2 and archived_at is null", [
+        actor.organizationId,
+        input.name.trim(),
+      ]);
+      if (taken) throw new OperationError(`${input.name} is taken. Pick another name.`);
+    }
+    const saved = await saveCompanySkill(actor.organizationId, {
+      ...input,
+      kind: existing?.kind ?? input.kind,
+      extends: input.extends === undefined ? existing?.extends : input.extends,
+      tools: input.tools ?? existing?.tools,
+      model: input.model === undefined ? existing?.model : input.model,
+      scripts: input.scripts ?? existing?.scripts,
+      ownerPersonId: existing ? existing.ownerPersonId : actor.personId,
+      visibility: existing ? existing.visibility : input.shareWithCompany ? "company" : "private",
+      by: { name: actor.name, personId: actor.personId },
+    });
+    if (existing && input.shareWithCompany !== undefined) await shareSkillAs(actor, saved.name, input.shareWithCompany);
+    return saved;
+  });
+}
+
+export async function restoreSkillAs(actor: Actor, name: string, version: number): Promise<CompanySkill> {
+  const skill = await skillFor(actor, name);
+  mayChange(actor, skill);
+  return asOperation(() => restoreSkillVersion(actor.organizationId, skill, version, { name: actor.name, personId: actor.personId }));
+}
+
+export async function shareSkillAs(actor: Actor, name: string, shareWithCompany: boolean): Promise<void> {
+  const skill = await skillFor(actor, name);
+  if (skill.ownerPersonId !== actor.personId && !actor.isAdmin) throw new OperationError(`Only ${skill.ownerName ?? "its owner"} or an admin can share ${skill.name}.`);
+  await setSkillVisibility(skill.id, shareWithCompany ? "company" : "private");
+}
+
+export async function archiveSkillAs(actor: Actor, name: string): Promise<void> {
+  const skill = await skillFor(actor, name);
+  mayChange(actor, skill);
+  await archiveSkill(skill.id);
 }

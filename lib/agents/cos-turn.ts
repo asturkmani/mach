@@ -15,6 +15,7 @@ import { getAssistantHours } from "@/lib/assistant/store";
 import { endReply, getOrCreateChat, takeTurn, type Chat } from "@/lib/chats";
 import { getGitHubConnection } from "@/lib/github";
 import { listLibrary } from "@/lib/files";
+import { companySkillsFor } from "@/lib/company-skills";
 import { listIntegrations } from "@/lib/integrations";
 import { memberRoles } from "@/lib/members";
 import { listPages } from "@/lib/pages";
@@ -49,7 +50,7 @@ export async function loadChiefOfStaff(
   } = {},
 ) {
   const organizationId = context.organization.id;
-  const [profile, agents, tasks, jobs, files, integrations, pages, github, memory, hours, team, aiKeys] = await Promise.all([
+  const [profile, agents, tasks, jobs, files, integrations, pages, github, memory, hours, team, aiKeys, skills] = await Promise.all([
     loadProfile(organizationId),
     listAgents(organizationId),
     listTasks(organizationId, { closedLimit: 0, viewer: context.person?.id }),
@@ -62,6 +63,7 @@ export async function loadChiefOfStaff(
     context.person ? getAssistantHours(organizationId, context.person.id) : null,
     teamStatus(organizationId),
     listAiKeys(organizationId).catch(() => []),
+    companySkillsFor(organizationId, context.person?.id),
   ]);
   const viewing = options.viewing ? await describeViewing(organizationId, options.viewing, context.person?.id).catch(() => null) : null;
   const sandbox: SandboxSession = {};
@@ -75,6 +77,7 @@ export async function loadChiefOfStaff(
       files,
       integrations,
       pages,
+      skills,
       channel: options.channel,
       viewing,
       github,
