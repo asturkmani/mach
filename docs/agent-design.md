@@ -216,9 +216,10 @@ Most repeated work is a loop of small decisions: which tag, which entity, is thi
 
 Jev never compares numbers or dates itself, because that's where it's documented to be weak. Code turns them into plain facts in the state ("amount matches the last three payments", "monthly, last on 3 Sept"), and Jev judges from those.
 
-**Calling Jev from a script.** The sandbox template gets a small helper, `mach.decide` (a Python module and a CLI). A script passes it a state and its questions, and gets back the choice and its probabilities.
-- The request goes to AI Gateway, with the key added by the network proxy, so the key never enters the sandbox.
-- The proxy allows only the Jev model, within a budget per run.
+**Calling Jev from a script.** Every job's sandbox gets a small helper, `mach.decide` (a Python module and a CLI). A script passes it a state and its questions, and gets back the choice and its probabilities.
+- The request goes to Mach1 (`/api/decide`), which asks Jev through AI Gateway, so no key enters the sandbox. The network proxy adds the job's run token (signed with `MACH_SECRETS_KEY`, valid for 12 hours) to requests to Mach1, and the route answers nothing without it.
+- Mach1 asks only the decision model, within a budget per job (5,000 decisions a day), and keeps every decision.
+- The module is written to `/vercel/job/.mach/mach.py` each time the sandbox starts, and the job's commands run with it on `PYTHONPATH` and `MACH_APP_URL` set, so a new deploy's helper reaches every job without rebuilding the template (`lib/agents/mach-helper.ts`).
 
 **Options come from the source each run.** They're never written into the script.
 - The tag list is fetched from Masttro, and the entity list from the skill.
@@ -236,7 +237,7 @@ For a new decision, code puts the closest past cases with their final answers in
 
 **Thresholds come from the history.** A skill says how often an automatic answer must be right, e.g. "98%".
 - On every run, code backtests against the past answers people confirmed or changed. It picks the lowest threshold at which Jev's automatic answers would have been right at least that often.
-- If there isn't enough history yet, or no threshold reaches the target, nothing is applied automatically. Everything goes to people, with Jev's suggestion filled in.
+- If there isn't enough history yet (fewer than 20 answers people judged), or no threshold reaches the target, nothing is applied automatically. Everything goes to people, with Jev's suggestion filled in.
 - "98% confident" therefore means measured on this company's own past answers, not a number a model states about itself.
 
 **People confirm suggestions; they don't start from blank.** A person's list shows Jev's suggestion and how sure it is. Confirming or changing it adds to the history. When people keep changing the same kind of answer, the learner proposes an update to the skill, for example a new entity or a new rule.
@@ -642,7 +643,7 @@ Where it lives (or will, for the phases still to come):
 | `lib/agents/approvals.ts` | `request_approval`, tool effects, the browser step check |
 | `skills/<name>/` | Base skills: `SKILL.md` and scripts |
 | `lib/agents/skills.ts`, `lib/company-skills.ts`, `lib/actions/skills.ts` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `skill.save`, restoring versions |
-| `sandbox/` (template), `lib/skills/decisions.ts` | `mach.decide`, the proxy rule that lets it reach Jev, the decision history, retrieval and backtests |
+| `lib/decisions.ts`, `app/api/decide/`, `lib/agents/mach-helper.ts` | `mach.decide`: the run token the proxy adds, the decision history, retrieval of past cases, narrowing options, backtests, and the Python module |
 | `lib/learning/` | The run log (`run-log.ts`), run records (`record.ts`), the gate (`gate.ts`), the learner and its checks (`learner.ts`), proposals and applying them on a yes (`proposals.ts`), the review (`review.ts`, run by `workflows/learning-review.ts`) |
 | `lib/ai/decide.ts` | Decisions: Jev through AI Gateway (`experimental_decide`), with the `background` model as fallback |
 | `lib/channels/twilio.ts` | Reply buttons (`twilio/quick-reply`) inside the WhatsApp window |

@@ -149,6 +149,7 @@ pnpm build
 | `lib/files.ts`, `lib/drive.ts`, `lib/storage.ts`, `lib/previews.ts` | The file library, the company drive, Blob or Postgres storage, and previews |
 | `skills/*/SKILL.md`, `lib/skills.json`, `lib/agents/skills.ts` | Base skills (playbooks) as files, collected at build time (`npm run skills`), and loading them with the company's |
 | `lib/company-skills.ts`, `lib/actions/skills.ts`, `app/(app)/skills/` | The company's own skills: versions, owners, sharing, restoring, and the Skills screen |
+| `lib/decisions.ts`, `app/api/decide/`, `lib/agents/mach-helper.ts` | `mach.decide` for a skill's scripts: Jev with past cases, backtested thresholds, the decision history |
 | `lib/learning/`, `lib/ai/decide.ts`, `workflows/learning-review.ts` | Learning on the job: the run log, the review when a round closes (the Jev gate, the learner), and proposed changes applied on a person's yes |
 | `lib/agents/templates.ts`, `store.ts` | Agent templates and agent storage, with the one Worker |
 | `lib/agents/trim.ts` | Trimming old tool results in long runs |

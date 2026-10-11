@@ -698,3 +698,29 @@ create table if not exists skill_proposals (
   created_at timestamptz not null default now()
 );
 create index if not exists skill_proposals_person on skill_proposals (organization_id, person_id, status);
+
+-- Decisions inside skills (docs/agent-design.md): every decision a skill's scripts make with mach.decide is
+-- kept, with what happened to it (applied automatically, confirmed by a person, or changed). Past cases go
+-- into each new decision's state, and thresholds are backtested on the answers people confirmed or changed.
+create table if not exists skill_decisions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  task_id uuid references tasks (id) on delete set null,
+  skill text not null,
+  question text not null,
+  key text, -- what makes cases alike, e.g. the counterparty
+  state text not null,
+  options jsonb not null default '[]'::jsonb,
+  choice text,
+  probability double precision not null default 0, -- of the choice (or of yes)
+  probabilities jsonb not null default '{}'::jsonb,
+  threshold double precision, -- the backtested threshold at the time, if there was one
+  auto boolean not null default false, -- applied without asking anyone
+  outcome text check (outcome in ('confirmed', 'changed')),
+  final text, -- the answer that stood
+  decided_by text,
+  model text not null default '',
+  created_at timestamptz not null default now(),
+  decided_at timestamptz
+);
+create index if not exists skill_decisions_lookup on skill_decisions (organization_id, skill, question, created_at desc);

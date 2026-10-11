@@ -76,6 +76,15 @@ Shared data that every job can read and add to: a price history a daily job appe
 
 Agents structure code as config plus scripts plus one entry point (`run.sh`), so a new variant means changing the config. Scheduled runs and **Run script again** execute `run.sh` directly without a model call, and wake the agent only when the script fails or someone asks for a change.
 
+## mach.decide
+
+Every job's sandbox has the `mach` Python module (`/vercel/job/.mach/mach.py`, on `PYTHONPATH` for the job's
+commands): `mach.decide` answers a skill's judgment calls (which tag, which entity, is this a repeat) with
+Jev, with the closest past cases in the question and a threshold backtested on people's answers, and
+`mach.outcome` records what a person decided. Requests go to Mach1, and the network proxy adds the job's
+token on the way out, so scripts hold no key. See docs/agent-design.md, Decisions inside skills, and the
+`reconciliation` skill.
+
 ## Agent tools
 
 | Tool | What it does |

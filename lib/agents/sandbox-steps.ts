@@ -10,6 +10,9 @@ import { versionPreview } from "@/lib/previews";
 import type { AgentContext, RunContext } from "@/lib/agents/prompts";
 import { JOB_DIR, openCompanySandbox, sandboxes, sandboxNameOf, type CommandResult, type JobSandbox } from "@/lib/sandbox";
 import { getTask, saveMemory, setSandboxName } from "@/lib/tasks";
+import { appUrl } from "@/lib/app-url";
+import { runToken } from "@/lib/decisions";
+import { MACH_PY } from "@/lib/agents/mach-helper";
 
 // The sandbox tools every agent uses, each a durable workflow step. An agent
 // on a task works in the job's sandbox, created on first use, seeded with the
@@ -243,7 +246,11 @@ function driveNote({ saved, problems }: { saved: string[]; problems: string[] })
  */
 async function connectSources(context: AgentContext, sandbox: JobSandbox): Promise<{ sources: string[]; github: string | null }> {
   const github = await runGitHub(context);
-  const { policy, sources } = await sandboxPolicy(context.organizationId, github ? githubSigning(github.token) : {}, context.personId);
+  const { policy, sources } = await sandboxPolicy(
+    context.organizationId,
+    { ...(github ? githubSigning(github.token) : {}), ...decisionSigning(context) },
+    context.personId,
+  );
   await sandbox.setNetworkPolicy(policy);
   // So the browser accepts the proxy that signs those requests (older templates lack the helper), and
   // commits are signed as the person the run is for.
@@ -268,10 +275,31 @@ async function runGitHub(context: AgentContext) {
 
 const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
 
+/** Where the mach module lives in a job's sandbox (on PYTHONPATH for the job's commands). */
+const MACH_DIR = `${JOB_DIR}/.mach`;
+
+/** What every command in a job runs with: the mach module, and where Mach1 is. */
+const jobEnv = (): Record<string, string> => ({ PYTHONPATH: MACH_DIR, MACH_APP_URL: appUrl("").replace(/\/$/, "") });
+
+/**
+ * A task run's scripts reach mach.decide with the job's token, which the
+ * network proxy adds to requests to Mach1 (the scripts never hold it).
+ */
+function decisionSigning(context: AgentContext): Record<string, Record<string, string>> {
+  if (!context.taskId || !process.env.MACH_SECRETS_KEY) return {};
+  try {
+    return { [new URL(appUrl("")).host]: { "x-mach-run": runToken(context.organizationId, context.taskId) } };
+  } catch {
+    return {};
+  }
+}
+
 /** Starts (or resumes) the agent's sandbox for this run, connects data sources and brings its copy of the drive up to date. */
 export async function startSandbox(context: AgentContext): Promise<string> {
   "use step";
   const sandbox = await open(context);
+  // The mach module, current with this deploy.
+  if (context.taskId) await sandbox.writeFiles([{ path: `${MACH_DIR}/mach.py`, content: Buffer.from(MACH_PY) }]);
   const added = context.taskId ? await syncTaskFiles(context as RunContext, sandbox) : [];
   const { sources, github } = await connectSources(context, sandbox);
   const pulled = await pullDrive(context, sandbox);
@@ -319,7 +347,7 @@ export async function runCode(
   const path = `${JOB_DIR}/code/${input.filename}`;
   await sandbox.writeFiles([{ path, content: Buffer.from(input.code) }]);
   await sandbox.mark(RUN_MARK);
-  const result = await sandbox.run(INTERPRETERS[input.language], [path], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
+  const result = await sandbox.run(INTERPRETERS[input.language], [path], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS, env: jobEnv() });
   const changed = await changedOutputs(sandbox);
   const drive = await pushDrive(context, sandbox);
   const log = await scrub(context, formatLog(result));
@@ -343,7 +371,7 @@ export async function runCode(
 export async function runShell(context: AgentContext, input: { command: string }): Promise<string> {
   "use step";
   const sandbox = await open(context);
-  const result = await sandbox.run("bash", ["-lc", input.command], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
+  const result = await sandbox.run("bash", ["-lc", input.command], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS, env: jobEnv() });
   const drive = await pushDrive(context, sandbox);
   return `${await scrub(context, formatLog(result))}${driveNote(drive)}`;
 }
@@ -384,7 +412,7 @@ export async function runSkillTests(context: AgentContext, name: string, scripts
   const files = Object.entries(scripts).map(([path, content]) => ({ path: `${dir}/${path}`, content: Buffer.from(content) }));
   await sandbox.run("mkdir", ["-p", ...new Set(files.map((f) => f.path.slice(0, f.path.lastIndexOf("/"))))]);
   await sandbox.writeFiles(files);
-  const result = await sandbox.run("bash", ["test.sh"], { cwd: dir, timeoutMs: COMMAND_TIMEOUT_MS });
+  const result = await sandbox.run("bash", ["test.sh"], { cwd: dir, timeoutMs: COMMAND_TIMEOUT_MS, env: jobEnv() });
   return { ok: result.exitCode === 0, log: await scrub(context, formatLog(result)) };
 }
 
@@ -484,7 +512,7 @@ export async function replayScript(context: RunContext, label: string): Promise<
     return { ok: false, reason: "no_script", log: "There is no run.sh in the job folder." };
   }
   await sandbox.mark(RUN_MARK);
-  const result = await sandbox.run("bash", [`${JOB_DIR}/run.sh`], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS });
+  const result = await sandbox.run("bash", [`${JOB_DIR}/run.sh`], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS, env: jobEnv() });
   const drive = await pushDrive(context, sandbox);
   const log = `${await scrub(context, formatLog(result))}${driveNote(drive)}${timedOut(result) ? `\nrun.sh may have hit the ${COMMAND_TIMEOUT_MS / 1000}s limit.` : ""}`;
   if (result.exitCode !== 0) return { ok: false, reason: "failed", log };

@@ -4,12 +4,13 @@ import { NextResponse, type NextRequest } from "next/server";
 // Every page and API route requires a signed-in user, except signing in itself
 // (Mach1's /sign-in page and the routes it uses, and /callback), the cron tick,
 // which checks Vercel Cron's secret instead, and the WhatsApp and email
-// webhooks, which check Twilio's and AgentMail's signatures. Signed out, a page
+// webhooks, which check Twilio's and AgentMail's signatures, and mach.decide
+// from a job's scripts, which checks the run's token. Signed out, a page
 // goes to /sign-in (and back afterwards); an API call gets a 401. The
 // installable app's own files (its manifest, service worker, icons and offline
 // screen) load before sign-in.
 
-const PUBLIC = ["/sign-in", "/callback", "/api/cron/tick", "/api/whatsapp", "/api/email", "/api/files"];
+const PUBLIC = ["/sign-in", "/callback", "/api/cron/tick", "/api/whatsapp", "/api/email", "/api/files", "/api/decide"];
 
 /**
  * The one address people should use (CANONICAL_HOST, e.g. trymach1.app): a

@@ -17,7 +17,7 @@ export type CommandResult = { exitCode: number; stdout: string; stderr: string }
 
 export interface JobSandbox {
   readonly name: string;
-  run(cmd: string, args: string[], options?: { cwd?: string; timeoutMs?: number; sudo?: boolean }): Promise<CommandResult>;
+  run(cmd: string, args: string[], options?: { cwd?: string; timeoutMs?: number; sudo?: boolean; env?: Record<string, string> }): Promise<CommandResult>;
   /** Starts a command in the background and returns straight away; it outlives the step that started it. */
   start(cmd: string, args: string[], options?: { cwd?: string }): Promise<void>;
   writeFiles(files: { path: string; content: Buffer }[]): Promise<void>;
@@ -85,6 +85,7 @@ function wrap(sandbox: Sandbox): JobSandbox {
         cwd: options.cwd,
         sudo: options.sudo,
         timeoutMs: options.timeoutMs,
+        env: options.env,
       });
       return { exitCode: result.exitCode ?? -1, stdout: await result.stdout(), stderr: await result.stderr() };
     },
