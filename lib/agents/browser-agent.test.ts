@@ -2,6 +2,7 @@ import sharp from "sharp";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { runBrowserAgent, setBrowserAgentModel, withoutOldScreenshots } from "@/lib/agents/browser-agent";
+import { setBrowserMonitorModel } from "@/lib/agents/browser-monitor";
 import { setScheduler } from "@/lib/agents/dispatch";
 import { runAgentOnTask } from "@/lib/agents/runner";
 import { createAgent } from "@/lib/agents/store";
@@ -15,6 +16,7 @@ import { sendLoginCode } from "@/lib/agents/browser-steps";
 import { saveCredentials, saveIntegration } from "@/lib/integrations";
 import { createTask, getTask, listMessages } from "@/lib/tasks";
 import { replyToTask } from "@/lib/work";
+import { decideApproval, requestApproval } from "@/lib/approvals";
 import { getDb } from "@/lib/db";
 import { useTestDb } from "@/test/db";
 import { fakeSandboxes } from "@/test/fake-sandbox";
@@ -84,6 +86,7 @@ describe("the browser agent", () => {
     setScheduler(null);
     setSandboxProvider(null);
     setBrowserAgentModel(null);
+    setBrowserMonitorModel(null);
     await useTestDb();
   });
 
@@ -154,6 +157,47 @@ describe("the browser agent", () => {
     // Another task can't pick up this session.
     const other = await runBrowserAgent({ ...context, taskId: null }, using, { session: report.session, message: "hi" }, { durable: false, logins: [] });
     expect(other.status).toBe("failed");
+  });
+
+  it("checks each step of an approved job against the approval, and refuses one outside it", async () => {
+    const { ahmed, clerk, task } = await setUp();
+    const { sandboxes, site } = await ledgerSandboxes();
+    setSandboxProvider(sandboxes.provider);
+    const context = { organizationId: ORG, taskId: task.id, agentId: clerk.id, agentName: clerk.name };
+    const approval = await requestApproval(ORG, task.id, { what: "Tag 1 payment", items: ["Tag the 3 Oct Apple payment as Dividends"], by: "Cash tagger" });
+    await decideApproval(approval.id, "approved", { name: "Ahmed", personId: ahmed.id });
+
+    const agent = scriptedModel([
+      [["act", { actions: [{ do: "type", target: { label: "Tag" }, text: "Rent" }] }]],
+      [["act", { actions: [{ do: "type", target: { label: "Tag" }, text: "Dividends" }] }]],
+      [["finish", { status: "done", message: "Tagged it as Dividends." }]],
+    ]);
+    const monitor = scriptedModel([
+      JSON.stringify({ allowed: false, reason: "Rent isn't the approved tag." }),
+      JSON.stringify({ allowed: true, reason: "The approved tag." }),
+    ]);
+    setBrowserAgentModel(agent);
+    setBrowserMonitorModel(monitor);
+    const report = await runBrowserAgent(
+      context,
+      sandboxUser(context, {}),
+      { task: "Tag the 3 Oct Apple payment as Dividends", changes: true, approval: "A1" },
+      { durable: false, logins: [] },
+    );
+
+    expect(report.status).toBe("done");
+    expect(site.tagged).toBe("Dividends");
+    expect(site.commands.filter((c) => c.type === "act")).toHaveLength(1);
+    const prompts = agent.doGenerateCalls.map((c) => JSON.stringify(c.prompt));
+    expect(prompts[0]).toContain("Approved changes (A1): Tag 1 payment");
+    expect(prompts[1]).toContain("Not done: this step isn't in what was approved (A1): Rent isn't the approved tag.");
+    expect(JSON.stringify(monitor.doGenerateCalls[0].prompt)).toContain("1. Tag the 3 Oct Apple payment as Dividends");
+
+    // The next message in that session is still checked against A1.
+    setBrowserAgentModel(scriptedModel([[["act", { actions: [{ do: "type", target: { label: "Tag" }, text: "Salary" }] }]], [["finish", { status: "done", message: "Left it." }]]]));
+    setBrowserMonitorModel(scriptedModel([JSON.stringify({ allowed: false, reason: "Salary isn't approved." })]));
+    await runBrowserAgent(context, sandboxUser(context, {}), { session: report.session, message: "Tag it as Salary instead." }, { durable: false, logins: [] });
+    expect(site.tagged).toBe("Dividends");
   });
 
   it("is a tool workers use, and they see its screenshots", async () => {

@@ -24,6 +24,8 @@ Give it facts, not raw numbers to compare: turn amounts and dates into plain sta
 "auto" is True only when the backtest on people's past answers says this one can be applied without asking.
 There's always a "none of these" option. No key is needed: the sandbox adds the job's token on the way out.
 
+Before writing to a system: mach.approved("A1") is the approval's exact items (and which are done).
+
 From the shell: python3 -m mach decide < request.json    python3 -m mach outcome ID FINAL BY
 """
 
@@ -62,6 +64,23 @@ def decide(skill, state, questions, key=None, target=None):
     if target is not None:
         payload["target"] = target
     return _post("/api/decide", payload)["answers"]
+
+
+def approved(approval=None):
+    """The approved changes this run may make: [{approval, what, items, done, file, sha256}], or one approval's.
+
+    Writes to the company's systems go through only while an approval has items left; check each write
+    against its item before making it, and make each one once.
+    """
+    path = os.environ.get("MACH_APPROVALS", "")
+    try:
+        with open(path) as f:
+            approvals = json.load(f)
+    except (OSError, ValueError):
+        approvals = []
+    if approval is None:
+        return approvals
+    return next((a for a in approvals if a["approval"] == approval), None)
 
 
 def outcome(decision_id, final, by):

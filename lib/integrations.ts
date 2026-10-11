@@ -684,6 +684,11 @@ export async function sandboxPolicy(
   extra: Record<string, Record<string, string>> = {},
   /** The person the work is for: only data sources they may use are connected. */
   personId?: string | null,
+  /**
+   * Writes go through only while the run has an approved change not yet made
+   * (lib/approvals.ts): otherwise every source is read-only at the network.
+   */
+  { writes = false }: { writes?: boolean } = {},
 ): Promise<{ policy: NetworkPolicy; sources: string[] }> {
   const sources = (await listIntegrations(organizationId, { personId })).filter(
     (i) => i.kind === "api" && i.status !== "disabled" && i.hasCredentials,
@@ -699,19 +704,16 @@ export async function sandboxPolicy(
       continue;
     }
     if (!Object.keys(headers).length) continue;
+    const readOnly = (body: string): NetworkPolicyRule[] => [
+      { match: { method: ["GET", "HEAD"] }, transform: [{ headers }] },
+      { response: { statusCode: 403, contentType: "text/plain", body } },
+    ];
     const rules: NetworkPolicyRule[] =
       source.access === "read"
-        ? [
-            { match: { method: ["GET", "HEAD"] }, transform: [{ headers }] },
-            {
-              response: {
-                statusCode: 403,
-                contentType: "text/plain",
-                body: `Mach1: ${source.name} is read-only, so only GET requests are allowed.`,
-              },
-            },
-          ]
-        : [{ transform: [{ headers }] }];
+        ? readOnly(`Mach1: ${source.name} is read-only, so only GET requests are allowed.`)
+        : writes
+          ? [{ transform: [{ headers }] }]
+          : readOnly(`Mach1: writing to ${source.name} needs a person's approval of the exact changes. Ask with request_approval first.`);
     for (const domain of (source.config as ApiConfig).domains) allow[domain] ??= rules;
     used.push(source.slug);
   }

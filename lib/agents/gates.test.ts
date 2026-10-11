@@ -5,12 +5,14 @@ import { setScheduler } from "@/lib/agents/dispatch";
 import { effectOf, preApproves } from "@/lib/agents/gates";
 import { runAgentOnTask } from "@/lib/agents/runner";
 import { workerAgent } from "@/lib/agents/store";
-import { approvalsFor } from "@/lib/approvals";
+import { approvalsFor, decideApproval, requestApproval } from "@/lib/approvals";
 import { getDb } from "@/lib/db";
 import { saveCredentials, saveIntegration } from "@/lib/integrations";
 import { createOrganization, getOrganization } from "@/lib/orgs";
 import { getPerson, linkMember } from "@/lib/people";
+import { setSandboxProvider } from "@/lib/sandbox";
 import { createTask, getTask } from "@/lib/tasks";
+import { fakeSandboxes } from "@/test/fake-sandbox";
 import { doAction } from "@/test/do-action";
 import { useTestDb } from "@/test/db";
 import { scriptedModel, type Step } from "@/test/scripted-model";
@@ -25,6 +27,7 @@ describe("gates on changes outside Mach1", () => {
   });
   afterEach(() => {
     setScheduler(null);
+    setSandboxProvider(null);
     vi.unstubAllGlobals();
   });
 
@@ -119,5 +122,33 @@ describe("gates on changes outside Mach1", () => {
       { model, research: false },
     ).generate({ prompt: "merge it" });
     expect(JSON.stringify(model.doGenerateCalls.at(-1)!.prompt)).toContain("From chat, hand it to the Worker with spawn_worker");
+  });
+
+  it("let a job's scripts write to a system only while the run has approved changes left, and show them which", async () => {
+    const sara = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
+    const ledger = await saveIntegration(ORG, {
+      kind: "api",
+      name: "Ledger",
+      config: { baseUrl: "https://ledger.example", domains: [], fields: [{ name: "key", label: "Key" }], headers: { "X-Key": "{{key}}" } },
+      access: "write",
+    });
+    await saveCredentials(ORG, ledger.id, { key: "k-123" });
+    const sandboxes = fakeSandboxes();
+    setSandboxProvider(sandboxes.provider);
+    const worker = await workerAgent(ORG);
+    const task = await createTask(ORG, { title: "Post the journal", people: [sara.id], agents: [worker.id], createdBy: { personId: sara.id } });
+    const run = () => runAgentOnTask(ORG, task.id, worker.id, { research: false, model: scriptedModel([[["run_command", { command: "python post.py" }]], [["finish", { summary: "Done.", report: "Done." }]]]) });
+    const ledgerRules = () => ((sandboxes.machines.get(`mach-task-${task.id}`)!.policies[0] as { allow: Record<string, unknown[]> }).allow["ledger.example"]);
+
+    await run();
+    expect(ledgerRules()).toHaveLength(2); // GET only, and a refusal for the rest
+    const approval = await requestApproval(ORG, task.id, { what: "Post 2 journal lines", items: ["Dr Rent 1,200", "Cr Cash 1,200"], by: "Worker" });
+    await decideApproval(approval.id, "approved", { name: "Sara", personId: sara.id });
+    sandboxes.machines.get(`mach-task-${task.id}`)!.policies.length = 0;
+    await run();
+    expect(ledgerRules()).toEqual([{ transform: [{ headers: { "X-Key": "k-123" } }] }]);
+    expect(JSON.parse(sandboxes.file(`mach-task-${task.id}`, "/vercel/job/.mach/approvals.json")!.toString())).toEqual([
+      { approval: "A1", what: "Post 2 journal lines", items: ["Dr Rent 1,200", "Cr Cash 1,200"], done: [], file: null, sha256: null },
+    ]);
   });
 });

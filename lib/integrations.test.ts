@@ -147,7 +147,7 @@ describe("integrations", () => {
     expect(header(requests[1].init, "Authorization")).toBe("Bearer tok-123456");
   });
 
-  it("gives every agent's sandbox the company's sources, read-only enforced at the network layer", async () => {
+  it("gives every agent's sandbox the company's sources, read-only enforced at the network layer unless a change is approved", async () => {
     const open = await saveIntegration(ORG, { kind: "api", name: "Masttro", config: masttro() });
     const ledger = await saveIntegration(ORG, {
       kind: "api",
@@ -165,7 +165,19 @@ describe("integrations", () => {
       { match: { method: ["GET", "HEAD"] }, transform: [{ headers: { Authorization: `Bearer ${KEY}` } }] },
       { response: { statusCode: 403, contentType: "text/plain", body: "Mach1: Masttro is read-only, so only GET requests are allowed." } },
     ]);
-    expect(allow["ledger.example"]).toEqual([{ transform: [{ headers: { "X-Api-Key": "ledger-key-123" } }] }]);
+    // A source people may write to is read-only too, until a run has an approval of exact changes to make.
+    expect(allow["ledger.example"]).toEqual([
+      { match: { method: ["GET", "HEAD"] }, transform: [{ headers: { "X-Api-Key": "ledger-key-123" } }] },
+      {
+        response: {
+          statusCode: 403,
+          contentType: "text/plain",
+          body: "Mach1: writing to Ledger needs a person's approval of the exact changes. Ask with request_approval first.",
+        },
+      },
+    ]);
+    const approved = (await sandboxPolicy(ORG, {}, null, { writes: true })).policy as { allow: Record<string, unknown> };
+    expect(approved.allow["ledger.example"]).toEqual([{ transform: [{ headers: { "X-Api-Key": "ledger-key-123" } }] }]);
     expect((await listIntegrations(ORG)).map((i) => i.slug)).toEqual(["ledger", "masttro"]);
   });
 });

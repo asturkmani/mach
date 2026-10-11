@@ -11,6 +11,7 @@ import type { AgentContext, RunContext } from "@/lib/agents/prompts";
 import { JOB_DIR, openCompanySandbox, sandboxes, sandboxNameOf, type CommandResult, type JobSandbox } from "@/lib/sandbox";
 import { getTask, saveMemory, setSandboxName } from "@/lib/tasks";
 import { appUrl } from "@/lib/app-url";
+import { approvalLabel, openWrites } from "@/lib/approvals";
 import { runToken } from "@/lib/decisions";
 import { MACH_PY } from "@/lib/agents/mach-helper";
 
@@ -246,10 +247,27 @@ function driveNote({ saved, problems }: { saved: string[]; problems: string[] })
  */
 async function connectSources(context: AgentContext, sandbox: JobSandbox): Promise<{ sources: string[]; github: string | null }> {
   const github = await runGitHub(context);
+  // Writes to data sources go through only while the run has approved changes left to make.
+  const approved = context.taskId ? await openWrites(context.organizationId, context.taskId) : [];
+  if (context.taskId) {
+    await sandbox.writeFiles([
+      {
+        path: `${MACH_DIR}/approvals.json`,
+        content: Buffer.from(
+          JSON.stringify(
+            approved.map((a) => ({ approval: approvalLabel(a), what: a.what, items: a.items, done: a.used, file: a.fileName, sha256: a.fileHash })),
+            null,
+            2,
+          ),
+        ),
+      },
+    ]);
+  }
   const { policy, sources } = await sandboxPolicy(
     context.organizationId,
     { ...(github ? githubSigning(github.token) : {}), ...decisionSigning(context) },
     context.personId,
+    { writes: approved.length > 0 },
   );
   await sandbox.setNetworkPolicy(policy);
   // So the browser accepts the proxy that signs those requests (older templates lack the helper), and
@@ -279,7 +297,12 @@ const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
 const MACH_DIR = `${JOB_DIR}/.mach`;
 
 /** What every command in a job runs with: the mach module, and where Mach1 is. */
-const jobEnv = (): Record<string, string> => ({ PYTHONPATH: MACH_DIR, MACH_APP_URL: appUrl("").replace(/\/$/, "") });
+const jobEnv = (): Record<string, string> => ({
+  PYTHONPATH: MACH_DIR,
+  MACH_APP_URL: appUrl("").replace(/\/$/, ""),
+  // The approved changes a script may make, which it checks before writing (mach.approved()).
+  MACH_APPROVALS: `${MACH_DIR}/approvals.json`,
+});
 
 /**
  * A task run's scripts reach mach.decide with the job's token, which the

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { JOB_DIR } from "@/lib/sandbox";
 import { browserStep, VIEWPORT, type BrowserCommand, type StepResult } from "@/lib/agents/browser-live";
 import { browserLogin } from "@/lib/agents/browser-steps";
+import { approvedFor, checkBrowserStep, type Approved } from "@/lib/agents/browser-monitor";
 import { readSiteSkill } from "@/lib/agents/integration-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
 import type { SandboxUser } from "@/lib/agents/toolkit";
@@ -166,9 +167,17 @@ type RunState = {
   needsCode?: { slug: string; name: string };
   login?: string;
   stopped?: boolean;
+  /** The approval the job works under: each step is checked against it first. */
+  approved?: Approved | null;
 };
 
 function browserAgentTools(context: AgentContext, using: SandboxUser, state: RunState, logins: string[] | null): ToolSet {
+  // Under an approval, each step that could change something is checked against it first.
+  const checked = async (step: string): Promise<StepOutput | null> => {
+    if (!state.approved) return null;
+    const verdict = await checkBrowserStep(context, state.approved, step);
+    return verdict.allowed ? null : { text: `Not done: this step isn't in what was approved (${state.approved.label}): ${verdict.reason}` };
+  };
   const step = (command: BrowserCommand, options?: { screenshot?: boolean }) =>
     using(async (): Promise<StepOutput> => {
       const result = await browserStep(context, state.session, command, options);
@@ -192,7 +201,8 @@ function browserAgentTools(context: AgentContext, using: SandboxUser, state: Run
         actions: z.array(actionSchema).min(1).max(20),
         accept_dialogs: z.boolean().optional().describe("Accept confirm/alert dialogs instead of dismissing them. Only when the job calls for it."),
       }),
-      execute: ({ actions, accept_dialogs }) => step({ type: "act", actions, accept_dialogs }),
+      execute: async ({ actions, accept_dialogs }) =>
+        (await checked(JSON.stringify({ actions, accept_dialogs }))) ?? step({ type: "act", actions, accept_dialogs }),
       toModelOutput: withScreenshot,
     }),
     read_page: tool({
@@ -210,7 +220,8 @@ function browserAgentTools(context: AgentContext, using: SandboxUser, state: Run
       description:
         "Run Python with Playwright on the current page, for work that's easier as code: pulling a whole table as JSON, many similar edits, checking values. page and context are ready (sync API); print what you want back. Up to 90 seconds. Returns what it printed and a screenshot.",
       inputSchema: z.object({ code: z.string().min(1) }),
-      execute: ({ code }) =>
+      execute: async ({ code }) =>
+        (await checked(`Python with Playwright on the page:\n${code}`)) ??
         using(async (): Promise<StepOutput> => {
           const result = await browserStep(context, state.session, { type: "script", code });
           return { text: `${describeStep(result)}\n\nPrinted:\n${result.printed || "(nothing)"}`, screenshot: result.screenshot };
@@ -320,6 +331,9 @@ export function browserAgentModel(): string {
 export type BrowserJob = {
   /** A new job: what to do. */
   task?: string;
+  /** It changes something on the site: allowed only under this approval, each step checked against it. */
+  changes?: boolean;
+  approval?: string | number;
   /** Continue a session: its id, and what to say to it. */
   session?: string;
   message?: string;
@@ -353,19 +367,25 @@ export async function runBrowserAgent(
 
   const login = job.login ?? session.login ?? undefined;
   const guide = login ? await readSiteSkill(context, login) : "";
+  // A session started under an approval stays under it, so its later messages are checked too.
+  const approval = job.changes ? job.approval : (session.approval ?? undefined);
+  const approved = approval ? await approvedFor(context, approval) : null;
   const opening = job.session
     ? `Message from the caller:\n${job.message ?? "Carry on."}`
     : [
         `Your job:\n${job.task}`,
         job.start_url ? `Start at: ${job.start_url}` : "",
         login ? `Company login to use: ${login}\n\n${guide}` : "",
+        approved
+          ? `Approved changes (${approved.label}): ${approved.what}\n${approved.items.map((item, i) => `${i + 1}. ${item}`).join("\n")}\nMake exactly these, nothing else. Each step is checked against this list before it runs.`
+          : "This job only reads: don't save, submit, delete, send or pay for anything.",
         "Begin by looking at the browser.",
       ]
         .filter(Boolean)
         .join("\n\n");
   const messages: ModelMessage[] = [...session.messages, { role: "user", content: opening }];
 
-  const state: RunState = { session: session.id, evidence: [], login };
+  const state: RunState = { session: session.id, evidence: [], login, approved };
   const tools = browserAgentTools(context, using, state, options.logins);
   const settings = {
     model: forCompany,

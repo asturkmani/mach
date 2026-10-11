@@ -32,7 +32,12 @@ export async function openBrowserSession(
   }
   if (!job.task?.trim()) return { error: "Say what to do (task), or continue a session (session and message)." };
   return {
-    session: await createBrowserSession(context.organizationId, { taskId: context.taskId, personId: context.personId, goal: job.task.trim() }),
+    session: await createBrowserSession(context.organizationId, {
+      taskId: context.taskId,
+      personId: context.personId,
+      goal: job.task.trim(),
+      approval: job.changes && job.approval ? String(job.approval) : null,
+    }),
   };
 }
 

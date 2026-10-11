@@ -14,20 +14,38 @@ export type BrowserSession = {
   messages: ModelMessage[];
   status: BrowserSessionStatus;
   login: string | null;
+  /** The approval it works under (A1 on its task), if it changes something. */
+  approval: string | null;
 };
 
-type Row = { id: string; task_id: string | null; goal: string; messages: ModelMessage[]; status: BrowserSessionStatus; login: string | null };
+type Row = {
+  id: string;
+  task_id: string | null;
+  goal: string;
+  messages: ModelMessage[];
+  status: BrowserSessionStatus;
+  login: string | null;
+  approval: string | null;
+};
 
-const toSession = (r: Row): BrowserSession => ({ id: r.id, taskId: r.task_id, goal: r.goal, messages: r.messages, status: r.status, login: r.login });
+const toSession = (r: Row): BrowserSession => ({
+  id: r.id,
+  taskId: r.task_id,
+  goal: r.goal,
+  messages: r.messages,
+  status: r.status,
+  login: r.login,
+  approval: r.approval,
+});
 
 export async function createBrowserSession(
   organizationId: string,
-  input: { taskId: string | null; personId?: string | null; goal: string },
+  input: { taskId: string | null; personId?: string | null; goal: string; approval?: string | null },
 ): Promise<BrowserSession> {
   const [row] = await getDb().query<Row>(
-    `insert into browser_sessions (organization_id, task_id, person_id, goal) values ($1, $2, $3, $4)
-     returning id, task_id, goal, messages, status, login`,
-    [organizationId, input.taskId, input.taskId ? null : (input.personId ?? null), input.goal],
+    `insert into browser_sessions (organization_id, task_id, person_id, goal, approval) values ($1, $2, $3, $4, $5)
+     returning id, task_id, goal, messages, status, login, approval`,
+    [organizationId, input.taskId, input.taskId ? null : (input.personId ?? null), input.goal, input.approval ?? null],
   );
   return toSession(row);
 }
@@ -43,7 +61,7 @@ export async function getBrowserSession(
 ): Promise<BrowserSession | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [row] = await getDb().query<Row>(
-    `select id, task_id, goal, messages, status, login from browser_sessions
+    `select id, task_id, goal, messages, status, login, approval from browser_sessions
      where organization_id = $1 and id = $2 and task_id is not distinct from $3
        and ($3::uuid is not null or person_id is not distinct from $4::uuid)`,
     [organizationId, id, owner.taskId, owner.taskId ? null : (owner.personId ?? null)],
