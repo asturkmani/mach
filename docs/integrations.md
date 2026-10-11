@@ -52,7 +52,11 @@ The `browser_login` tool signs the job's browser in:
 - The signed-in session is saved, so later runs and other jobs skip the login until the site signs it out. "Forget" in Settings → Integrations drops it.
 - The sandbox template (`data-v3`) has Chromium. It also has `trust-network-proxy`, which lets the browser trust the network proxy that signs data source requests.
 
-Agents are told to show exactly what they'll enter, as a table, and get approval before changing anything in a system of record. They take screenshots before and after and attach them.
+Changing anything in another system needs a person's approval of exactly those changes, enforced in code (docs/agent-design.md, Gates in code):
+- `call_api` and `github_api` writes are refused without one.
+- A job's scripts only get write access through the proxy while the job has approved changes left.
+- Under an approval, each step the browser agent takes is checked against it first.
+Agents show exactly what they'll enter, as a numbered list or a file, and ask with `request_approval`. Each approved item is made once. They take screenshots before and after and attach them.
 
 ## Its skill
 

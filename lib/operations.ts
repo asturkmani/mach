@@ -28,7 +28,7 @@ import { attachToTask, listLibrary, setFileVisibility } from "@/lib/files";
 import { disconnectGitHub } from "@/lib/github";
 import { deleteIntegration, getIntegration, IntegrationError, testIntegration, updateIntegration } from "@/lib/integrations";
 import { setRole, type Role } from "@/lib/members";
-import { setCompanyModels, type CompanyModels } from "@/lib/orgs";
+import { setCompanyModels, setJobCostLimit, type CompanyModels } from "@/lib/orgs";
 import { deletePage, getPage, PageError, restorePageVersion, setPageVisibility } from "@/lib/pages";
 import {
   getPerson,
@@ -372,6 +372,13 @@ export async function setCompanyModelsAs(actor: Actor, models: CompanyModels): P
     if (id?.trim() && !MODEL_ID.test(id.trim())) throw new OperationError(`${id} isn't a model id. Use provider/model, e.g. anthropic/claude-sonnet-4.5.`);
   }
   await setCompanyModels(actor.organizationId, models);
+}
+
+/** The dollars a job's round may be estimated at before a person approves its plan (admins); null for no limit. */
+export async function setJobCostLimitAs(actor: Actor, limit: number | null): Promise<void> {
+  adminOnly(actor, "set the company's job cost limit");
+  if (limit !== null && !(Number.isFinite(limit) && limit > 0)) throw new OperationError("Give the limit in dollars, more than 0, or none.");
+  await setJobCostLimit(actor.organizationId, limit === null ? null : Math.round(limit * 100) / 100);
 }
 
 // ---------------------------------------------------------------------------

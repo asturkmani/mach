@@ -85,6 +85,12 @@ Jev, with the closest past cases in the question and a threshold backtested on p
 token on the way out, so scripts hold no key. See docs/agent-design.md, Decisions inside skills, and the
 `reconciliation` skill.
 
+`mach.approved()` lists the changes a person approved for the job, with the items already done, from
+`/vercel/job/.mach/approvals.json`. A job's scripts can write to a system only while it has approved
+changes left: otherwise the proxy lets GET through and answers anything else with a 403 saying to ask
+first. The proxy can't see which item a request is, so a script checks each write against the list and
+keeps a ledger. See docs/agent-design.md, Gates in code.
+
 ## Agent tools
 
 | Tool | What it does |

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { costRates, jobEstimate } from "@/lib/agents/job-cost";
 import { knownSkills, SKILLS, toolsOf, type Skill } from "@/lib/agents/skills";
 import { approvalLabel, requestApproval, type ApprovalKind } from "@/lib/approvals";
 import { companySkillsFor } from "@/lib/company-skills";
@@ -154,6 +155,10 @@ export async function beginRun(
     companySkillsFor(organizationId, forId),
   ]);
   const catalogue = [...SKILLS, ...companySkills];
+  // Under a cost limit, the coordinator plans with the figures the gate in start_child uses.
+  if (coordinating && job?.kind === "job" && organization.jobCostLimit !== null) {
+    job.cost = costRates(organization.jobCostLimit, jobEstimate(job.children.map((c) => c.task), catalogue));
+  }
   const skills = knownSkills([...builtinSkills(agent), ...task.skills], catalogue);
   // A model set on the task was chosen for its work, not for a coordinator planning it.
   const model = (agent.builtin !== COORDINATOR_AGENT && task.model) || agentModel(agent, organization.models, skills, catalogue);
@@ -390,6 +395,7 @@ export async function askForApproval(
   }
   const items = (input.items ?? []).map((i) => i.trim()).filter(Boolean);
   if (input.kind !== "cost" && !items.length && !file) return "Not asked: list the exact changes (items), or attach a file with them (file).";
+  if (input.kind === "cost" && !input.estimate_usd) return "Not asked: give the whole plan's estimate in dollars (estimate_usd).";
   const approval = await requestApproval(context.organizationId, context.taskId, {
     kind: input.kind,
     what: input.what,
@@ -415,7 +421,9 @@ export async function askForApproval(
       { label: "Change something" },
     ],
   });
-  return `Asked for ${label}. Your run ends here; once they approve, make each change with approval "${label}" and its item number.`;
+  return input.kind === "cost"
+    ? `Asked for ${label}. Your run ends here; once they approve, start the plan: children up to that estimate go ahead.`
+    : `Asked for ${label}. Your run ends here; once they approve, make each change with approval "${label}" and its item number.`;
 }
 
 /** The model stopped without finishing or asking: whatever it said becomes the result. */

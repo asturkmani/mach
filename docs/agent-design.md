@@ -498,21 +498,27 @@ Gone: `hand_off`, `plan_job`, `ask_specialist`, `start_coding`, `start_research`
 
 ## Gates in code
 
-Prompts ask agents to get approval before changing other systems. With no limits by agent, these gates are what make that hold.
+Prompts ask agents to get approval before changing other systems. With no limits by agent, these gates are what make that hold. Shipped in phase 5.
 
-- **Each tool declares what it touches**: `read`; `write`, meaning inside Mach1; or `external`, meaning outside it. External ones include:
-  - `call_api` with anything but GET;
-  - `use_browser` when it changes something;
-  - writes through `github_api`;
-  - sending files to anyone but the asker;
-  - anything that pays.
-- **External writes need an approval** from `request_approval` that covers them.
-  - The other way through is a skill an admin has marked as pre-approved for one narrow kind of write, e.g. `coding-in-github` opening pull requests in the person's repositories.
-  - The check runs before the tool does anything, in the wrapper every task tool already passes through (`narrated()` in `lib/agents/runner.ts`). The chat agent's tools get the same wrapper.
-- **Approvals are bound to content.** An approval stores exactly what was approved: the list, or a hash of the file. A write outside it is refused, with a message the agent can act on. Scripts get the approval through their environment and are expected to check against it. The proxy refuses non-GET requests to an integration when a run has no approval.
-- **The browser can't be checked by code alone**, since a click is just a click. When the browser agent is given an approval, each step that changes something is first checked against the approved content by a separate model call that doesn't share the agent's goal. This is what Instinct describes as its decoupled monitor.
-- **Cost.** `start_job` estimates the cost from the plan. Above a company setting, the person approves the plan before any child starts.
-- **Ledgers.** Writes made in a loop record what's done, in the job's folder on the drive, so a retry carries on instead of repeating. The `reconciliation` skill requires one, and so does the gate for repeated external writes.
+- **Each tool declares what it touches** (`effectOf` in `lib/agents/gates.ts`): only changes outside Mach1 are gated. Today those are:
+  - `call_api` with anything but GET or HEAD;
+  - `github_api` with anything but GET or HEAD;
+  - `use_browser` with `changes`.
+  Sending a file to the person you're talking to (`file.send`) isn't outside the company, and nothing pays yet. A tool that does either declares it when it's added.
+- **External writes need an approval** that covers them, checked before the tool does anything, in the wrapper every task tool passes through (`checkGate` in `narrated()`, `lib/agents/runner.ts`).
+  - `request_approval` asks the people on the task to approve exactly the changes: a numbered list, or a file on the task. It ends the run. Their Approve (the button, a WhatsApp reply, or `task.pick_option` from chat) starts the next one.
+  - The agent then makes each change with `approval` and `item`. A call without them, under an approval still pending or declined, or for an item outside the list is refused, with a message that says what to do instead.
+  - A job's children work under the job's approvals.
+  - The chat agent has no task to ask on, so its external writes are refused with a pointer to `spawn_worker`. The worker asks.
+- **Pre-approved kinds of write.** A skill's `pre_approved` rules let one narrow kind of write through without asking: `github:POST:/repos/*/*/pulls` (a `*` is one path part) or `api:<integration>:<METHOD>:<path prefix>`. Base skills set them in front matter. For company skills, they're a column only an admin sets. `coding-in-github` opens pull requests without asking; merging one still asks.
+- **Approvals are bound to content.** An approval stores exactly what was approved: the items, or the file's SHA-256 at the version shown. Each item is used once, recorded in `approval_uses`, so a retry carries on instead of repeating.
+- **Scripts.** The network proxy (`sandboxPolicy` in `lib/integrations.ts`) gives a job's sandbox write access to a write integration only while the run has approved changes left. Otherwise only GET goes through, and any other request gets a 403 saying to ask with `request_approval`. The open approvals, with the items already done, are written to `/vercel/job/.mach/approvals.json` and read with `mach.approved()`. The proxy can't see items, so scripts check each write against the list and keep their ledger, as the `reconciliation` skill says.
+- **The browser can't be checked by code alone**, since a click is just a click. Under an approval, each `act` and `run_script` step is first checked against the approved content (`lib/agents/browser-monitor.ts`). The check is a separate model call, on the `background` model, that sees only the list and the step, not the agent's goal; a step outside it is refused. This is what Instinct describes as its decoupled monitor. A session keeps its approval, so later messages in it are checked too. A job without an approval is told it only reads; that part is held by instructions alone.
+- **Cost.** An admin sets the company's job cost limit, in Settings → AI or with `company.set_job_cost_limit` from chat.
+  - `start_child` works out the round's estimate in code (`lib/agents/job-cost.ts`): each child's run by its model's role (plus the browser agent when it's pinned), $0.05 for a script, nothing for a person, and the coordinator's own runs, one per batch and one to report.
+  - A child that would take the round over the limit starts only under an approved cost approval for at least that much. The coordinator sees the figures and the round so far in its brief, so it asks once for the whole plan (`request_approval`, kind `cost`, `estimate_usd`).
+  - The check sits on `start_child` rather than `start_job`, because the plan is only known as the coordinator starts it. A cost approval covers later rounds of a repeating job up to its estimate.
+- **Ledgers.** Tool calls under an approval are recorded in `approval_uses`. Writes made in a loop from a script record what's done in the job's folder on the drive, so a retry carries on instead of repeating; the `reconciliation` skill requires one.
 
 ## The scenarios, worked through
 
@@ -568,6 +574,8 @@ Prompts ask agents to get approval before changing other systems. With no limits
 | `skills`, `skill_versions` | Company skills: kind (system or workflow), owner, visibility, text, front matter, `extends`, scripts (file-library versions), author and source task per version |
 | `integrations.agent_ids` | Dropped. `person_ids` stays. `guide` becomes the first version of its integration skill |
 | `approvals` | The task, what was proposed and what was approved (items or a hash), who approved it and when, and what it covers |
+| `approval_uses` | Each approved item used, once, by which tool |
+| `skills.pre_approved`, `organizations.job_cost_limit`, `browser_sessions.approval` | A company skill's pre-approved kinds of write, the company's job cost limit, and the approval a browser session works under |
 | `run_log` | One row per run: skills pinned and loaded, every tool call (with the script path and exit code), and the number of model steps. The run record is built from it |
 | `skill_decisions` | A skill's decision history: the state, options, Jev's probabilities and model version, the threshold, and the outcome (applied automatically, confirmed, or changed, and by whom). Used for retrieval, backtests and the learner |
 | `learning_reviews` | One row per review: the gate's answers and model version, whether the learner ran, what it decided, the changes it proposed, and whether each was applied or skipped. The gate's eval set |
@@ -599,7 +607,12 @@ Prompts ask agents to get approval before changing other systems. With no limits
    - `skill.save` from chat and the Skills page, summaries of proposed changes applied on a yes, and the Skills page with its actions.
    - Workflow skills saved by repeating jobs, `extends`, and `find_skill`.
    - Defined agents become workflow skills, and the Team page lists people only.
-5. **Gates.** Tool effects, `request_approval`, the proxy refusing writes without an approval, the step check for the browser, cost approval, and ledgers.
+5. **Gates.** Shipped:
+   - Tool effects and `request_approval`, with items used once.
+   - Pre-approved kinds of write for skills.
+   - The proxy refusing writes without an approval, with `approvals.json` and `mach.approved()` for scripts.
+   - The step check for the browser.
+   - Cost approval on `start_child`, against a limit an admin sets.
 6. **Long work leaves the chat turn.** Code, the browser and pages move to workers, except setting up integrations.
 
 Each phase ships on its own. Phases 3, 4 and 5 are the large ones.
@@ -640,7 +653,8 @@ Where it lives (or will, for the phases still to come):
 | `lib/agents/chief-of-staff.ts` | The chat agent: routing rules, `spawn_worker`, `start_job` |
 | `lib/agents/runner.ts`, `run-steps.ts` | The worker and the coordinator (same runtime), `escalate`, trimming, child events, the gate in `narrated()` |
 | `lib/agents/job-steps.ts`, `wakeJob` in `lib/agents/dispatch.ts` | Jobs and children: `start_child`, `message_child`, batches, waking the coordinator, `escalate` |
-| `lib/agents/approvals.ts` | `request_approval`, tool effects, the browser step check |
+| `lib/approvals.ts`, `lib/agents/gates.ts` | Approvals and their ledger; tool effects, pre-approved kinds of write, and the check in `narrated()` |
+| `lib/agents/browser-monitor.ts`, `lib/agents/job-cost.ts` | The browser's step check, and a job round's cost estimate |
 | `skills/<name>/` | Base skills: `SKILL.md` and scripts |
 | `lib/agents/skills.ts`, `lib/company-skills.ts`, `lib/actions/skills.ts` | Loading, the catalogue, `extends`, `find_skill`, company skills and their versions, `skill.save`, restoring versions |
 | `lib/decisions.ts`, `app/api/decide/`, `lib/agents/mach-helper.ts` | `mach.decide`: the run token the proxy adds, the decision history, retrieval of past cases, narrowing options, backtests, and the Python module |

@@ -86,6 +86,12 @@ describe("actions, done from chat as the screens do them", () => {
     expect(await use(member, "company.set_models", { chiefOfStaff: "openai/gpt-5-mini" })).toBe("Not done: Only admins can do that (company.set_models).");
     expect(await use(admin, "company.set_models", { chiefOfStaff: "openai/gpt-5-mini" })).toMatch(/^Saved\./);
     expect((await getOrganization(ORG))!.models).toEqual({ chiefOfStaff: "openai/gpt-5-mini" });
+
+    expect(await use(member, "company.set_job_cost_limit", { dollars: 20 })).toBe("Not done: Only admins can do that (company.set_job_cost_limit).");
+    expect(await use(admin, "company.set_job_cost_limit", { dollars: 20 })).toBe("Saved: a job estimated above $20.00 asks first.");
+    expect((await getOrganization(ORG))!.jobCostLimit).toBe(20);
+    expect(await use(admin, "company.set_job_cost_limit", { dollars: null })).toBe("Saved: jobs have no cost limit.");
+    expect((await getOrganization(ORG))!.jobCostLimit).toBeNull();
   });
 
   it("knows who has joined, what they may do, and links to the exact screen", async () => {

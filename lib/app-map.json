@@ -57,7 +57,7 @@
     "path": "/settings/ai",
     "title": "Settings → AI",
     "where": "Company menu → Settings → AI",
-    "what": "The company's own AI provider keys (bring your own key) and the default models for the Chief of Staff and agents (admins change them)."
+    "what": "The company's own AI provider keys (bring your own key), the default models for the Chief of Staff and agents, and the job cost limit above which a job's plan needs approval (admins change them)."
   },
   {
     "path": "/settings/channels",

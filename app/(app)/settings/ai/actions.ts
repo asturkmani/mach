@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { AiKeyError, removeAiKey, saveAiKey } from "@/lib/ai/keys";
-import { OperationError, setCompanyModelsAs } from "@/lib/operations";
+import { OperationError, setCompanyModelsAs, setJobCostLimitAs } from "@/lib/operations";
 import type { CompanyModels } from "@/lib/orgs";
 import { actorOf, requireAppContext } from "@/lib/session";
 
@@ -34,6 +34,18 @@ export async function removeAiKeyAction(provider: string): Promise<{ error?: str
 export async function saveCompanyModelsAction(models: CompanyModels): Promise<{ error?: string }> {
   try {
     await setCompanyModelsAs(actorOf(await requireAppContext()), models);
+  } catch (error) {
+    if (error instanceof OperationError) return { error: error.message };
+    throw error;
+  }
+  revalidatePath("/settings/ai");
+  return {};
+}
+
+/** The dollars a job may be estimated at before its plan needs a person's approval (admins only); null for no limit. */
+export async function saveJobCostLimitAction(limit: number | null): Promise<{ error?: string }> {
+  try {
+    await setJobCostLimitAs(actorOf(await requireAppContext()), limit);
   } catch (error) {
     if (error instanceof OperationError) return { error: error.message };
     throw error;

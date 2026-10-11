@@ -1,8 +1,11 @@
+import { dollars, jobEstimate } from "@/lib/agents/job-cost";
 import { firstSentence, lastLines, type RunContext } from "@/lib/agents/prompts";
 import { knownSkills, SKILLS } from "@/lib/agents/skills";
 import { companySkillsFor } from "@/lib/company-skills";
 import { coordinatorAgent, workerAgent } from "@/lib/agents/store";
+import { approvalLabel, approvalsFor } from "@/lib/approvals";
 import { attachToTask, contentTypeFor, isText, listTaskFiles, readVersion } from "@/lib/files";
+import { getOrganization } from "@/lib/orgs";
 import { listPeople } from "@/lib/people";
 import {
   addMember,
@@ -41,6 +44,29 @@ async function childOf(context: RunContext, number: number): Promise<Task | stri
   const task = await getTaskByNumber(context.organizationId, number);
   if (!task || task.parentTaskId !== context.taskId) return `#${number} isn't one of this job's children.`;
   return task;
+}
+
+/**
+ * Above the company's limit, a job's round only grows under a cost approval
+ * for at least its estimate: null when this child may start.
+ */
+async function costGate(
+  organizationId: string,
+  jobId: string,
+  round: Parameters<typeof jobEstimate>[0],
+  catalogue: Parameters<typeof jobEstimate>[1],
+): Promise<string | null> {
+  const limit = (await getOrganization(organizationId))?.jobCostLimit ?? null;
+  if (limit === null) return null;
+  const estimate = jobEstimate(round, catalogue);
+  if (estimate <= limit) return null;
+  const approvals = (await approvalsFor(organizationId, jobId)).filter((a) => a.kind === "cost");
+  if (approvals.some((a) => a.status === "approved" && (a.estimate ?? 0) >= estimate)) return null;
+  const covered = approvals.find((a) => a.status === "approved");
+  const pending = approvals.find((a) => a.status === "pending");
+  return `Not started: with this child, this round of the job comes to about ${dollars(estimate)}, above the company's limit of ${dollars(limit)}${
+    covered ? ` and the ${dollars(covered.estimate ?? 0)} approved in ${approvalLabel(covered)}` : ""
+  }. ${pending ? `${approvalLabel(pending)} is still waiting on a person.` : "Add up the whole plan and ask for it once with request_approval (kind cost, estimate_usd): it ends your run, and their Approve starts your next one."}`;
 }
 
 /** The batch the children started in this run belong to. */
@@ -96,6 +122,11 @@ export async function startChild(context: RunContext, input: ChildInput, batch: 
       return `Not started: ${skill.name} has no script ${input.script.path}${skill.scripts ? ` (it has ${Object.keys(skill.scripts).join(", ")})` : ""}.`;
     }
   }
+  const overBudget = await costGate(organizationId, job.id, [
+    ...children,
+    { assigneeKind: input.assignee, skills: input.assignee === "script" ? [] : knownSkills(input.skills, catalogue), batch, status: "ready" },
+  ], catalogue);
+  if (overBudget) return overBudget;
   const waiting = before.some((c) => c!.status !== "review" && c!.status !== "done");
   // A script child has the Worker on it too, to fix the script if it fails.
   const worker = input.assignee !== "person" ? await workerAgent(organizationId) : null;

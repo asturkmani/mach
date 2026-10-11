@@ -117,6 +117,13 @@ const childNumber = z.number().int().positive().describe("The child's task numbe
 /** A job's coordinator's tools: its children, and ending its run to wait for them. */
 function jobTools(context: RunContext, state: RunState, end: (outcome: RunOutcome) => void) {
   const batch = async () => (state.batch ??= await batchFor(context));
+  // Children start one at a time, even when called together, so each sees those before it: the batch's size, the round's cost.
+  let starting: Promise<unknown> = Promise.resolve();
+  const inTurn = <T>(start: () => Promise<T>): Promise<T> => {
+    const next = starting.then(start, start);
+    starting = next.catch(() => {});
+    return next;
+  };
   return {
     start_child: tool({
       description:
@@ -141,7 +148,7 @@ function jobTools(context: RunContext, state: RunState, end: (outcome: RunOutcom
         after: z.array(z.number().int().positive()).optional().describe("Numbers of this job's children it needs first: it starts once they're delivered."),
         files: z.array(z.string()).optional().describe("Names of files on this job it should start from."),
       }),
-      execute: async (input) => startChild(context, input, await batch()),
+      execute: (input) => inTurn(async () => startChild(context, input, await batch())),
     }),
     message_child: tool({
       description:

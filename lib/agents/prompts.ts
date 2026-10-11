@@ -224,7 +224,13 @@ ${integrationListing(integrations)}
 }
 
 export type JobBrief =
-  | { kind: "job"; done?: number; children: { task: Task; latest?: Pick<TaskMessage, "kind" | "author" | "body"> }[] }
+  | {
+      kind: "job";
+      done?: number;
+      children: { task: Task; latest?: Pick<TaskMessage, "kind" | "author" | "body"> }[];
+      /** Under a cost limit: the figures, and this round's estimate. */
+      cost?: string;
+    }
   | { kind: "child"; parent: Pick<Task, "number" | "title"> };
 
 /** A job's children for its coordinator, or for a child, the job it's part of. */
@@ -234,7 +240,8 @@ function jobListing(job?: JobBrief): string {
     return `\n<job number="${job.parent.number}">\nThis task is part of job #${job.parent.number}, ${job.parent.title}, run by the Coordinator. It started this task for the person the job is for. Your finish and ask go to the Coordinator, not to people: report compressed results (the findings, dated, each marked fact, estimate or opinion, with numbered sources) and attach your deliverables. If the work needs a different plan, say so in your report.\n</job>\n`;
   }
   const earlier = job.done ? `\n(${job.done} children from earlier rounds are done and not listed.)` : "";
-  if (job.children.length === 0) return `\n<children>\nNo children yet.${earlier}\n</children>\n`;
+  const cost = job.cost ? `\n<cost>\n${job.cost}\n</cost>\n` : "";
+  if (job.children.length === 0) return `\n<children>\nNo children yet.${earlier}\n</children>\n${cost}`;
   const lines = job.children.map(({ task: c, latest }) => {
     const script = (c.payload as { script?: { skill: string; path: string } } | null)?.script;
     const who =
@@ -247,7 +254,7 @@ function jobListing(job?: JobBrief): string {
     const word = latest ? `\n  Latest ${latest.kind === "ask" ? "question" : latest.kind === "comment" ? "reply" : "result"} from ${latest.author}: ${clip(latest.body, 1500)}` : "";
     return `- #${c.number} ${c.title} (${who}, batch ${c.batch}${after}) · ${c.status}${c.summary ? ` · ${c.summary}` : ""}${word}`;
   });
-  return `\n<children>\nThis job's children, oldest first (read_child for a child's full result and files):\n${lines.join("\n")}${earlier}\n</children>\n`;
+  return `\n<children>\nThis job's children, oldest first (read_child for a child's full result and files):\n${lines.join("\n")}${earlier}\n</children>\n${cost}`;
 }
 
 export type WorkingFor = {

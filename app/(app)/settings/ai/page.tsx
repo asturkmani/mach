@@ -1,11 +1,11 @@
-import { AiKeyRow, CompanyModelsForm } from "@/components/ai-settings";
+import { AiKeyRow, CompanyModelsForm, JobCostLimitForm } from "@/components/ai-settings";
 import { SettingsGroup } from "@/components/setting-row";
 import { AI_PROVIDERS, listAiKeys, providerOf } from "@/lib/ai/keys";
 import { LINEUPS, lineupFor } from "@/lib/ai/lineup";
 import { modelChoices } from "@/lib/models";
 import { requireAppContext } from "@/lib/session";
 
-// @map Settings → AI | Company menu → Settings → AI | The company's own AI provider keys (bring your own key) and the default models for the Chief of Staff and agents (admins change them).
+// @map Settings → AI | Company menu → Settings → AI | The company's own AI provider keys (bring your own key), the default models for the Chief of Staff and agents, and the job cost limit above which a job's plan needs approval (admins change them).
 // Settings → AI: the company's own keys with AI providers (bring your own
 // key), so model usage is billed to its accounts, and which models its Chief
 // of Staff and agents run on by default.
@@ -54,6 +54,14 @@ export default async function AiSettingsPage() {
       >
         <div className="py-4">
           <CompanyModelsForm models={organization.models} fallback={fallback} choices={choices} canEdit={isAdmin} />
+        </div>
+      </SettingsGroup>
+      <SettingsGroup
+        title="Job cost limit"
+        description="A big job is planned before it starts. If its estimate for a round is above this, the people it's for are asked to approve the plan and its cost first. The estimate is rough: about $0.40 for each piece of work, more for code or a website, and nothing for a person's part. Empty for no limit."
+      >
+        <div className="py-4">
+          <JobCostLimitForm limit={organization.jobCostLimit} canEdit={isAdmin} />
         </div>
       </SettingsGroup>
     </>

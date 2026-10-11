@@ -6,10 +6,10 @@ import { setScheduler } from "@/lib/agents/dispatch";
 import { agentModel, coordinatorAgent, createAgent, listAgents, workerAgent } from "@/lib/agents/store";
 import { saveCompanySkill } from "@/lib/company-skills";
 import { listTaskFiles } from "@/lib/files";
-import { createOrganization, getOrganization } from "@/lib/orgs";
+import { createOrganization, getOrganization, setJobCostLimit } from "@/lib/orgs";
 import { getPerson, linkMember } from "@/lib/people";
 import { getTask, getTaskByNumber, listChildren, listInbox, listMessages, listTasks } from "@/lib/tasks";
-import { createTaskWithTeam, replyToTask, setStatus } from "@/lib/work";
+import { createTaskWithTeam, pickOption, replyToTask, setStatus } from "@/lib/work";
 import { setSandboxProvider } from "@/lib/sandbox";
 import { useTestDb } from "@/test/db";
 import { fakeSandboxes } from "@/test/fake-sandbox";
@@ -143,6 +143,38 @@ describe("jobs", () => {
     // One report: the job is in Sara's inbox and on the board; its workers' children aren't.
     expect((await listInbox(ORG, by.personId)).map((t) => t.number)).toEqual([1]);
     expect((await listTasks(ORG)).map((t) => t.number)).toEqual([1]);
+  });
+
+  it("ask the person to approve a plan estimated above the company's limit before it grows past it", async () => {
+    const { by } = await sara();
+    await setJobCostLimit(ORG, 1.5);
+    const research = (title: string) => ["start_child", { assignee: "worker", title, brief: `${title} into 2027.`, skills: ["research"] }] as [string, object];
+    const { calls, drain } = models(
+      [
+        // One child fits under $1.50 with the coordinator's runs; the second doesn't.
+        [research("DRAM pricing outlook"), research("HBM supply outlook")],
+        [["request_approval", { kind: "cost", what: "Memory brief: 2 research children and the write-up", estimate_usd: 2.5, summary: "Approve about $2.50 for the memory brief?" }]],
+        // Approved: the rest of the plan starts (a second batch, so one more run of its own: $2.30).
+        [research("HBM supply outlook")],
+        [["wait_for_children", {}]],
+        finish("Memory brief ready."),
+      ],
+      () => finish("Findings are in."),
+    );
+    const coordinator = await coordinatorAgent(ORG);
+    const job = await createTaskWithTeam(ORG, { title: "Brief on memory pricing", agentIds: [coordinator.id], skills: ["research"], by });
+    await drain();
+
+    expect(calls.coordinator[0]).toContain("The company asks for approval before a job's round is estimated above $1.50");
+    expect(calls.coordinator[1]).toContain("Not started: with this child, this round of the job comes to about $1.80, above the company's limit of $1.50.");
+    expect((await listChildren(ORG, job.id)).map((c) => c.title)).toEqual(["DRAM pricing outlook"]);
+    expect(await getTask(ORG, job.id)).toMatchObject({ status: "waiting", options: [{ label: "Approve" }, { label: "Change something" }] });
+    expect((await listMessages(job.id)).at(-1)!.body).toContain("Estimated cost: about $2.50.");
+
+    await pickOption(ORG, job.id, by, 0);
+    await drain();
+    expect((await listChildren(ORG, job.id)).map((c) => c.title)).toEqual(["DRAM pricing outlook", "HBM supply outlook"]);
+    expect(await getTask(ORG, job.id)).toMatchObject({ status: "review", summary: "Memory brief ready." });
   });
 
   it("wakes the coordinator straight away for a child's question, and gives a person their own list", async () => {

@@ -2,12 +2,12 @@
 
 import { useState, useTransition } from "react";
 
-import { removeAiKeyAction, saveAiKeyAction, saveCompanyModelsAction } from "@/app/(app)/settings/ai/actions";
+import { removeAiKeyAction, saveAiKeyAction, saveCompanyModelsAction, saveJobCostLimitAction } from "@/app/(app)/settings/ai/actions";
 import { SettingRow } from "@/components/setting-row";
 
 // Settings → AI: a row per provider to add, replace or remove the company's
 // key (typed into a password field and sent straight to the server, never
-// shown again), and the company's default models.
+// shown again), the company's default models, and its job cost limit.
 
 type Provider = { slug: string; name: string; placeholder: string; keysUrl: string };
 
@@ -169,6 +169,52 @@ export function CompanyModelsForm({
             onClick={() =>
               start(async () => {
                 const result = await saveCompanyModelsAction(draft);
+                setState(result.error ? { error: result.error } : { saved: true });
+              })
+            }
+          >
+            {pending ? "Saving…" : "Save"}
+          </button>
+          {state.error && <p className="text-sm text-danger">{state.error}</p>}
+          {state.saved && <p className="text-sm text-ok">Saved.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The dollars a job may be estimated at before its plan needs a person's approval; empty for no limit. */
+export function JobCostLimitForm({ limit, canEdit }: { limit: number | null; canEdit: boolean }) {
+  const [draft, setDraft] = useState(limit === null ? "" : String(limit));
+  const [state, setState] = useState<{ error?: string; saved?: boolean }>({});
+  const [pending, start] = useTransition();
+  return (
+    <div className="space-y-4">
+      <label className="block space-y-1.5">
+        <span className="label">Ask before a job estimated above (US dollars)</span>
+        <input
+          inputMode="decimal"
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setState({});
+          }}
+          disabled={!canEdit}
+          placeholder="No limit"
+          className="field max-w-40"
+        />
+      </label>
+      {canEdit && (
+        <div className="flex items-center gap-3">
+          <button
+            className="btn btn-primary"
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                const value = draft.trim().replace(/^\$/, "");
+                const amount = value === "" ? null : Number(value);
+                if (amount !== null && !(amount > 0)) return setState({ error: "Give the limit in dollars, more than 0, or leave it empty." });
+                const result = await saveJobCostLimitAction(amount);
                 setState(result.error ? { error: result.error } : { saved: true });
               })
             }

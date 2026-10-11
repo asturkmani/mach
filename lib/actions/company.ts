@@ -21,6 +21,7 @@ import {
   removePersonAs,
   restorePageAs,
   setCompanyModelsAs,
+  setJobCostLimitAs,
   setFileVisibilityAs,
   setManagerAs,
   setPageVisibilityAs,
@@ -256,6 +257,16 @@ export const companyActions = [
     run: async ({ actor }, models) => {
       await setCompanyModelsAs(actor, models);
       return `Saved. ${appUrl("/settings/ai")}`;
+    },
+  }),
+  defineAction({
+    name: "company.set_job_cost_limit",
+    description: "Set the dollars a job may be estimated at before its plan needs a person's approval; none for no limit.",
+    input: z.object({ dollars: z.number().positive().nullable().describe("null: no limit.") }),
+    who: "admin",
+    run: async ({ actor }, { dollars }) => {
+      await setJobCostLimitAs(actor, dollars);
+      return dollars === null ? "Saved: jobs have no cost limit." : `Saved: a job estimated above $${dollars.toFixed(2)} asks first.`;
     },
   }),
   defineAction({
