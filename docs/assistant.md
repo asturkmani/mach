@@ -61,7 +61,7 @@ them (`keepAliveDue` in
 
 The Chief of Staff runs on a fast, cheaper model and hands work to the Worker with `spawn_worker`: a title,
 the brief (what to do, why, what matters, what they want back), the skills to pin, and optionally people,
-files, a schedule (`repeat`), tasks to wait for (`after`), or a defined agent to do it instead. The task's
+files, a schedule (`repeat`) and tasks to wait for (`after`). The task's
 model comes from its skills (`coder` for `coding-in-github`) unless the company chose one. With `wait`, it
 runs the Worker on the spot (the pinned skills, the data sources the person may use, research and the
 person's sandbox) and waits up to three minutes. If it says the question needs real work, or runs out of
@@ -78,7 +78,7 @@ message: the old call becomes a short note of what it did (`lib/agents/history.t
 | `lib/assistant/hours.ts` | Working and quiet hours, when something may be delivered, when a keep-alive is due |
 | `lib/assistant/store.ts` | Hours, the WhatsApp window, and the `assistant_wakeups` queue |
 | `lib/assistant/wake.ts` | The wake-up turn, run from the cron tick (`app/api/cron/tick`) every minute |
-| `lib/agents/specialist.ts` | `spawn_worker` with `wait`: the Worker (or a defined agent) answering while the Chief of Staff waits |
+| `lib/agents/specialist.ts` | `spawn_worker` with `wait`: the Worker answering while the Chief of Staff waits |
 
 ## Jobs: the coordinator
 

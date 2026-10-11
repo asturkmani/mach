@@ -63,8 +63,6 @@ export type BegunRun =
       model: string;
       instructions: string;
       prompt: string;
-      /** The other agents on the task, which this one can hand off to. */
-      otherAgents: { id: string; name: string }[];
       /** The data sources this agent may call (slugs). */
       sources: string[];
       /** The website logins this agent may use (slugs). */
@@ -130,7 +128,6 @@ export async function beginRun(
     jobBrief(organizationId, task, coordinating),
   ]);
   const canEscalate = !coordinating && !task.parentTaskId && task.kind === "task";
-  const others = agentsOn(task).filter((m) => m.id !== agent.id);
   const images = await newImages(organizationId, messages, agent.id);
   // The people's messages since this agent last wrote, and any still showing its 👀 or ⏳ (one
   // queued while it was working, or that a run never got to).
@@ -184,8 +181,7 @@ export async function beginRun(
     }),
     prompt: coordinating
       ? `Run job #${task.number} now. End with wait_for_children, ask or finish.`
-      : `Work on task #${task.number} now. End with finish, ask${others.length ? ", hand_off" : ""}${canEscalate ? " or escalate" : ""}.`,
-    otherAgents: others.map((a) => ({ id: a.id, name: a.name })),
+      : `Work on task #${task.number} now. End with finish, ask${canEscalate ? " or escalate" : ""}.`,
     sources: usable.filter((i) => i.kind === "api" && i.status !== "disabled").map((i) => i.slug),
     logins: usable.filter((i) => i.kind === "login" && i.status !== "disabled").map((i) => i.slug),
     images,
@@ -369,16 +365,6 @@ export async function finishWork(context: RunContext, input: Report & { report: 
   "use step";
   await report(context, "review", "result", input.report, input);
   return "Reported. Your run ends here.";
-}
-
-export async function handOff(
-  context: RunContext,
-  input: { to: { id: string; name: string }; note: string; summary: string; progress?: string },
-): Promise<string> {
-  "use step";
-  await addMessage(context.taskId, { ...by(context), kind: "update", body: `@${input.to.name} ${input.note}` });
-  await updateTask(context.organizationId, context.taskId, { summary: input.summary, progress: lastLines(input.progress, 6) });
-  return `Handed to ${input.to.name}.`;
 }
 
 /** The model stopped without finishing or asking: whatever it said becomes the result. */

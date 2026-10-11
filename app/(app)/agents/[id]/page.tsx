@@ -14,7 +14,7 @@ import { requireAppContext } from "@/lib/session";
 import { STATUS_WORDS } from "@/lib/task-words";
 import { listAgentTasks } from "@/lib/tasks";
 
-// @map Agent | Team → Agents → click an agent | One agent: its name, role, job description, instructions and model, Pause or Archive, and the tasks it's on.
+// @map Agent | A task → click one of Mach1's agents on it (the Worker, the Coordinator) | One of Mach1's agents: its name, role, instructions and model, Pause or Archive, and the tasks it's on.
 export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
   const { organization, person } = await requireAppContext();
   const { id } = await params;

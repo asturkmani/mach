@@ -8,8 +8,8 @@
   {
     "path": "/agents/{id}",
     "title": "Agent",
-    "where": "Team → Agents → click an agent",
-    "what": "One agent: its name, role, job description, instructions and model, Pause or Archive, and the tasks it's on."
+    "where": "A task → click one of Mach1's agents on it (the Worker, the Coordinator)",
+    "what": "One of Mach1's agents: its name, role, instructions and model, Pause or Archive, and the tasks it's on."
   },
   {
     "path": "/company",
@@ -87,6 +87,6 @@
     "path": "/team",
     "title": "Team",
     "where": "Left menu → Team",
-    "what": "Everyone the company works with: people (role, manager, contact details, whether they've joined or been invited, admin or member) and agents (?show=people or ?show=agents). Admins add and invite people here (?new=person opens the form) and remove them."
+    "what": "The people the company works with (role, manager, contact details, whether they've joined or been invited, admin or member) and its scheduled jobs (?show=people for people only). Admins add and invite people here (?new=person opens the form) and remove them. How work is done lives in Skills, not in agents of the company's own."
   }
 ]

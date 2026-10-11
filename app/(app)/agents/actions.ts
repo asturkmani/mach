@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 
 import { performAs } from "@/lib/actions";
-import { createAgent, type AgentStatus } from "@/lib/agents/store";
+import type { AgentStatus } from "@/lib/agents/store";
 import { OperationError } from "@/lib/operations";
 import { actorOf, requireAppContext } from "@/lib/session";
 
@@ -19,19 +19,6 @@ function fields(form: FormData) {
     // Only the edit form has the field: absent leaves the model as it is.
     ...(form.has("model") ? { model: field("model") } : {}),
   };
-}
-
-export async function createAgentAction(_: AgentActionResult, form: FormData): Promise<AgentActionResult> {
-  const { organization } = await requireAppContext();
-  const input = fields(form);
-  if (!input.name) return { error: "Give the agent a name." };
-  try {
-    const agent = await createAgent(organization.id, input);
-    refresh();
-    return { id: agent.id };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Couldn't create the agent." };
-  }
 }
 
 export async function updateAgentAction(id: string, _: AgentActionResult, form: FormData): Promise<AgentActionResult> {

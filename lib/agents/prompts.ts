@@ -309,8 +309,7 @@ ${coordinating ? coordinatorWork() : `${workerWork(organization)}
 
 How to end your run (call exactly one of these):
 - finish: the work is done, or done as far as you can take it. Report the result.
-- ask: you need a decision only a person can make (taste, money, anything outward-facing or hard to undo). Decide everything else yourself and say what you decided. Ask everything you need in one go, and never ask again what the thread already answers.
-- hand_off: another agent on this task should take the next step. Say exactly what they should do.${
+- ask: you need a decision only a person can make (taste, money, anything outward-facing or hard to undo). Decide everything else yourself and say what you decided. Ask everything you need in one go, and never ask again what the thread already answers.${
     canEscalate
       ? "\n- escalate: the work needs a plan or needs to go wide (you found eight issues, not one, or the question splits into six). It becomes a job: the Coordinator takes over, starting from what you found."
       : ""

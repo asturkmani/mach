@@ -724,3 +724,50 @@ create table if not exists skill_decisions (
   decided_at timestamptz
 );
 create index if not exists skill_decisions_lookup on skill_decisions (organization_id, skill, question, created_at desc);
+
+-- Defined agents become company workflow skills (docs/agent-design.md): each one's role and instructions are
+-- a skill named after it, pinned to its open tasks, which the Worker takes over; the agent is archived.
+-- became_skill records which skill an agent became, so each step runs once. Mach1's own skills' names are
+-- left alone, and a skill people retired later isn't made again.
+alter table agents add column if not exists became_skill text;
+update agents a set became_skill = (
+  select case
+    when exists (select 1 from skills s where s.organization_id = a.organization_id and s.name = slug and s.archived_at is null)
+      or slug in ('building-pages', 'coding-in-github', 'company-profile', 'connecting-integrations', 'coordinating', 'data-pipelines',
+        'designing-agents', 'excel-models', 'financial-analysis', 'issue-triage', 'presentations', 'reconciliation', 'research',
+        'using-the-browser', 'writing-skills', 'writing-tasks')
+    then left(slug, 34) || '-agent' else slug end
+  from (select case when s ~ '^[a-z]' then s else 'agent-' || s end as slug
+        from (select left(trim(both '-' from regexp_replace(lower(a.name), '[^a-z0-9]+', '-', 'g')), 40) as s) cleaned) named
+)
+where a.kind = 'defined' and a.builtin is null and a.status <> 'archived' and a.became_skill is null;
+insert into skills (organization_id, name, kind, visibility)
+select distinct a.organization_id, a.became_skill, 'workflow', 'company' from agents a
+where a.became_skill is not null
+  and not exists (select 1 from skills s where s.organization_id = a.organization_id and s.name = a.became_skill);
+insert into skill_versions (skill_id, version, description, body, note, author)
+select distinct on (s.id) s.id, 1,
+  coalesce(nullif(a.role, ''), 'The work ' || a.name || ' did') || case when a.description <> '' then ': ' || left(a.description, 200) else '' end,
+  '## When to use' || E'\n' || coalesce(nullif(a.description, ''), nullif(a.role, ''), a.name) || E'\n\n' || '## How' || E'\n' || coalesce(nullif(a.instructions, ''), '(No instructions were written.)'),
+  'From the ' || a.name || ' agent.', 'Mach1'
+from skills s join agents a on a.organization_id = s.organization_id and a.became_skill = s.name
+where not exists (select 1 from skill_versions v where v.skill_id = s.id);
+update agents set status = 'archived', updated_at = now() where became_skill is not null and status <> 'archived';
+-- The Worker, where a company had agents to take over from (made with its builtin, so code finds it).
+insert into agents (organization_id, kind, name, role, description, instructions, builtin)
+select distinct a.organization_id, 'defined', 'Worker', 'Does the work, with the skills each task needs', '', '', 'worker'
+from agents a join task_members m on m.agent_id = a.id join tasks t on t.id = m.task_id and t.status not in ('done', 'cancelled')
+where a.became_skill is not null
+  and not exists (select 1 from agents w where w.organization_id = a.organization_id and w.builtin = 'worker' and w.status <> 'archived')
+on conflict do nothing;
+update tasks t set skills = array_append(t.skills, a.became_skill)
+from task_members m join agents a on a.id = m.agent_id
+where m.task_id = t.id and a.became_skill is not null and t.status not in ('done', 'cancelled') and not (a.became_skill = any(t.skills));
+insert into task_members (task_id, agent_id)
+select distinct m.task_id, w.id from task_members m
+join agents a on a.id = m.agent_id and a.became_skill is not null
+join tasks t on t.id = m.task_id and t.status not in ('done', 'cancelled')
+join agents w on w.organization_id = a.organization_id and w.builtin = 'worker' and w.status <> 'archived'
+on conflict do nothing;
+delete from task_members m using agents a, tasks t
+where a.id = m.agent_id and t.id = m.task_id and a.became_skill is not null and t.status not in ('done', 'cancelled');

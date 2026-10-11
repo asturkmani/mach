@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { setScheduler } from "@/lib/agents/dispatch";
+import { createAgent, getAgent } from "@/lib/agents/store";
 import { runAgentOnTask } from "@/lib/agents/runner";
 import { workerAgent } from "@/lib/agents/store";
 import { readFileSync } from "node:fs";
@@ -12,7 +13,7 @@ import { saveIntegration } from "@/lib/integrations";
 import { createOrganization, getOrganization } from "@/lib/orgs";
 import { getPerson, linkMember } from "@/lib/people";
 import { setSandboxProvider } from "@/lib/sandbox";
-import { createTask, getTaskByNumber } from "@/lib/tasks";
+import { createTask, getTask, getTaskByNumber, updateTask } from "@/lib/tasks";
 import { doAction } from "@/test/do-action";
 import { useTestDb } from "@/test/db";
 import { fakeSandboxes } from "@/test/fake-sandbox";
@@ -189,5 +190,36 @@ describe("company skills", () => {
     const skill = (await integrationSkill(ORG, old.id))!;
     expect(skill).toMatchObject({ name: "masttro-web", kind: "integration", version: 1, body: "Tags are under Transactions → Untagged." });
     expect(skill.description).toBe("How Masttro (web) works (website login). Load it before using masttro-web.");
+  });
+
+  it("are what the company's own agents become: the Worker takes over their open work with the skill", async () => {
+    const { sara } = await team();
+    const analyst = await createAgent(ORG, {
+      name: "Portfolio Analyst",
+      role: "Portfolio analysis",
+      description: "Watches the public portfolio.",
+      instructions: "Always state the as-of date.",
+    });
+    const open = await createTask(ORG, { title: "Weekly portfolio note", people: [sara.id], agents: [analyst.id] });
+    const closed = await createTask(ORG, { title: "Last quarter's note", people: [sara.id], agents: [analyst.id] });
+    await updateTask(ORG, closed.id, { status: "done" });
+
+    const schema = readFileSync("db/schema.sql", "utf8");
+    const block = schema.slice(schema.indexOf("-- Defined agents become company workflow skills"));
+    const statements = block
+      .split(";\n")
+      .map((sql) => sql.replace(/^(\s*--.*\n)+/, "").trim())
+      .filter(Boolean);
+    for (let deploy = 0; deploy < 2; deploy++) for (const sql of statements) await getDb().query(sql);
+
+    const skill = (await getCompanySkill(ORG, "portfolio-analyst"))!;
+    expect(skill).toMatchObject({ kind: "workflow", visibility: "company", version: 1, description: "Portfolio analysis: Watches the public portfolio." });
+    expect(skill.body).toBe("## When to use\nWatches the public portfolio.\n\n## How\nAlways state the as-of date.");
+    expect((await getAgent(ORG, analyst.id))!.status).toBe("archived");
+    const now = (await getTask(ORG, open.id))!;
+    expect(now.members.map((m) => m.name)).toEqual(["Sara", "Worker"]);
+    expect(now.skills).toEqual(["portfolio-analyst"]);
+    // Finished work keeps who did it.
+    expect((await getTask(ORG, closed.id))!.members.map((m) => m.name)).toEqual(["Sara", "Portfolio Analyst"]);
   });
 });

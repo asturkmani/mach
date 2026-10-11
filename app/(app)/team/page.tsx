@@ -1,23 +1,20 @@
 import { BadgeCheck, Repeat } from "lucide-react";
 import Link from "next/link";
 
-import { AgentForm } from "@/components/agent-form";
 import { PageHeader } from "@/components/page-header";
 import { DataCell, DataRow, DataTable, PageBody, Section, Segmented } from "@/components/kit";
 import { Face } from "@/components/ui";
-import { listAgents } from "@/lib/agents/store";
-import { AGENT_TEMPLATES } from "@/lib/agents/templates";
 import { memberRoles } from "@/lib/members";
 import { listPeople } from "@/lib/people";
 import { formatPhone } from "@/lib/phone-format";
 import { requireAppContext } from "@/lib/session";
-import { isRunning, listTasks } from "@/lib/tasks";
+import { isRunning } from "@/lib/tasks";
 import { timeIn } from "@/lib/agents/prompts";
 import { listScheduledJobs } from "@/lib/work-overview";
 
 import { AddPersonForm, EditableText, PersonActions, ManagerSelect } from "./team-controls";
 
-// @map Team | Left menu → Team | Everyone the company works with: people (role, manager, contact details, whether they've joined or been invited, admin or member) and agents (?show=people or ?show=agents). Admins add and invite people here (?new=person opens the form) and remove them.
+// @map Team | Left menu → Team | The people the company works with (role, manager, contact details, whether they've joined or been invited, admin or member) and its scheduled jobs (?show=people for people only). Admins add and invite people here (?new=person opens the form) and remove them. How work is done lives in Skills, not in agents of the company's own.
 const STATUS_LABELS = {
   active: { label: "Joined", className: "text-ok" },
   invited: { label: "Invited", className: "text-warn" },
@@ -27,29 +24,25 @@ const STATUS_LABELS = {
 const SHOW = [
   { value: "all", label: "All" },
   { value: "people", label: "People" },
-  { value: "agents", label: "Agents" },
 ] as const;
 
-// Everyone the company works with: the people in its org chart and its
-// agents, in one place. ?show= narrows it to one kind; ?new= opens an add form.
+// The people the company works with, in its org chart, and the jobs that run
+// on a schedule. ?show=people narrows it to people; ?new= opens an add form.
+// Companies don't define agents: how their work is done lives in skills.
 export default async function TeamPage({ searchParams }: PageProps<"/team">) {
   const { organization, person: me, isAdmin } = await requireAppContext();
   const params = await searchParams;
-  const show = params.show === "people" || params.show === "agents" ? params.show : "all";
-  const [people, agents, tasks, jobs, roles] = await Promise.all([
+  const show = params.show === "people" ? "people" : "all";
+  const [people, jobs, roles] = await Promise.all([
     listPeople(organization.id),
-    listAgents(organization.id),
-    listTasks(organization.id, { closedLimit: 0, viewer: me.id }),
     listScheduledJobs(organization.id, { viewer: me.id }),
     memberRoles(organization.id).catch(() => new Map<string, { membershipId: string; role: "admin" | "member" }>()),
   ]);
   const roleOf = (workosUserId: string | null) => (workosUserId ? (roles.get(workosUserId)?.role ?? null) : null);
-  const defined = agents.filter((a) => a.kind === "defined");
-  const openTasksFor = (id: string) => tasks.filter((t) => t.members.some((m) => m.id === id));
 
   return (
     <>
-      <PageHeader title="Team" count={people.length + defined.length}>
+      <PageHeader title="Team" count={people.length}>
         <div className="mr-2">
           <Segmented
             label="Show"
@@ -59,8 +52,7 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
         </div>
       </PageHeader>
       <PageBody className="space-y-12">
-          {show !== "agents" && (
-            <Section
+          <Section
               title="People"
               count={people.length}
               addLabel="Add person"
@@ -150,46 +142,6 @@ export default async function TeamPage({ searchParams }: PageProps<"/team">) {
                     })}
               </DataTable>
             </Section>
-          )}
-
-          {show !== "people" && (
-            <Section
-              title="Agents"
-              count={defined.length + 1}
-              addLabel="New agent"
-              startOpen={params.new === "agent"}
-              form={
-                <div className="frame bg-raised p-6">
-                  <AgentForm templates={AGENT_TEMPLATES} />
-                </div>
-              }
-            >
-              <ul className="divide-y divide-line-soft border border-line bg-raised">
-                <li className="flex items-center gap-3 px-4 py-3">
-                  <Face name="Chief of Staff" agent size={30} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[15px]">Chief of Staff</p>
-                    <p className="truncate text-sm text-muted">Keeps the company profile, turns requests into tasks, staffs them.</p>
-                  </div>
-                </li>
-                {defined.map((agent) => (
-                  <li key={agent.id}>
-                    <Link href={`/agents/${agent.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-hover">
-                      <Face name={agent.name} agent size={30} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[15px]">
-                          {agent.name}
-                          {agent.status !== "active" && <span className="label ml-2 text-faint">{agent.status}</span>}
-                        </p>
-                        <p className="truncate text-sm text-muted">{agent.role || agent.description || "No role yet"}</p>
-                      </div>
-                      <span className="label text-faint">{openTasksFor(agent.id).length} open</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
 
           {show !== "people" && jobs.length > 0 && (
             <Section

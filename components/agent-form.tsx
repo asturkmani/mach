@@ -1,66 +1,36 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 
-import { createAgentAction, setAgentStatusAction, updateAgentAction, type AgentActionResult } from "@/app/(app)/agents/actions";
+import { setAgentStatusAction, updateAgentAction, type AgentActionResult } from "@/app/(app)/agents/actions";
 import type { AgentStatus } from "@/lib/agents/store";
-import type { AgentTemplate } from "@/lib/agents/templates";
 
 type Values = { name: string; role: string; description: string; instructions: string; model?: string };
 const EMPTY: Values = { name: "", role: "", description: "", instructions: "" };
 type ModelOption = { id: string; name: string };
 
+/** Editing one of Mach1's agents: its name, role, instructions and model. Companies don't make agents of their own: they keep skills. */
 export function AgentForm({
   agentId,
   initial = EMPTY,
-  templates = [],
   models,
-  onDone,
 }: {
-  agentId?: string;
+  agentId: string;
   initial?: Values;
-  templates?: AgentTemplate[];
   /** Offered when editing: the models to choose from, and what it runs on without one. */
   models?: { choices: ModelOption[]; fallback: string };
-  onDone?: () => void;
 }) {
-  const router = useRouter();
   const [values, setValues] = useState<Values>(initial);
   const [state, action, pending] = useActionState<AgentActionResult, FormData>(
-    agentId ? updateAgentAction.bind(null, agentId) : createAgentAction,
+    updateAgentAction.bind(null, agentId),
     {},
   );
-
-  useEffect(() => {
-    if (state.id && !state.error && !agentId) {
-      onDone?.();
-      router.push(`/agents/${state.id}`);
-    }
-  }, [state, agentId, onDone, router]);
 
   const set = (key: keyof Values) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setValues({ ...values, [key]: e.target.value });
 
   return (
     <form action={action} className="space-y-4">
-      {templates.length > 0 && (
-        <div className="space-y-2">
-          <p className="label">Start from</p>
-          <div className="flex flex-wrap gap-2">
-            {templates.map((t) => (
-              <button
-                key={t.name}
-                type="button"
-                onClick={() => setValues(t)}
-                className={`border px-2.5 py-1 text-sm ${values.name === t.name ? "border-ink bg-selected" : "border-line text-muted hover:text-ink"}`}
-              >
-                {t.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1.5">
           <span className="label">Name</span>

@@ -12,7 +12,6 @@ import {
   beginRun,
   endRun,
   finishWork,
-  handOff,
   keepLease,
   logRun,
   personCommentCount,
@@ -173,10 +172,9 @@ function jobTools(context: RunContext, state: RunState, end: (outcome: RunOutcom
   } satisfies ToolSet;
 }
 
-/** The tools of an agent on a task: delivering files, reporting, asking, handing off and scheduling. */
+/** The tools of an agent on a task: delivering files, reporting, asking, escalating and scheduling. */
 function taskTools(
   context: RunContext,
-  otherAgents: { id: string; name: string }[],
   using: SandboxUser,
   end: (outcome: RunOutcome) => void,
   { canEscalate = false }: { canEscalate?: boolean } = {},
@@ -265,25 +263,6 @@ function taskTools(
           }),
         }
       : {}),
-    ...(otherAgents.length > 0
-      ? {
-          hand_off: tool({
-            description: "End your run and pass the next step to another agent on this task.",
-            inputSchema: z.object({
-              to: z.enum(otherAgents.map((a) => a.name) as [string, ...string[]]),
-              note: z.string().min(1).describe("What you did and exactly what they should do next."),
-              summary: reportFields.summary,
-              progress: reportFields.progress,
-            }),
-            execute: async ({ to, ...input }) => {
-              const next = otherAgents.find((a) => a.name === to)!;
-              const result = await handOff(context, { ...input, to: next });
-              end({ type: "handed_off", agentId: next.id });
-              return result;
-            },
-          }),
-        }
-      : {}),
   } satisfies ToolSet;
 }
 
@@ -350,8 +329,6 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
       return "Writing a question";
     case "finish":
       return "Writing the report";
-    case "hand_off":
-      return "Handing off";
     default:
       return tool.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
   }
@@ -454,7 +431,7 @@ export async function runAgentOnTask(
     const research = options.research === false ? {} : { ...researchTools(context), ...exaTools() };
     // Skills loaded during the run switch on their tools from the next step (pinned ones from the start).
     state.loaded = new Set(begun.skills);
-    const task = taskTools(context, begun.otherAgents, using, end, { canEscalate: begun.canEscalate });
+    const task = taskTools(context, using, end, { canEscalate: begun.canEscalate });
     const tools = narrated(
       context,
       begun.coordinating
@@ -511,7 +488,7 @@ export async function runAgentOnTask(
       instructions: begun.instructions,
       // No activeTools here: it would fix the set for the whole run. prepareStep picks them before every step.
       tools,
-      // A run ends when a tool ended it: finish, ask, hand_off, a sign-in that asked for a code. Not on the
+      // A run ends when a tool ended it: finish, ask, escalate, a sign-in that asked for a code. Not on the
       // call alone, since a coordinator's finish is refused while its children still work.
       stopWhen: [isStepCount(40), () => state.outcome !== undefined],
       // Long runs keep their lease fresh before each model call (and say they're thinking), and stop

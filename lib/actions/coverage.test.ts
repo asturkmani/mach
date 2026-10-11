@@ -17,7 +17,6 @@ const CHAT_TOOL: Record<string, string | string[]> = {
   createTaskAction: ["create_task", "spawn_worker"],
   replyAction: "reply_on_task",
   searchTasksAction: "find_tasks",
-  createAgentAction: "create_agent",
 };
 
 /** Server actions that never go through chat, and why. */

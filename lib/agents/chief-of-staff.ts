@@ -31,7 +31,7 @@ import {
 } from "@/lib/agents/toolkit";
 import { askSpecialist } from "@/lib/agents/specialist";
 import { companyModel } from "@/lib/ai/company-model";
-import { coordinatorAgent, createAgent, findAgentByName, workerAgent, type Agent } from "@/lib/agents/store";
+import { coordinatorAgent, workerAgent, type Agent } from "@/lib/agents/store";
 import { findFiles, listTaskFiles, type LibraryFile } from "@/lib/files";
 import {
   IntegrationError,
@@ -171,9 +171,6 @@ function workInstructions(context: Context): string {
         i.personIds ? `, ${i.personIds.length} ${i.personIds.length === 1 ? "person's" : "people's"} work only` : ""
       })${i.description ? `: ${i.description}` : ""}`,
   );
-  const agentLines = agents
-    .filter((a) => a.kind === "defined" && a.status === "active")
-    .map((a) => `- ${a.name}${a.role ? ` (${a.role})` : ""}${a.description ? `: ${a.description}` : ""}`);
   const fileLines = files
     .filter((f) => f.kind === "deliverable" && f.versions.length)
     .slice(0, 30)
@@ -184,19 +181,17 @@ function workInstructions(context: Context): string {
   return `Tasks and the Worker. Decide in this order:
 1. If what you already have, or one quick tool, covers it, answer yourself.
 2. If it's one change in the app, do it with do_action.
-3. If it's one deliverable and one kind of work ("do a review of…", "draft…", "find…", "fix…"), hand it to the Worker with spawn_worker instead of doing the work in chat. Load the writing-tasks skill first. Pin the skills the work needs: it reads them before it starts, and can load others itself. If the answer is likely within a few minutes, pass wait and answer here; otherwise it's a task that reports back to their inbox (and here on WhatsApp when they asked there): tell them that in one line. A defined agent whose role fits can take it instead (spawn_worker's agent).
+3. If it's one deliverable and one kind of work ("do a review of…", "draft…", "find…", "fix…"), hand it to the Worker with spawn_worker instead of doing the work in chat. Load the writing-tasks skill first. Pin the skills the work needs: it reads them before it starts, and can load others itself. If the answer is likely within a few minutes, pass wait and answer here; otherwise it's a task that reports back to their inbox (and here on WhatsApp when they asked there): tell them that in one line.
 4. If it's a job (several deliverables that depend on each other, a process with people or an approval in it, in-depth research, or work whose shape nobody knows until someone looks), start it with start_job. The Coordinator plans it, asks what it must first, starts the work as tasks for the Worker and for people, and reports once. Tell them in one line.
 5. If unsure between 3 and 4, one worker is enough: it turns its task into a job itself if it needs one.
 - create_task is for work only people do: a to-do for someone on the team, with no agent on it.
 - Work they ask for is theirs: private to them and the people on it unless you pass shareWithCompany. Share it when it's meant for everyone (a report for the family, company work others should follow) or they say so; keep it private when it's personal or they haven't decided. They can change it any time ("share #12 with the company"): task.set_visibility.
 - Two separate pieces of work are two spawn_worker calls. One that needs another's result first: pass after with the earlier task's number, and it starts by itself once that's delivered.
 - Workers and the Coordinator can't see this conversation: the brief carries everything the work needs. Say why they want it (the decision or work it's for), what matters that it can't know and what they want back. Pass on only what the work needs, nothing personal it doesn't.
-- If the same kind of work will keep coming up and no agent fits, offer to create a defined agent with create_agent (load the designing-agents skill first).
+- Work that keeps coming up becomes a skill, not a new agent: after the work, Mach1 proposes keeping how it was done, and they say yes; or they describe it and you save it with do_action skill.save.
 - For work that should happen regularly ("every weekday at 4pm chart the option flow", "each Monday summarise…"), pass repeat on spawn_worker. It runs once now and then on the schedule, every run landing on the same task, in the same sandbox, so tell them that. Use the timezone they mention, else the company's (${context.organization.timezone ?? "not known yet: ask"}). Use mode script when code can do the job (data pulls, charts, models: the worker builds run.sh once and later runs replay it cheaply), agent when each run needs judgment. To change an existing job's schedule, tell them to reply on its task or use the Repeats panel there.
 - Jobs share a company data drive: datasets one job saves there are available to every other job.
 
-Defined agents (who they are):
-${agentLines.join("\n") || "(none yet)"}
 
 The company's work right now (live, as of this message). You see all of it: everyone's tasks, every agent and every scheduled job. When someone asks what's going on, how something is going, or what an agent found, answer from here, and use read_task for the detail (its summary, progress, thread and results) rather than guessing. find_tasks searches all work, finished included. To steer work (tell an agent to change course, answer its question, add a detail), use reply_on_task: it posts on the task as the person you're talking to, which wakes or queues its agent. Only post what they asked you to.
 ${workOverview({ openTasks, agents, jobs })}
@@ -231,7 +226,7 @@ function appInstructions(context: Context): string {
   );
   return `The app: you can do from chat everything ${name} can do on Mach1's screens, as them and with their permissions (${
     context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
-  }). Besides your own tools (spawn_worker, start_job, create_task, reply_on_task, save_person, create_agent, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
+  }). Besides your own tools (spawn_worker, start_job, create_task, reply_on_task, save_person, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
 ${actionCatalog({ isAdmin: Boolean(context.isAdmin) })}
 ${claudeLine(context)}Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
 ${appMapLines()}
@@ -568,10 +563,6 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           .boolean()
           .optional()
           .describe("Answer here in a few minutes (a question that needs judgment across sources, a quick check). Not with repeat or after."),
-        agent: z
-          .string()
-          .optional()
-          .describe("Exact name of a defined agent to do it instead of the Worker, when one's role fits."),
         model: z
           .enum(["coder", "planner"])
           .optional()
@@ -601,14 +592,7 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
         const notSkills = unknownSkills(context, skills);
         if (notSkills) return { error: notSkills };
         try {
-          let agent: Agent;
-          if (input.agent) {
-            const found = await findAgentByName(orgId, input.agent);
-            if (!found || found.kind !== "defined" || found.status !== "active") return { error: `There's no active agent called ${input.agent}.` };
-            agent = found;
-          } else {
-            agent = await workerAgent(orgId);
-          }
+          const agent = await workerAgent(orgId);
           let github: string | undefined;
           // Code work, or a company's own way of it, runs as the person, with their GitHub.
           if (skills.some((n) => n === "coding-in-github" || getSkill(n, catalogueOf(context))?.extends === "coding-in-github")) {
@@ -987,27 +971,6 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
                   ? "Its saved credentials were kept."
                   : "They now see a card to enter the username and password. Don't ask for them in the chat."
               }`,
-      }),
-    }),
-    create_agent: tool({
-      description: "Create a defined agent: one with a standing role that does the same kind of work again and again.",
-      inputSchema: z.object({
-        name: z.string().min(1).max(40),
-        role: z.string().describe("A few words, like a job title."),
-        description: z.string().describe("What it is responsible for and what good work looks like."),
-        instructions: z.string().describe("Specific do's and don'ts, sources, tone and formats."),
-      }),
-      execute: async (input) => {
-        try {
-          const agent = await createAgent(orgId, input);
-          return { agent: { id: agent.id, name: agent.name } };
-        } catch (error) {
-          return { error: error instanceof Error ? error.message : "Couldn't create the agent." };
-        }
-      },
-      toModelOutput: ({ output }) => ({
-        type: "text" as const,
-        value: "error" in output ? `Not created: ${output.error}` : `Created ${output.agent.name}.`,
       }),
     }),
     suggest_profile_update: tool({

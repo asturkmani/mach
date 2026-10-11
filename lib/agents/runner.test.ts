@@ -1,7 +1,6 @@
-import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { agentToWake, dispatchRun, setScheduler } from "@/lib/agents/dispatch";
+import { agentToWake, setScheduler } from "@/lib/agents/dispatch";
 import { MAX_AGENT_TURNS, normalizeOptions, runAgentChain, runAgentOnTask, taskBrief } from "@/lib/agents/runner";
 import { createAgent } from "@/lib/agents/store";
 import { createOrganization } from "@/lib/orgs";
@@ -107,38 +106,6 @@ describe("agent runs", () => {
     expect(prompt).toContain("HBM is 20% of revenue.");
     expect(prompt).toContain("Analyst (defined agent, Financial analysis) ← you");
     expect(prompt).toContain("Cedar Legacy");
-  });
-
-  it("hands off to another agent on the task, which runs next", async () => {
-    const { analyst, task } = await setUp();
-    const writer = await createAgent(ORG, { kind: "worker", name: "Writing worker", role: "Writing" });
-    const { addMember } = await import("@/lib/tasks");
-    await addMember(task.id, { agentId: writer.id });
-
-    // One model for both agents: each one's instructions say who it is.
-    const scripts = {
-      [analyst.name]: scriptedModel([[["hand_off", { to: writer.name, note: "Write it up.", summary: "Numbers done, writing up." }]]]),
-      [writer.name]: scriptedModel([[["finish", { summary: "Write-up ready.", report: "Here it is." }]]]),
-    };
-    const ran: string[] = [];
-    const model = new MockLanguageModelV4({
-      doGenerate: async (call) => {
-        const name = Object.keys(scripts).find((n) => JSON.stringify(call.prompt).includes(`You are ${n},`))!;
-        ran.push(name);
-        return scripts[name].doGenerate(call);
-      },
-    });
-    const work: Promise<void>[] = [];
-    setScheduler((job) => work.push(job()), { model, research: false });
-
-    await dispatchRun(ORG, task.id, analyst.id);
-    await Promise.all(work);
-    expect(ran).toEqual([analyst.name, writer.name]);
-    expect(await getTask(ORG, task.id)).toMatchObject({ status: "review", summary: "Write-up ready." });
-    expect((await listMessages(task.id)).map((m) => [m.author, m.kind])).toEqual([
-      ["Analyst", "update"],
-      ["Writing worker", "result"],
-    ]);
   });
 
   it("parks the task for a person when a run fails or agents loop", async () => {

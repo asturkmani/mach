@@ -476,7 +476,7 @@ Who gets what: ● always, ○ when a skill switches it on, – never.
 
 | Tool | Takes | Does |
 |---|---|---|
-| `spawn_worker` | title, brief, why, context?, deliverable?, skills, `wait`?, model? (`coder` or `planner`), people?, files?, priority?, repeat?, after?, share? | Starts a task for the Worker with those skills pinned. With `wait`, it runs inline in the person's sandbox for up to 3 minutes; if it needs longer, it becomes the task. Code work checks the person's GitHub first. Until defined agents become skills (phase 4), `agent?` names one to do it instead. Replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist` (shipped in phase 2) |
+| `spawn_worker` | title, brief, why, context?, deliverable?, skills, `wait`?, model? (`coder` or `planner`), people?, files?, priority?, repeat?, after?, share? | Starts a task for the Worker with those skills pinned. With `wait`, it runs inline in the person's sandbox for up to 3 minutes; if it needs longer, it becomes the task. Code work checks the person's GitHub first. Replaces `create_task` with agents, `start_coding`, `start_research` and `ask_specialist` (shipped in phase 2) |
 | `start_job` | title, request, skills?, people?, files?, repeat?, share? | Starts a job: a task for the coordinator, with the request as its brief. Replaces `plan_job` |
 | `start_child` | assignee (worker, person or script), title, brief, skills?, after?, files? | A child task on the job, created for the person the job is for. Children started in one step are one batch |
 | `message_child`, `cancel_child` | child, text | Reply on a child (an answer, or "redo this"), or stop it (and any child waiting for it) |
