@@ -32,6 +32,8 @@ export type CompanySkill = {
   extends: string | null;
   /** Its scripts, by path under the skill's folder (code/pull.py, test/pull.json). */
   scripts: Record<string, string>;
+  /** Narrow kinds of write an admin pre-approved for it, e.g. api:masttro:POST:/v1/tags. */
+  preApproved: string[];
   updatedAt: Date;
 };
 
@@ -63,11 +65,12 @@ type Row = {
   model: Role | null;
   extends: string | null;
   scripts: Record<string, string> | null;
+  pre_approved: string[] | null;
   updated_at: Date;
 };
 
 const COLUMNS = `s.id, s.name, s.kind, s.integration_id, s.owner_person_id, p.name as owner_name, s.visibility, s.version,
-  v.description, v.body, v.tools, v.model, v.extends, v.scripts, s.updated_at`;
+  v.description, v.body, v.tools, v.model, v.extends, v.scripts, s.pre_approved, s.updated_at`;
 const FROM = `skills s join skill_versions v on v.skill_id = s.id and v.version = s.version
   left join people p on p.id = s.owner_person_id`;
 /** Visible to a viewer: the company's, and their own private ones. No viewer: the company's only. */
@@ -88,6 +91,7 @@ const toSkill = (r: Row): CompanySkill => ({
   model: r.model,
   extends: r.extends,
   scripts: r.scripts ?? {},
+  preApproved: r.pre_approved ?? [],
   updatedAt: r.updated_at,
 });
 
@@ -117,6 +121,7 @@ export const asSkill = (c: CompanySkill): Skill => ({
   ...(c.model ? { model: c.model } : {}),
   ...(c.extends ? { extends: c.extends } : {}),
   ...(Object.keys(c.scripts).length ? { scripts: c.scripts } : {}),
+  ...(c.preApproved.length ? { preApproved: c.preApproved } : {}),
   company: { kind: c.kind, version: c.version, owner: c.ownerName },
 });
 

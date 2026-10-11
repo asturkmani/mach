@@ -8,6 +8,7 @@ import { z } from "zod";
 import { SUMMARY_MAX, type RunContext, type RunOutcome } from "@/lib/agents/prompts";
 import {
   agentForLatestMessage,
+  askForApproval,
   askPeople,
   beginRun,
   endRun,
@@ -43,6 +44,7 @@ import { exaTools } from "@/lib/research/tools";
 import { findSkillTool, getSkill, SKILL_TOOLS, SKILLS, toolsOf } from "@/lib/agents/skills";
 import { trimToolResults } from "@/lib/agents/trim";
 import { stepOf, type RunStep } from "@/lib/learning/run-log";
+import { checkGate } from "@/lib/agents/gates";
 import {
   browserTools,
   githubTools,
@@ -230,6 +232,27 @@ function taskTools(
       inputSchema: z.object({}),
       execute: () => unscheduleJob(context),
     }),
+    request_approval: tool({
+      description:
+        "Before changing anything outside Mach1 (writing to a data source, GitHub beyond a pull request, entering data on a website), ask the people on the task to approve exactly those changes: a numbered list, or a file with them. Ends your run; their Approve starts your next one. Then make each change with approval and its item number: a change outside the list is refused. A coordinator also asks this way for a plan whose cost is above the company's limit (kind cost).",
+      inputSchema: z.object({
+        what: z.string().min(1).max(300).describe("What these changes are, in a line, e.g. 'Tag 14 Masttro transactions'."),
+        items: z
+          .array(z.string().min(1).max(500))
+          .max(200)
+          .optional()
+          .describe("The exact changes, one per item, e.g. 'Tag txn 4411 (ACME LTD, £1,200, 3 Oct) as Rent, Hassan Daher Holdings'."),
+        file: z.string().optional().describe("Or the name of a file on this task with the exact changes (attach it first)."),
+        kind: z.enum(["writes", "cost"]).optional().describe("cost: approving a plan whose estimate is above the company's limit."),
+        estimate_usd: z.number().positive().optional().describe("For cost: the plan's estimate in dollars."),
+        summary: reportFields.summary,
+      }),
+      execute: async (input) => {
+        const result = await askForApproval(context, input);
+        if (result.startsWith("Asked")) end({ type: "asked" });
+        return result;
+      },
+    }),
     ask: tool({
       description: "End your run with a question for the people on the task. They answer in the thread.",
       inputSchema: z.object({
@@ -353,7 +376,14 @@ class Interrupted extends Error {
  * Tools that first say what the agent is doing, so the task shows it live. A
  * person's Send now stops the run before the next tool does anything.
  */
-function narrated(context: RunContext, tools: ToolSet, interrupt: () => void, record?: (step: RunStep) => void): ToolSet {
+function narrated(
+  context: RunContext,
+  tools: ToolSet,
+  interrupt: () => void,
+  record?: (step: RunStep) => void,
+  /** The kinds of write the skills in use are pre-approved for. */
+  preApproved: () => string[] = () => [],
+): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, t]) => {
       const execute = t.execute;
@@ -368,6 +398,12 @@ function narrated(context: RunContext, tools: ToolSet, interrupt: () => void, re
               return "Not done: a person sent a new message and asked you to stop. Your run ends here and starts again with their message.";
             }
             const detail = activityFor(name, input ?? {});
+            // A change outside Mach1 goes ahead only under an approval of exactly that content.
+            const refused = await checkGate(context, name, input ?? {}, preApproved());
+            if (refused) {
+              record?.({ tool: name, detail, ok: false });
+              return name === "use_browser" ? { status: "failed", message: refused, session: String(input?.session ?? ""), evidence: [] } : refused;
+            }
             try {
               const result = await execute(input, options);
               record?.(stepOf(name, detail, result));
@@ -447,6 +483,7 @@ export async function runAgentOnTask(
             // The coordinator runs the job: no sandbox, browser or research of its own; its children do the work.
             post_update: task.post_update,
             save_output: task.save_output,
+            request_approval: task.request_approval,
             set_schedule: task.set_schedule,
             stop_schedule: task.stop_schedule,
             ask: task.ask,
@@ -485,6 +522,7 @@ export async function runAgentOnTask(
           },
       interrupt,
       (step) => state.steps?.push(step),
+      () => [...(state.loaded ?? [])].flatMap((n) => getSkill(n, catalogue)?.preApproved ?? []),
     );
     // Tools a skill switches on stay off until one of its skills is pinned or loaded.
     const activeTools = () => {

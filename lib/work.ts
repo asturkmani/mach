@@ -9,6 +9,7 @@ import { recordMentions } from "@/lib/task-mentions";
 import { listPeople, type Person } from "@/lib/people";
 import { PEOPLE_SECTION, SECTIONS, setSection } from "@/lib/profile/markdown";
 import { updateProfile } from "@/lib/profile/store";
+import { decideApproval, pendingApproval } from "@/lib/approvals";
 import { sandboxes } from "@/lib/sandbox";
 import {
   deleteSchedule,
@@ -254,6 +255,11 @@ export async function pickOption(organizationId: string, taskId: string, by: Act
     return /^apply/i.test(option.label)
       ? applySuggestion(organizationId, task, by)
       : setStatus(organizationId, task.id, "cancelled", by, "Dismissed this suggestion.");
+  }
+  // Approve on an approval request gives it, for exactly what was asked; anything else leaves it unapproved.
+  const pending = await pendingApproval(organizationId, task.id);
+  if (pending && by.personId && task.members.some((m) => m.type === "person" && m.id === by.personId)) {
+    await decideApproval(pending.id, /^approve/i.test(option.label) ? "approved" : "declined", { name: by.name, personId: by.personId });
   }
   if (agentsOn(task).length === 0) {
     await addMessage(task.id, { author: by.name, personId: by.personId, kind: "comment", body: option.label });

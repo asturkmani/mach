@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+
 import { knownSkills, SKILLS, toolsOf, type Skill } from "@/lib/agents/skills";
+import { approvalLabel, requestApproval, type ApprovalKind } from "@/lib/approvals";
 import { companySkillsFor } from "@/lib/company-skills";
 import { saveRunLog, type RunStep } from "@/lib/learning/run-log";
 import { agentModel, builtinSkills, COORDINATOR_AGENT, getAgent } from "@/lib/agents/store";
@@ -365,6 +368,54 @@ export async function finishWork(context: RunContext, input: Report & { report: 
   "use step";
   await report(context, "review", "result", input.report, input);
   return "Reported. Your run ends here.";
+}
+
+/**
+ * Asks the people on the task to approve exact changes outside Mach1: a
+ * numbered list, or a file (the version they see is the one approved). Their
+ * Approve starts the next run; each change then names the approval and item.
+ */
+export async function askForApproval(
+  context: RunContext,
+  input: { what: string; items?: string[]; file?: string; kind?: ApprovalKind; estimate_usd?: number; summary: string },
+): Promise<string> {
+  "use step";
+  let file: { name: string; hash: string; version: number } | null = null;
+  if (input.file) {
+    const found = (await listTaskFiles(context.organizationId, context.taskId)).find((f) => f.name.toLowerCase() === input.file!.trim().toLowerCase());
+    const latest = found?.versions[0];
+    const bytes = latest && (await readVersion(context.organizationId, latest.id));
+    if (!found || !latest || !bytes) return `Not asked: there's no file called ${input.file} on this task. Attach it first.`;
+    file = { name: found.name, hash: createHash("sha256").update(bytes.bytes).digest("hex"), version: latest.version };
+  }
+  const items = (input.items ?? []).map((i) => i.trim()).filter(Boolean);
+  if (input.kind !== "cost" && !items.length && !file) return "Not asked: list the exact changes (items), or attach a file with them (file).";
+  const approval = await requestApproval(context.organizationId, context.taskId, {
+    kind: input.kind,
+    what: input.what,
+    items,
+    fileName: file?.name,
+    fileHash: file?.hash,
+    estimate: input.estimate_usd,
+    by: context.agentName,
+  });
+  const label = approvalLabel(approval);
+  const body = [
+    `**Approve ${input.kind === "cost" ? "this plan" : "these exact changes"}? (${label})** ${input.what}`,
+    input.kind === "cost" && input.estimate_usd ? `Estimated cost: about $${input.estimate_usd.toFixed(2)}.` : "",
+    items.map((item, i) => `${i + 1}. ${item}`).join("\n"),
+    file ? `The changes are in ${file.name} (v${file.version}): that version is what's approved.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  await report(context, "waiting", "ask", body, {
+    summary: input.summary,
+    options: [
+      { label: "Approve", recommended: true },
+      { label: "Change something" },
+    ],
+  });
+  return `Asked for ${label}. Your run ends here; once they approve, make each change with approval "${label}" and its item number.`;
 }
 
 /** The model stopped without finishing or asking: whatever it said becomes the result. */

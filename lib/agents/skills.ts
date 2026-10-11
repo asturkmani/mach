@@ -25,6 +25,8 @@ export type Skill = {
   model?: Role;
   /** A company skill that adds the company's own way to a base skill: it's read straight after it. */
   extends?: string;
+  /** Narrow kinds of write this skill may make without asking each time (lib/agents/gates.ts), e.g. opening a pull request. */
+  preApproved?: string[];
   /** A company skill's scripts, by path under its folder: copied into the sandbox when it's loaded. */
   scripts?: Record<string, string>;
   /** Set for a company's own skill. */

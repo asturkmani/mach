@@ -1,6 +1,7 @@
 // Writes lib/skills.json: Mach1's base skills, from skills/<name>/SKILL.md.
 // Each file starts with front matter (name, description, and optionally tools
-// it switches on and a model role), then the playbook itself. Agents see each
+// it switches on, a model role, and narrow kinds of write it's pre-approved
+// for, e.g. opening a pull request), then the playbook itself. Agents see each
 // skill's name and description, and load the rest when the work calls for it
 // (lib/agents/skills.ts). Runs on every build; `--check` fails instead of
 // writing when the file is out of date or a skill is malformed.
@@ -47,6 +48,7 @@ export function parseSkill(text, where = "SKILL.md") {
     ...(meta.tools ? { tools: meta.tools } : {}),
     ...(meta.model ? { model: meta.model } : {}),
     ...(meta.extends ? { extends: meta.extends } : {}),
+    ...(meta.pre_approved ? { preApproved: meta.pre_approved } : {}),
     body,
   };
 }

@@ -771,3 +771,39 @@ join agents w on w.organization_id = a.organization_id and w.builtin = 'worker' 
 on conflict do nothing;
 delete from task_members m using agents a, tasks t
 where a.id = m.agent_id and t.id = m.task_id and a.became_skill is not null and t.status not in ('done', 'cancelled');
+
+-- Gates in code (docs/agent-design.md): a change outside Mach1 (a write to a data source, GitHub or a website)
+-- needs an approval a person gave for exactly that content: a numbered list of items, or a file's hash. Each item
+-- is used once (approval_uses is the ledger), so a retry carries on instead of repeating. A job's children work
+-- under the job's approvals. A cost approval lets a job's plan go above the company's limit.
+create table if not exists approvals (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null references organizations (id) on delete cascade,
+  task_id uuid not null references tasks (id) on delete cascade,
+  number integer not null, -- A1, A2… on the task
+  kind text not null default 'writes' check (kind in ('writes', 'cost')),
+  what text not null,
+  items jsonb not null default '[]'::jsonb, -- the exact changes, one per item
+  file_name text,
+  file_hash text, -- sha256 of the file version approved
+  estimate double precision, -- for a cost approval: the plan's estimate in dollars
+  status text not null default 'pending' check (status in ('pending', 'approved', 'declined')),
+  requested_by text not null default '',
+  approved_by text,
+  approved_by_person_id uuid references people (id) on delete set null,
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (task_id, number)
+);
+create table if not exists approval_uses (
+  approval_id uuid not null references approvals (id) on delete cascade,
+  item integer not null,
+  tool text not null,
+  detail text not null default '',
+  used_at timestamptz not null default now(),
+  primary key (approval_id, item)
+);
+-- Narrow kinds of write an admin pre-approved for a skill, e.g. 'api:masttro:POST:/v1/tags'.
+alter table skills add column if not exists pre_approved text[] not null default '{}';
+-- Jobs whose plan is estimated above this many dollars need the person's approval first (null: no limit).
+alter table organizations add column if not exists job_cost_limit double precision;

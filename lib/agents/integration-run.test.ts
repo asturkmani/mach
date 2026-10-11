@@ -57,7 +57,6 @@ describe("agents with data sources", () => {
     const outcome = await runAgentOnTask(ORG, task.id, analyst.id, {
       research: false,
       model: scriptedModel([
-        [["read_integration_guide", { integration: "masttro" }]],
         [["call_api", { integration: "masttro", path: "/positions", query: { asOf: "2026-10-06" } }]],
         [["call_api", { integration: "masttro", path: "/positions", save_as: "/vercel/drive/masttro/positions-2026-10-06.json" }]],
         [["run_code", { filename: "summarise.py", language: "python", code: "print('MU 1.2m')" }]],

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { runBrowserAgent, type BrowserReport } from "@/lib/agents/browser-agent";
 import { browserLogin, browsePage } from "@/lib/agents/browser-steps";
 import { githubRequest } from "@/lib/agents/github-steps";
+import { checkGate } from "@/lib/agents/gates";
 import { callApi } from "@/lib/agents/integration-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
 import { insightTools } from "@/lib/research/tools";
@@ -110,13 +111,27 @@ export function integrationTools(
               query: z.object({}).catchall(z.union([z.string(), z.number(), z.boolean()])).optional(),
               body: z.unknown().optional().describe("A JSON body, for write requests."),
               save_as: z.string().optional().describe("e.g. inputs/positions.json or /vercel/drive/masttro/positions-2026-10-07.json"),
+              ...approvalFields,
             }),
-            execute: (input) => (input.save_as ? using(() => callApi(context, input)) : callApi(context, input)),
+            execute: async (input) =>
+              (await chatGate(context, "call_api", input)) ?? (input.save_as ? using(() => callApi(context, input)) : callApi(context, input)),
           }),
         }
       : {}),
   };
 }
+
+/** On a tool that can change something outside Mach1: the approval that covers this change. */
+const approvalFields = {
+  approval: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("For a change outside Mach1: the approval that covers it (A1), from request_approval."),
+  item: z.number().int().positive().optional().describe("Which of the approval's numbered changes this is."),
+};
+
+/** The chat agent works without a task: its changes outside Mach1 are refused, and go to a worker. Task runs are checked in their wrapper. */
+const chatGate = async (context: AgentContext, tool: string, input: Record<string, unknown>) => (context.taskId ? null : checkGate(context, tool, input));
 
 /** What browser_login returns: the text the model reads, and the site waiting for a sign-in code, if one is. */
 export type LoginOutput = { text: string; needsCode?: { slug: string; name: string } };
@@ -148,14 +163,19 @@ export function browserTools(
         login: logins ? z.enum(["", ...logins] as [string, ...string[]]).optional() : z.string().optional(),
         session: z.string().optional().describe("Continue this session (from an earlier result) instead of starting a new job."),
         message: z.string().optional().describe("With session: your answer, question or next instruction."),
+        changes: z.boolean().optional().describe("True if the job enters, submits or changes anything on the site: it needs an approval of exactly those changes."),
+        approval: approvalFields.approval,
       }),
-      execute: (input) =>
-        using(async (): Promise<BrowserReport & { codeText?: string }> => {
+      execute: async (input) => {
+        const refused = await chatGate(context, "use_browser", input);
+        if (refused) return { status: "failed" as const, message: refused, session: input.session ?? "", evidence: [] } as BrowserReport & { codeText?: string };
+        return using(async (): Promise<BrowserReport & { codeText?: string }> => {
           const report = await runBrowserAgent(context, using, { ...input, login: input.login || undefined }, { ...options, logins });
           if (!report.needsCode) return report;
           const asked = await onCode(report.needsCode);
           return { ...report, codeText: asked.text };
-        }),
+        });
+      },
       toModelOutput: ({ output }) => ({
         type: "content" as const,
         value: [
@@ -220,8 +240,9 @@ export function githubTools(context: AgentContext): ToolSet {
         method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
         path: z.string().min(1).describe("An API path, e.g. /repos/acme/site/pulls?state=open"),
         body: z.unknown().optional().describe("A JSON body, for write requests."),
+        ...approvalFields,
       }),
-      execute: (input) => githubRequest(context, input),
+      execute: async (input) => (await chatGate(context, "github_api", input)) ?? githubRequest(context, input),
     }),
   };
 }

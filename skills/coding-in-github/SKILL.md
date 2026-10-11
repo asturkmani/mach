@@ -1,6 +1,7 @@
 ---
 name: coding-in-github
 model: coder
+pre_approved: [github:POST:/repos/*/*/pulls]
 description: "Changing code in someone's GitHub repository: clone, branch, change, test, push and open a pull request, as the person the work is for."
 ---
 
