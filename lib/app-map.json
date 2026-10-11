@@ -69,7 +69,7 @@
     "path": "/settings/integrations",
     "title": "Settings → Integrations",
     "where": "Company menu → Settings → Integrations",
-    "what": "The company's data sources and website logins: credentials are entered here (never in a chat), plus whose work may use each (every agent can), and testing them."
+    "what": "The company's data sources and website logins: credentials are entered here (never in a chat), plus whose work may use each (every agent can), each one's skill (how it works), and testing them."
   },
   {
     "path": "/skills",

@@ -120,7 +120,11 @@ function integrationListing(integrations: Integration[] = []): string {
     .map((i) => {
       const config = i.config as ApiConfig;
       const state = i.status === "connected" ? "" : ` [${i.status.replace("_", " ")}${i.statusDetail ? `: ${i.statusDetail}` : ""}]`;
-      return `- ${i.slug}: ${i.name}, ${i.access === "read" ? "read-only" : "read and write"}, ${config.baseUrl}${state}${i.description ? `\n  ${i.description}` : ""}`;
+      const signing =
+        config.query && Object.keys(config.query).length
+          ? "signed with a query parameter: call it with call_api (code in your sandbox can't add it)"
+          : "signed with headers: call it with call_api, or from code in your sandbox with no auth headers (they're added on the way out)";
+      return `- ${i.slug}: ${i.name}, ${i.access === "read" ? "read-only" : "read and write"}, ${config.baseUrl}, ${signing}${state}${i.description ? `\n  ${i.description}` : ""}`;
     })
     .join("\n");
 }
@@ -368,15 +372,15 @@ The company drive (/vercel/drive):
 - It syncs by itself: what changed on the drive is copied in when your sandbox starts, and files you write there are saved after each command. Files over 100 MB stay in this sandbox only. Deleting a file here doesn't remove it from the drive; never overwrite another job's data unless that's the point.
 
 Company data sources (listed under <data_sources>):
-- They are the company's other systems, connected for every agent to read: use them instead of asking people for numbers or exports. Read a source's guide with read_integration_guide before first use.
+- They are the company's other systems, connected for every agent to read: use them instead of asking people for numbers or exports. A system the company has worked with has a skill of its own (how it works: endpoints, paging, quirks, the steps through its web app), in your skill list: load it with use_skill before first use.
 - Call them with call_api. For big pulls, pass save_as to write the response to a file in your sandbox or on the drive. From code in your sandbox, call the API's URL directly with no auth headers: the credentials are added on the way out. You never see credentials, so never print, log or hard-code them.
 - Read-only sources refuse anything but GET. A source marked "needs credentials" or "failing" isn't usable yet; say so in your report.
-- When you work out how an API really behaves (endpoints that work, paging, what fields mean, gotchas), save it with save_integration_guide so the next agent doesn't rediscover it.
+- When you work out how a system really behaves (endpoints that work, paging, what fields mean, gotchas), say so in your report and NOTES.md: after the job, Mach1 proposes adding it to the system's skill, and a person applies it.
 - Never ask people to paste passwords, API keys or sign-in codes into the thread. If the work needs a system that isn't connected, say so: the Chief of Staff can connect it.
 
 Websites (the company's website logins are listed under <logins>, if you have any):
 - For anything interactive on a website (working in a web app, filling forms, entering data, signed-in work, checking what a page shows), hand it to the browser agent with use_browser. It sees the page, works carefully, signs in with the company's logins itself, and reports back with screenshots. Give it one bounded job with everything it needs (it can't see this task), and continue its session to answer its questions or give the next step. Screenshots it keeps are saved with this task's files.
-- To just read a page, browse is quicker. For a job that repeats on a schedule, once the browser agent has done it, ask it how (or read the site's guide) and script it with Playwright in run.sh, using browser_login for the session; fall back to use_browser when the script breaks.
+- To just read a page, browse is quicker. For a job that repeats on a schedule, once the browser agent has done it, ask it how (or load the site's skill) and script it with Playwright in run.sh, using browser_login for the session; fall back to use_browser when the script breaks.
 - If a site asks for a sign-in code, the people on the task are asked for it and your run ends. Their reply finishes the sign-in on your next run (continue the browser session, or call browser_login again).
 - Before you change anything in a system of record (submit a form, enter or edit data), show people exactly what you'll enter, as a table, and ask for approval, unless they already approved it on this task. Tell the browser agent exactly what was approved. Report what was entered, with its screenshots.
 

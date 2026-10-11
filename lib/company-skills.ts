@@ -122,7 +122,8 @@ export const asSkill = (c: CompanySkill): Skill => ({
 
 /** Every skill an agent working for this person may load: Mach1's and the company's they may see. */
 export async function companySkillsFor(organizationId: string, personId?: string | null): Promise<Skill[]> {
-  return (await listCompanySkills(organizationId, { viewer: personId })).map(asSkill);
+  // Mach1's skill wins a name both have (an integration named after a kind of work, say).
+  return (await listCompanySkills(organizationId, { viewer: personId })).filter((s) => !getSkill(s.name)).map(asSkill);
 }
 
 export type SkillDraft = {
@@ -240,4 +241,48 @@ export async function setSkillVisibility(skillId: string, visibility: SkillVisib
 /** Retires a skill: agents stop seeing it. Its versions are kept. */
 export async function archiveSkill(skillId: string): Promise<void> {
   await getDb().query("update skills set archived_at = now(), updated_at = now() where id = $1", [skillId]);
+}
+
+// ---------------------------------------------------------------------------
+// Integration skills: how one of the company's systems works. One per
+// integration, named after it, made when it's connected; its guide was the
+// first version.
+
+/** An integration's skill, if it has one. */
+export async function integrationSkill(organizationId: string, integrationId: string): Promise<CompanySkill | null> {
+  const [row] = await getDb().query<Row>(
+    `select ${COLUMNS} from ${FROM} where s.organization_id = $1 and s.integration_id = $2 and s.archived_at is null order by s.created_at limit 1`,
+    [organizationId, integrationId],
+  );
+  return row ? toSkill(row) : null;
+}
+
+/** Saves what's known about how a system works as the next version of its skill (made if it has none). */
+export async function saveIntegrationSkill(
+  organizationId: string,
+  integration: { id: string; slug: string; name: string; kind: "api" | "login"; description: string },
+  input: { body: string; note: string; by: { name: string; personId?: string | null }; sourceTaskId?: string | null },
+): Promise<CompanySkill> {
+  const existing = await integrationSkill(organizationId, integration.id);
+  let name = existing?.name ?? integration.slug;
+  if (!existing) {
+    // A workflow skill (or one of Mach1's) may have the name already.
+    const [taken] = await getDb().query("select 1 from skills where organization_id = $1 and name = $2 and archived_at is null", [organizationId, name]);
+    if (taken || getSkill(name) || !NAME.test(name)) name = `${integration.slug.replace(/[^a-z0-9-]/g, "-").replace(/^[^a-z]+/, "")}-system`.slice(0, 41);
+  }
+  return saveCompanySkill(organizationId, {
+    name,
+    kind: "integration",
+    integrationId: integration.id,
+    description:
+      existing?.description ??
+      `How ${integration.name} works (${integration.kind === "api" ? "data source" : "website login"})${integration.description ? `: ${integration.description}` : ""}. Load it before using ${integration.slug}.`,
+    body: input.body,
+    scripts: existing?.scripts,
+    ownerPersonId: null,
+    visibility: "company",
+    note: input.note,
+    by: input.by,
+    sourceTaskId: input.sourceTaskId,
+  });
 }

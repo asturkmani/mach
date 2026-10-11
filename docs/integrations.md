@@ -7,7 +7,7 @@ Agents work with the company's other systems in two ways:
 
 Both are company-wide: every agent can use every integration. Each can be limited to chosen people (admins choose, in Settings → Integrations → Whose work): then only their assistant, and the work it does for them, can use it, so a run uses it only if the person it's for is allowed. A person's own accounts (their GitHub) are not integrations: each person connects theirs, and it's used only for their own work; see [github.md](github.md).
 
-Everything is in **Settings → Integrations**: status, whose work may use it, access, credentials, the guide agents keep, and recent `call_api` activity.
+Everything is in **Settings → Integrations**: status, whose work may use it, access, credentials, its skill (how it works), and recent `call_api` activity.
 
 ## Connecting one
 
@@ -54,9 +54,11 @@ The `browser_login` tool signs the job's browser in:
 
 Agents are told to show exactly what they'll enter, as a table, and get approval before changing anything in a system of record. They take screenshots before and after and attach them.
 
-## Guides
+## Its skill
 
-Each integration has a guide: what agents learned about using it, such as endpoints, quirks and the steps through a web app. Agents read it with `read_integration_guide` and add what they learn with `save_integration_guide`, so the next job starts from it.
+Each integration has a skill: how the system works, such as endpoints, paging, quirks and the steps through a web app (`lib/company-skills.ts`, kind `integration`, named after it). The Chief of Staff writes its first version from the docs when it connects the system (`connect_data_source` and `connect_login`'s guide), and it's in every agent's skill list, so they load it with `use_skill` before using the system; the browser agent gets a login's skill when it signs in. Agents don't change it themselves: they say what they learned in their report, and after the job Mach1 proposes the change for a person to apply (docs/agent-design.md, Learning on the job). Each version is on the Skills page, where any can be restored. Integrations that had a guide got it as their skill's first version.
+
+How requests are signed (headers, so code in the sandbox can call the API directly, or a query parameter, so only `call_api` can) is in each run's list of data sources.
 
 ## Where the code is
 
@@ -64,7 +66,7 @@ Each integration has a guide: what agents learned about using it, such as endpoi
 |---|---|
 | `lib/integrations.ts` | Storage, sealing, `callIntegration`, tokens, the sandbox network policy, sessions |
 | `lib/secrets.ts` | `seal`, `unseal`, `redact` |
-| `lib/agents/integration-steps.ts` | `call_api` and the guide tools |
+| `lib/agents/integration-steps.ts` | `call_api`, and a login's skill for the browser agent |
 | `lib/agents/browser-steps.ts` | `browser_login`, the sign-in helper, codes and saved sessions |
 | `lib/agents/chief-of-staff.ts` | `connect_data_source`, `connect_login` |
 | `components/integrations.tsx`, `components/credentials-form.tsx` | Settings → Integrations and the credentials card |

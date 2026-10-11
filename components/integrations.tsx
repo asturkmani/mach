@@ -18,7 +18,7 @@ import { When } from "@/components/ui";
 import type { CredentialField, IntegrationKind, IntegrationStatus } from "@/lib/integrations";
 
 // The Integrations page: each connected system with its status, who may use
-// it, its access, credentials, the guide agents keep, and recent activity.
+// it, its access, credentials, its skill (how it works), and recent activity.
 
 export type IntegrationView = {
   id: string;
@@ -35,7 +35,8 @@ export type IntegrationView = {
   access: "read" | "write";
   /** The people whose work may use it; null is everyone. */
   personIds: string[] | null;
-  guide: string;
+  /** Its skill: how the system works, which agents load before using it. */
+  skill: { name: string; version: number; body: string } | null;
   status: IntegrationStatus;
   statusDetail: string;
   hasCredentials: boolean;
@@ -227,12 +228,17 @@ function IntegrationCard({
         </dd>
       </dl>
 
-      {i.guide && (
+      {i.skill && (
         <details className="border-t border-line-soft px-5 py-3">
-          <summary className="label cursor-pointer">Guide agents keep</summary>
+          <summary className="label cursor-pointer">
+            Its skill · <span className="font-mono normal-case">{i.skill.name}</span> v{i.skill.version}
+          </summary>
           <div className="prose prose-mach prose-sm mt-3 max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{i.guide}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{i.skill.body}</ReactMarkdown>
           </div>
+          <Link href={`/skills#${i.skill.name}`} className="mt-2 inline-block text-xs text-faint hover:text-ink">
+            Versions and changes on the Skills page
+          </Link>
         </details>
       )}
 

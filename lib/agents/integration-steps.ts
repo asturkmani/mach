@@ -1,7 +1,7 @@
 import type { AgentContext } from "@/lib/agents/prompts";
 import { saveIntoSandbox } from "@/lib/agents/sandbox-steps";
-import { addMessage } from "@/lib/tasks";
-import { callIntegration, getIntegration, IntegrationError, updateIntegration, allowedFor, type ApiConfig, type CallRequest } from "@/lib/integrations";
+import { integrationSkill } from "@/lib/company-skills";
+import { allowedFor, callIntegration, getIntegration, IntegrationError, type CallRequest } from "@/lib/integrations";
 
 // The integration tools an agent uses, each a durable workflow step. The
 // agent never sees credentials: requests are signed here, or at the
@@ -34,39 +34,13 @@ export async function callApi(
   }
 }
 
-export async function readIntegrationGuide(context: AgentContext, input: { integration: string }): Promise<string> {
+/** A website login for the browser agent: where it signs in, and what its skill says about the site. */
+export async function readSiteSkill(context: AgentContext, slug: string): Promise<string> {
   "use step";
-  const integration = await getIntegration(context.organizationId, input.integration);
-  if (!integration || !allowedFor(integration, context.personId)) return `There's no integration called ${input.integration} you can use.`;
-  const config = integration.config as ApiConfig;
-  const how =
-    integration.kind === "api"
-      ? [
-          `Base URL: ${config.baseUrl} (domains: ${config.domains.join(", ")})`,
-          `Access: ${integration.access === "read" ? "read-only (GET)" : "read and write"}`,
-          config.query && Object.keys(config.query).length
-            ? "Signed with a query parameter, so call it with call_api (code in your sandbox can't add it)."
-            : "Signed with headers: call it with call_api, or from code in your sandbox without auth headers (they're added on the way out).",
-          config.docsUrl ? `Docs: ${config.docsUrl}` : "",
-        ]
-      : [`Sign-in page: ${(integration.config as { loginUrl: string }).loginUrl}`];
-  return `# ${integration.name} (${integration.slug})\n${integration.description}\n\n${how.filter(Boolean).join("\n")}\nStatus: ${integration.status}${
-    integration.statusDetail ? ` (${integration.statusDetail})` : ""
-  }\n\n${integration.guide || "No guide yet. Once you've worked out how it behaves, save one with save_integration_guide."}`;
-}
-
-export async function saveIntegrationGuide(context: AgentContext, input: { integration: string; guide: string }): Promise<string> {
-  "use step";
-  const integration = await getIntegration(context.organizationId, input.integration);
-  if (!integration || !allowedFor(integration, context.personId)) return `There's no integration called ${input.integration} you can use.`;
-  await updateIntegration(context.organizationId, integration.id, { guide: input.guide.slice(0, 20_000) });
-  if (context.taskId) {
-    await addMessage(context.taskId, {
-      author: context.agentName,
-      agentId: context.agentId ?? undefined,
-      kind: "event",
-      body: `Updated the ${integration.name} guide.`,
-    });
-  }
-  return "Saved. Every agent that uses it will read this guide.";
+  const integration = await getIntegration(context.organizationId, slug);
+  if (!integration || !allowedFor(integration, context.personId)) return `There's no login called ${slug} you can use.`;
+  const skill = await integrationSkill(context.organizationId, integration.id);
+  return `# ${integration.name} (${integration.slug})\nSign-in page: ${(integration.config as { loginUrl?: string }).loginUrl ?? ""}\n\n${
+    skill?.body ?? "Nothing is known about this site yet. Say what you learn in your report."
+  }`;
 }

@@ -631,3 +631,16 @@ create table if not exists skill_versions (
   created_at timestamptz not null default now(),
   unique (skill_id, version)
 );
+
+-- Each integration's guide becomes the first version of its integration skill, named after it (once).
+insert into skills (organization_id, name, kind, integration_id, visibility)
+select i.organization_id, i.slug, 'integration', i.id, 'company' from integrations i
+where i.guide <> '' and i.slug ~ '^[a-z][a-z0-9-]{1,40}$'
+  and not exists (select 1 from skills s where s.integration_id = i.id)
+  and not exists (select 1 from skills s where s.organization_id = i.organization_id and s.name = i.slug and s.archived_at is null);
+insert into skill_versions (skill_id, version, description, body, note, author)
+select s.id, 1,
+  'How ' || i.name || ' works (' || case when i.kind = 'api' then 'data source' else 'website login' end || '). Load it before using ' || i.slug || '.',
+  i.guide, 'From its guide.', 'Mach1'
+from skills s join integrations i on i.id = s.integration_id
+where not exists (select 1 from skill_versions v where v.skill_id = s.id);

@@ -571,8 +571,6 @@ function ToolPart({
     read_file: `Read ${input.path ?? "a file"}`,
     write_file: `Wrote ${input.path ?? "a file"}`,
     list_files: "Listed files",
-    read_integration_guide: `Read the ${input.integration ?? ""} guide`,
-    save_integration_guide: `Updated the ${input.integration ?? ""} guide`,
     save_page: `Saving the ${input.title ?? ""} page`,
     read_page: `Read the ${input.page ?? ""} page`,
     refresh_page: `Scheduled the ${input.page ?? ""} page's refresh`,

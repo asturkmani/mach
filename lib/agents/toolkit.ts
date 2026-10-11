@@ -4,7 +4,7 @@ import { z } from "zod";
 import { runBrowserAgent, type BrowserReport } from "@/lib/agents/browser-agent";
 import { browserLogin, browsePage } from "@/lib/agents/browser-steps";
 import { githubRequest } from "@/lib/agents/github-steps";
-import { callApi, readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
+import { callApi } from "@/lib/agents/integration-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
 import { insightTools } from "@/lib/research/tools";
 import { listSandboxFiles, readSandboxFile, runCode, runShell, startSandbox, writeSandboxFile } from "@/lib/agents/sandbox-steps";
@@ -97,7 +97,6 @@ export function integrationTools(
   allowed: { sources: string[]; logins: string[] } | null,
 ): ToolSet {
   const sources = allowed?.sources ?? null;
-  const all = allowed ? [...allowed.sources, ...allowed.logins] : null;
   return {
     ...(sources === null || sources.length
       ? {
@@ -113,21 +112,6 @@ export function integrationTools(
               save_as: z.string().optional().describe("e.g. inputs/positions.json or /vercel/drive/masttro/positions-2026-10-07.json"),
             }),
             execute: (input) => (input.save_as ? using(() => callApi(context, input)) : callApi(context, input)),
-          }),
-        }
-      : {}),
-    ...(all === null || all.length
-      ? {
-          read_integration_guide: tool({
-            description: "Read how to use one of the company's integrations: its base URL or sign-in page, access, and the guide agents keep for it.",
-            inputSchema: z.object({ integration: slugOf(all) }),
-            execute: (input) => readIntegrationGuide(context, input),
-          }),
-          save_integration_guide: tool({
-            description:
-              "Replace an integration's guide with what you've learned (endpoints that work, paging, field meanings, the steps through a web app, gotchas), so the next agent doesn't have to rediscover it. Read the current guide first and keep what's still true.",
-            inputSchema: z.object({ integration: slugOf(all), guide: z.string().min(1).describe("Markdown.") }),
-            execute: (input) => saveIntegrationGuide(context, input),
           }),
         }
       : {}),

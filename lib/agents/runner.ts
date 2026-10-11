@@ -307,10 +307,6 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
       return `Saving ${fileName(input.filename)}`;
     case "call_api":
       return `Calling ${input.integration}`;
-    case "read_integration_guide":
-      return `Reading the ${input.integration} guide`;
-    case "save_integration_guide":
-      return `Updating the ${input.integration} guide`;
     case "browser_login":
       return `Signing in to ${input.login}`;
     case "use_browser":

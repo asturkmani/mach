@@ -4,7 +4,11 @@ import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { setScheduler } from "@/lib/agents/dispatch";
 import { runAgentOnTask } from "@/lib/agents/runner";
 import { workerAgent } from "@/lib/agents/store";
-import { asSkill, getCompanySkill, listCompanySkills, saveCompanySkill } from "@/lib/company-skills";
+import { readFileSync } from "node:fs";
+
+import { asSkill, getCompanySkill, integrationSkill, listCompanySkills, saveCompanySkill, saveIntegrationSkill } from "@/lib/company-skills";
+import { getDb } from "@/lib/db";
+import { saveIntegration } from "@/lib/integrations";
 import { createOrganization, getOrganization } from "@/lib/orgs";
 import { getPerson, linkMember } from "@/lib/people";
 import { setSandboxProvider } from "@/lib/sandbox";
@@ -143,5 +147,47 @@ describe("company skills", () => {
     await runAgentOnTask(ORG, forOmar.id, worker.id, { model: omarModel });
     expect(JSON.stringify(omarModel.doGenerateCalls[0].prompt)).not.toContain("masttro-weekly-tagging");
     expect(JSON.stringify(omarModel.doGenerateCalls[0].prompt)).toContain("our-decks");
+  });
+
+  it("hold how each system works: one per integration, named after it, made from its guide", async () => {
+    await team();
+    const masttro = await saveIntegration(ORG, {
+      kind: "api",
+      name: "Masttro",
+      slug: "masttro",
+      config: { baseUrl: "https://api.masttro.example", domains: [], fields: [{ name: "key", label: "API key" }], headers: { "X-Key": "{{key}}" } },
+      access: "read",
+    });
+    const first = await saveIntegrationSkill(ORG, masttro, { body: "GET /v1/positions pages by cursor.", note: "Set up from its docs.", by: { name: "Sara" } });
+    expect(first).toMatchObject({ name: "masttro", kind: "integration", version: 1, ownerPersonId: null, visibility: "company" });
+    expect(first.description).toBe("How Masttro works (data source). Load it before using masttro.");
+    const second = await saveIntegrationSkill(ORG, masttro, { body: "GET /v1/positions pages by cursor; 100 a page.", note: "Paging", by: { name: "Learner" } });
+    expect(second.version).toBe(2);
+    expect((await integrationSkill(ORG, masttro.id))!.body).toContain("100 a page");
+
+    // A workflow skill with the name already: the system's skill takes another.
+    await saveCompanySkill(ORG, { name: "bloomberg", description: "Weekly Bloomberg pulls", body: "Steps", by: { name: "Sara" } });
+    const bloomberg = await saveIntegration(ORG, { kind: "api", name: "Bloomberg", slug: "bloomberg", config: { baseUrl: "https://api.bloomberg.example", domains: [], fields: [] }, access: "read" });
+    expect((await saveIntegrationSkill(ORG, bloomberg, { body: "How it works", note: "", by: { name: "Sara" } })).name).toBe("bloomberg-system");
+  });
+
+  it("start from each integration's guide in companies that had one", async () => {
+    await team();
+    const old = await saveIntegration(ORG, {
+      kind: "login",
+      name: "Masttro (web)",
+      slug: "masttro-web",
+      config: { loginUrl: "https://app.masttro.example/login", domains: [], fields: [] },
+      access: "write",
+      guide: "Tags are under Transactions → Untagged.",
+    });
+    const schema = readFileSync("db/schema.sql", "utf8");
+    const migration = schema.slice(schema.indexOf("-- Each integration's guide becomes"));
+    // Its two inserts, run as a deploy would; a second deploy changes nothing.
+    const inserts = migration.slice(0, migration.indexOf("\n\n", 10)).split(";\n").map((sql) => sql.slice(sql.indexOf("insert")));
+    for (let deploy = 0; deploy < 2; deploy++) for (const sql of inserts) await getDb().query(sql);
+    const skill = (await integrationSkill(ORG, old.id))!;
+    expect(skill).toMatchObject({ name: "masttro-web", kind: "integration", version: 1, body: "Tags are under Transactions → Untagged." });
+    expect(skill.description).toBe("How Masttro (web) works (website login). Load it before using masttro-web.");
   });
 });

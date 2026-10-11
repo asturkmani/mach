@@ -7,7 +7,7 @@ import { z } from "zod";
 import { JOB_DIR } from "@/lib/sandbox";
 import { browserStep, VIEWPORT, type BrowserCommand, type StepResult } from "@/lib/agents/browser-live";
 import { browserLogin } from "@/lib/agents/browser-steps";
-import { readIntegrationGuide, saveIntegrationGuide } from "@/lib/agents/integration-steps";
+import { readSiteSkill } from "@/lib/agents/integration-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
 import type { SandboxUser } from "@/lib/agents/toolkit";
 import { closeBrowserSession, keepEvidence, openBrowserSession, type Evidence } from "@/lib/agents/browser-session-steps";
@@ -52,7 +52,7 @@ Look, plan one step, act, read the screenshot that comes back, verify.
 - Report only what a screenshot or the page shows. If you couldn't confirm something, say "I think".
 
 # Learning a site
-When a login is in use you get its guide. If you worked out something the next run would want (where things are, which buttons, what goes wrong), update it with update_site_guide: keep what's still true, add what you learned, briefly.
+When a login is in use you get what its skill says about the site. If you worked out something the next run would want (where things are, which buttons, what goes wrong), say it in your report, briefly: after the job, Mach1 proposes adding it to the site's skill, and a person applies it.
 
 # Finishing
 End every call with finish, once:
@@ -241,11 +241,6 @@ function browserAgentTools(context: AgentContext, using: SandboxUser, state: Run
               }),
             toModelOutput: withScreenshot,
           }),
-          update_site_guide: tool({
-            description: "Replace a login's guide with what agents should know about the site (where things are, the steps for common jobs, gotchas). Keep what's still true.",
-            inputSchema: z.object({ login: logins ? z.enum(logins as [string, ...string[]]) : z.string(), guide: z.string().min(1) }),
-            execute: (input) => saveIntegrationGuide(context, { integration: input.login, guide: input.guide }),
-          }),
         }
       : {}),
     save_screenshot: tool({
@@ -357,7 +352,7 @@ export async function runBrowserAgent(
   const forCompany = companyModel(context.organizationId, model);
 
   const login = job.login ?? session.login ?? undefined;
-  const guide = login ? await readIntegrationGuide(context, { integration: login }) : "";
+  const guide = login ? await readSiteSkill(context, login) : "";
   const opening = job.session
     ? `Message from the caller:\n${job.message ?? "Carry on."}`
     : [

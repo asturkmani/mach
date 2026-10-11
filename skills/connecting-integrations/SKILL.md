@@ -17,7 +17,7 @@ A data source lets agents call a company system's API without ever seeing its cr
    - testPath: the cheap GET.
    - access: read unless they asked for agents to change data there.
    - agents: leave out to give every agent access; name agents to limit it.
-   - guide: a short markdown guide for agents: what data it holds, the main endpoints with their parameters, paging, rate limits, field meanings and gotchas.
+   - guide: the first version of the system's skill, for agents: what data it holds, the main endpoints with their parameters, paging, rate limits, field meanings and gotchas. Write it by the writing-skills skill; it's named after the integration, and every agent loads it before using the system. After jobs that use it, Mach1 proposes what to add, and a person applies it.
 3. Never ask for credentials in the chat. The tool shows them a secure card to enter them, which tests the connection. If they paste a key in the chat anyway, tell them to enter it in the card instead (Mach1 scrubs it from the chat when they do) and to consider rotating it.
 4. When they say the credentials are in, check it with call_api on the test path and tell them what you can see. Then you can answer quick questions from it, and jobs can use it. For regular pulls (positions every morning), create a recurring task that saves them to the company drive.
 

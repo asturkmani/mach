@@ -127,7 +127,7 @@ pnpm build
 | `lib/pages.ts`, `lib/page-frame.ts`, `lib/agents/page-tools.ts`, `page-steps.ts` | Page storage and versions, refresh jobs, the frame's document and policy, and the Chief of Staff's page tools and browser check |
 | `app/(app)/files/`, `drive/`, `app/api/drive/`, `app/api/uploads/` | The file library and company drive: pages, downloads, previews and uploads (drive files, and attachments in task threads) |
 | `app/(app)/integrations/`, `lib/integrations.ts`, `lib/secrets.ts` | Integrations: the page, storage and sealing, signing, and the sandbox network policy |
-| `lib/agents/integration-steps.ts`, `browser-steps.ts` | Agent tools for data sources (`call_api`, guides) and website logins (`browser_login`, sign-in codes) |
+| `lib/agents/integration-steps.ts`, `browser-steps.ts` | Agent tools for data sources (`call_api`) and website logins (`browser_login`, sign-in codes) |
 | `lib/agents/browser-agent.ts`, `browser-live.ts` | The browser agent behind `use_browser`: its own model (the `browser` role), a Chromium kept open in the caller's sandbox, screenshots after every step, sessions callers continue (`browser_sessions`), evidence screenshots saved with the files |
 | `lib/mentions.ts`, `lib/task-mentions.ts`, `components/mention-textarea.tsx` | @-mentions: finding them, recording them, and the reply box that suggests names |
 | `components/reply-attachments.tsx` | Attachments in the reply box and the thread |

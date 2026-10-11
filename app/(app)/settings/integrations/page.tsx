@@ -1,9 +1,10 @@
 import { Integrations, type IntegrationView } from "@/components/integrations";
+import { integrationSkill } from "@/lib/company-skills";
 import { listIntegrations, recentCalls, type ApiConfig, type LoginConfig } from "@/lib/integrations";
 import { listPeople } from "@/lib/people";
 import { requireAppContext } from "@/lib/session";
 
-// @map Settings → Integrations | Company menu → Settings → Integrations | The company's data sources and website logins: credentials are entered here (never in a chat), plus whose work may use each (every agent can), and testing them.
+// @map Settings → Integrations | Company menu → Settings → Integrations | The company's data sources and website logins: credentials are entered here (never in a chat), plus whose work may use each (every agent can), each one's skill (how it works), and testing them.
 /** How requests are signed, by name only (header and query names, the token step's host): never values. */
 function signing(config: ApiConfig): string {
   const parts = [
@@ -37,7 +38,7 @@ export default async function IntegrationsSettingsPage() {
       fields: i.config.fields,
       access: i.access,
       personIds: i.personIds,
-      guide: i.guide,
+      skill: await integrationSkill(organization.id, i.id).then((s) => s && { name: s.name, version: s.version, body: s.body }),
       status: i.status,
       statusDetail: i.statusDetail,
       hasCredentials: i.hasCredentials,

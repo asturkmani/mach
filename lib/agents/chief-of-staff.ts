@@ -40,6 +40,7 @@ import {
   type Integration,
   type LoginConfig,
 } from "@/lib/integrations";
+import { saveIntegrationSkill } from "@/lib/company-skills";
 import { completeOnboarding, renameOrganization, type Organization } from "@/lib/orgs";
 import { workOverview, type ScheduledJob } from "@/lib/work-overview";
 import type { Page } from "@/lib/pages";
@@ -825,7 +826,10 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
         testPath: z.string().optional().describe("A cheap GET that succeeds when the credentials work."),
         docsUrl: z.string().optional(),
         access: z.enum(["read", "write"]).optional().describe("read (the default): agents can only GET."),
-        guide: z.string().optional().describe("Markdown for agents: main endpoints and parameters, paging, limits, field meanings."),
+        guide: z
+          .string()
+          .optional()
+          .describe("The first version of its skill, in markdown, for agents: main endpoints and parameters, paging, limits, field meanings. Write it by the writing-skills skill."),
       }),
       execute: async (input) => {
         try {
@@ -846,9 +850,16 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             description: input.description,
             config,
             access: input.access,
-            guide: input.guide,
             personId: context.person?.id,
           });
+          // What it learned from the docs is the system's skill, which every agent loads before using it.
+          if (input.guide?.trim()) {
+            await saveIntegrationSkill(orgId, integration, {
+              body: input.guide,
+              note: "Set up from its docs.",
+              by: { name: context.person?.name ?? context.user.name, personId: context.person?.id },
+            });
+          }
           return {
             integration: {
               id: integration.id,
@@ -896,7 +907,10 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
           .object({ username: z.string().optional(), password: z.string().optional(), submit: z.string().optional(), code: z.string().optional() })
           .optional()
           .describe("CSS selectors for the sign-in form, only if the usual ones won't find it."),
-        guide: z.string().optional().describe("Markdown for agents: where things are on the site, how to enter data, what to avoid."),
+        guide: z
+          .string()
+          .optional()
+          .describe("The first version of its skill, in markdown, for agents: where things are on the site, how to enter data, what to avoid."),
       }),
       execute: async (input) => {
         try {
@@ -922,9 +936,16 @@ function workTools(context: Context, research: { workspace: AgentContext; using:
             description: input.description,
             config,
             access: "write",
-            guide: input.guide,
             personId: context.person?.id,
           });
+          // What it learned from the docs is the system's skill, which every agent loads before using it.
+          if (input.guide?.trim()) {
+            await saveIntegrationSkill(orgId, integration, {
+              body: input.guide,
+              note: "Set up from its docs.",
+              by: { name: context.person?.name ?? context.user.name, personId: context.person?.id },
+            });
+          }
           return {
             integration: {
               id: integration.id,
