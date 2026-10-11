@@ -18,7 +18,6 @@ import { appendDictation, VoiceButton } from "@/components/voice-input";
 import type { IntegrationStatus } from "@/lib/integrations";
 import type { ChiefOfStaffMessage } from "@/lib/agents/chief-of-staff";
 import type { LoginOutput } from "@/lib/agents/toolkit";
-import type { BrowserReport } from "@/lib/agents/browser-agent";
 import type { ChecklistItem } from "@/lib/profile/markdown";
 import type { TaskStatus } from "@/lib/task-words";
 
@@ -56,8 +55,6 @@ const REFRESHING_TOOLS = new Set([
   "complete_onboarding",
   "connect_data_source",
   "connect_login",
-  "save_page",
-  "refresh_page",
 ]);
 
 /** A message on its way: text, the files shown in it, and the uploads the server saves. */
@@ -516,28 +513,7 @@ function ToolPart({
     const { integration } = part.output;
     return <IntegrationCard integration={integration} live={integrationStatus[integration.id]} tell={tell} login />;
   }
-  if (part.type === "tool-save_page" && done && part.output.page) {
-    const { page, created } = part.output;
-    return (
-      <Link href={`/pages/${page.slug}`} className="block border border-line bg-raised px-3.5 py-3 hover:border-muted">
-        <p className="label mb-1">
-          Page {created ? "created" : `saved · v${page.version}`}
-        </p>
-        <p className="text-[15px]">{page.title}</p>
-        <p className="mt-1 text-xs text-muted">Open it</p>
-      </Link>
-    );
-  }
-  const needsCode =
-    (name === "browser_login" || name === "use_browser") && done ? (part.output as unknown as LoginOutput).needsCode : undefined;
-  if (name === "use_browser" && done) {
-    return (
-      <>
-        {needsCode && latest && <SignInCodeCard login={needsCode} tell={tell} />}
-        <BrowserCard report={part.output as unknown as BrowserReport} job={(part.input as { task?: string; message?: string }) ?? {}} />
-      </>
-    );
-  }
+  const needsCode = name === "browser_login" && done ? (part.output as unknown as LoginOutput).needsCode : undefined;
   if (needsCode && latest) return <SignInCodeCard login={needsCode} tell={tell} />;
 
   const input = (part.input ?? {}) as Record<string, string | undefined>;
@@ -565,15 +541,11 @@ function ToolPart({
     fetch_page: `Read ${input.url ? truncate(input.url.replace(/^https?:\/\//, ""), 50) : "a page"}`,
     browse: `Opened ${input.url ? truncate(input.url.replace(/^https?:\/\//, ""), 50) : "a page"} in the browser`,
     browser_login: needsCode ? `${input.login ?? "The site"} asked for a sign-in code` : `Signed in to ${input.login ?? "a site"}`,
-    use_browser: `Browser agent: ${truncate(input.task ?? input.message ?? "working", 50)}`,
     run_code: `Ran ${input.filename ?? "a script"}`,
     run_command: `Ran ${truncate(input.command ?? "a command", 40)}`,
     read_file: `Read ${input.path ?? "a file"}`,
     write_file: `Wrote ${input.path ?? "a file"}`,
     list_files: "Listed files",
-    save_page: `Saving the ${input.title ?? ""} page`,
-    read_page: `Read the ${input.page ?? ""} page`,
-    refresh_page: `Scheduled the ${input.page ?? ""} page's refresh`,
   };
   const failed =
     part.state === "output-error" ||
@@ -583,37 +555,6 @@ function ToolPart({
       <span>{failed ? "✕" : done ? "✓" : "…"}</span>
       <span className="truncate">{labels[name] ?? name}</span>
     </p>
-  );
-}
-
-const BROWSER_STATUS: Record<BrowserReport["status"], string> = {
-  done: "Done",
-  needs_input: "Needs an answer",
-  blocked: "Blocked",
-  failed: "Didn't work",
-};
-
-/** What the browser agent did for the Chief of Staff: its report and the screenshots it kept. */
-function BrowserCard({ report, job }: { report: BrowserReport; job: { task?: string; message?: string } }) {
-  const shots = report.evidence.filter((e) => e.versionId);
-  return (
-    <div className="border border-line bg-raised px-3.5 py-3">
-      <p className={`label mb-1 ${report.status === "done" ? "" : "text-accent-ink"}`}>Browser · {BROWSER_STATUS[report.status]}</p>
-      {(job.task || job.message) && <p className="mb-1.5 text-xs text-muted">{truncate(job.task ?? job.message ?? "", 140)}</p>}
-      <p className="text-sm whitespace-pre-wrap">{report.message}</p>
-      {report.question && <p className="mt-1.5 text-sm">{report.question}</p>}
-      {shots.length > 0 && (
-        <div className="mt-2.5 grid grid-cols-2 gap-2">
-          {shots.map((e) => (
-            <a key={e.versionId} href={`/files/${e.versionId}?inline=1`} target="_blank" rel="noreferrer" title={e.caption} className="block border border-line hover:border-muted">
-              {/* eslint-disable-next-line @next/next/no-img-element -- a private file, served by the app */}
-              <img src={`/files/${e.versionId}?inline=1`} alt={e.caption} className="aspect-[16/10] w-full object-cover object-top" />
-              <span className="block truncate px-1.5 py-1 text-[11px] text-muted">{e.caption}</span>
-            </a>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 

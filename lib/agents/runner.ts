@@ -25,6 +25,7 @@ import {
   type BriefImage,
 } from "@/lib/agents/run-steps";
 import { askForLoginCode } from "@/lib/agents/browser-steps";
+import { pageTools } from "@/lib/agents/page-tools";
 import { attachSandboxFile, closeSandbox, writeSkillScripts } from "@/lib/agents/sandbox-steps";
 import {
   batchFor,
@@ -333,6 +334,12 @@ export function activityFor(tool: string, input: Record<string, unknown>): strin
       return `Signing in to ${input.login}`;
     case "use_browser":
       return `Using the browser: ${clipped(input.task ?? input.message, 40)}`;
+    case "save_page":
+      return `Saving the ${clipped(input.title, 40)} page`;
+    case "read_page":
+      return `Reading the ${input.page} page`;
+    case "refresh_page":
+      return `Setting up the ${input.page} page's refresh`;
     case "post_update":
       return "Posting an update";
     case "set_schedule":
@@ -520,6 +527,8 @@ export async function runAgentOnTask(
               return { text: asked, needsCode: login };
             }, { durable: true, heartbeat: () => keepLease(context, "Using the browser") }),
             ...githubTools(context),
+            // On once building-pages is loaded: pages are made for the person the work is for.
+            ...pageTools(context, using, { name: context.agentName, agentId: context.agentId, personId: context.personId }),
             ...research,
             use_skill: skillTool(catalogue, (names) => {
               names.forEach((n) => state.loaded?.add(n));

@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { sendLoginCode } from "@/lib/agents/browser-steps";
@@ -93,19 +94,30 @@ describe("the Chief of Staff's workspace", () => {
     // It works in Ahmed's own sandbox.
     const name = personalSandboxName(person.id);
 
-    // A chat turn, as the chat route runs it: the sandbox is closed when the turn ends.
+    // A chat turn, as the chat route runs it, in one conversation: the sandbox is closed when the turn ends.
+    const history: ModelMessage[] = [];
     const turn = async (steps: Step[], prompt: string) => {
       const sandbox: SandboxSession = {};
       const model = scriptedModel(steps);
       const agent = createChiefOfStaff({ organization, user: { id: "user_ahmed", email: "ahmed@cedar.example", name: "Ahmed" }, person, profile: "" }, { model, research: false, sandbox });
-      const result = await agent.generate({ prompt });
+      history.push({ role: "user", content: prompt });
+      const result = await agent.generate({ messages: [...history] });
+      history.push(...result.responseMessages);
       if (sandbox.used) await closeSandbox(workspaceOf({ organization, person }));
       return { result, model };
     };
+    const offered = (model: ReturnType<typeof scriptedModel>, step: number) => (model.doGenerateCalls[step].tools ?? []).map((t) => t.name);
 
     // The docs need a sign-in; Masttro sends a code, so the chat shows a card for it and the browser waits.
-    const first = await turn([[["browser_login", { login: "masttro-docs" }]], "Masttro sent you a code: enter it in the card."], "Connect the Masttro API");
-    const login = first.result.steps[0].toolResults[0]!.output as { text: string; needsCode?: { slug: string } };
+    const first = await turn(
+      [[["use_skill", { name: "connecting-integrations" }]], [["browser_login", { login: "masttro-docs" }]], "Masttro sent you a code: enter it in the card."],
+      "Connect the Masttro API",
+    );
+    // Its sandbox and browser are for setting up integrations: off until that skill is loaded.
+    expect(offered(first.model, 0)).not.toContain("browser_login");
+    expect(offered(first.model, 0)).not.toContain("run_code");
+    expect(offered(first.model, 1)).toEqual(expect.arrayContaining(["browser_login", "browse", "run_code"]));
+    const login = first.result.steps[1].toolResults[0]!.output as { text: string; needsCode?: { slug: string } };
     expect(login.needsCode).toEqual({ slug: "masttro-docs", name: "Masttro API docs" });
     expect(seen.creds).toMatchObject({ username: "ahmed@cedar.example", password: PASSWORD });
     expect(sandboxes.log).toContain(`create ${name}`);
@@ -122,6 +134,8 @@ describe("the Chief of Staff's workspace", () => {
       ],
       "I've entered the Masttro API docs sign-in code.",
     );
+    // Still setting up, later in the same conversation: the browser is on.
+    expect(offered(second.model, 0)).toContain("browser_login");
     const [signedIn, page] = second.result.steps.slice(0, 2).map((s) => s.toolResults[0]!.output as { text: string } | string);
     expect((signedIn as { text: string }).text).toMatch(/^Signed in to Masttro API docs/);
     expect(page).toContain("with the masttro-docs session");

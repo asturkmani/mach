@@ -5,6 +5,7 @@ import {
   tool,
   type InferAgentUIMessage,
   type LanguageModel,
+  type ModelMessage,
   type ToolSet,
 } from "ai";
 import { z } from "zod";
@@ -12,7 +13,6 @@ import { z } from "zod";
 import { actionCatalog } from "@/lib/actions";
 import { roleModel } from "@/lib/ai/lineup";
 import { actionTools } from "@/lib/agents/action-tools";
-import { pageTools } from "@/lib/agents/page-tools";
 import { appMapLines } from "@/lib/app-map";
 import { invitePersonAs, OperationError, type Actor } from "@/lib/operations";
 import { personAbout, personLine, type AgentContext } from "@/lib/agents/prompts";
@@ -198,7 +198,7 @@ ${workOverview({ openTasks, agents, jobs })}
 
 Integrations: the company's other systems, connected so agents can use them without seeing credentials. When someone wants a system connected ("connect Masttro, here are the API docs"), load the connecting-integrations skill and set it up yourself, in this chat: read the docs (with your browser if they need a sign-in), then connect_data_source; they enter credentials in the cards the tools show, never in the chat. Never create an agent or a task to set up an integration. Answer quick questions from a connected data source with call_api. For a website with no API, or changes its API can't make (data entry in Masttro, say), connect a login with connect_login; every agent can use it, signing in with the browser in its sandbox, and sign-in codes come to the people on the job.
 
-Your sandbox: like every agent, you have a Linux sandbox for the company with a browser in it. Use browse to read pages fetch_page can't (JavaScript apps, pages behind one of the company's logins), and run_code to work through what you saved (an API spec, say). For anything interactive on a website (checking something inside a signed-in app, testing a login), hand it to the browser agent with use_browser: it sees the page, signs in with the company's logins and reports back with screenshots. It's for looking, while you set things up or answer a question. You never change anything outside Mach1 yourself (data in a system, a website, GitHub beyond reading): that goes to the Worker with spawn_worker, which asks the person to approve the exact changes first.
+Your sandbox is for setting up integrations only: once the connecting-integrations skill is loaded, you have a Linux sandbox with a browser in it. Use browse to read docs fetch_page can't (JavaScript apps, docs behind one of the company's logins, after browser_login), and run_code to work through what you saved (an API spec, say). Everything else on a website or in code goes to the Worker with spawn_worker: checking something inside a signed-in app or entering data is spawn_worker with the using-the-browser skill (with wait, to answer here). You never change anything outside Mach1 yourself (data in a system, a website, GitHub beyond reading): the Worker asks the person to approve the exact changes first.
 ${integrationLines.join("\n") || "(none yet)"}
 
 Code and GitHub: each person connects their own GitHub (Settings → Account), and work in GitHub always runs as the person who asked, never anyone else. ${githubLine(context)}
@@ -212,7 +212,7 @@ Research: the Worker, with the research skill, looks into anything the company n
 - Brief it like a good manager: it gets the company profile and who it's for (their name and role) by itself. In what matters, pass what they already know or think, constraints, names, tickers or links they gave, and sources to use or avoid.
 - High-signal sources: when someone says a website, an X account, a subreddit or a Reddit user is worth following, or to look at it first, save it with do_action source.add, with why in the note (theirs unless they say it's for everyone). source.list shows them; the Research screen has them too.
 
-Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", load the building-pages skill and build it yourself in this chat: data into files on the drive with a script, the page with save_page, and refresh_page to keep it fresh. Not for one-off answers. A page you build is theirs until it's shared: when it's meant for everyone (a report for the family, the company's numbers) or they say so, share it with share_page.
+Pages: views of the company's data that people keep coming back to (a dashboard of net worth by entity, cash across banks), in Pages and kept up to date. When someone asks for a dashboard, a view, a page or to "see X every morning", call spawn_worker with the building-pages skill (and the data source's skill, if it has one): the Worker gets the data onto the drive with a script, builds the page, checks it, sets up its refresh and reports back with the link. Not for one-off answers. To change a page, reply on the task that built it, or spawn_worker with building-pages naming the page. A page is theirs until it's shared: when it's meant for everyone (a report for the family, the company's numbers) or they say so, share it with do_action page.set_visibility.
 ${pageLines.join("\n") || "(no pages yet)"}
 
 Company files (newest first). When a request builds on one ("add a 70/30 case to the portfolio model"), pass it in spawn_worker's files so the job starts from it and saves its next version; if the job that made it is still open, prefer replying there instead of creating a new task:
@@ -226,7 +226,7 @@ function appInstructions(context: Context): string {
   );
   return `The app: you can do from chat everything ${name} can do on Mach1's screens, as them and with their permissions (${
     context.isAdmin ? "they're an admin" : "they're a member, not an admin: inviting and removing people, roles, whose work may use an integration and the company's models are for admins"
-  }). Besides your own tools (spawn_worker, start_job, create_task, reply_on_task, save_person, connect_data_source, connect_login, pages…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
+  }). Besides your own tools (spawn_worker, start_job, create_task, reply_on_task, save_person, connect_data_source, connect_login…), everything people do on the screens is an action you perform with do_action, by name with its inputs. Files people send you by WhatsApp or email, or attach in the chat, are saved to Files, private to them, and shown to you with their message. When an action is refused, say why in a line. The actions:
 ${actionCatalog({ isAdmin: Boolean(context.isAdmin) })}
 ${claudeLine(context)}Never through chat, whoever asks: credentials, passwords and API keys (integrations, AI provider keys), deleting the company, and linking their WhatsApp. For those, and whenever someone needs to see or do something on a screen, give the exact link from this list (fill in {placeholders}) and where it is in the menus. Never just the home page.
 ${appMapLines()}
@@ -1074,6 +1074,33 @@ function jobTools(context: Context) {
   } satisfies ToolSet;
 }
 
+/**
+ * The chat agent's sandbox and browser, for setting up integrations only
+ * (docs/agent-design.md, Tools): on once the connecting-integrations skill is
+ * loaded in the conversation it sees. Other code and browser work goes to a worker.
+ */
+const SETUP_ONLY: ReadonlySet<string> = new Set(["run_code", "run_command", "read_file", "write_file", "list_files", "browse", "browser_login"]);
+
+/** Whether the conversation the model sees has the connecting-integrations skill loaded. */
+export function settingUp(messages: readonly ModelMessage[]): boolean {
+  return messages.some(
+    (m) =>
+      m.role === "assistant" &&
+      Array.isArray(m.content) &&
+      m.content.some((p) => p.type === "tool-call" && p.toolName === "use_skill" && (p.input as { name?: string } | undefined)?.name === "connecting-integrations"),
+  );
+}
+
+/** browse and browser_login from the shared browser tools; the browser agent (use_browser) is a worker's. */
+function setupBrowser(workspace: AgentContext, using: SandboxUser) {
+  // A sign-in code goes from a card in the chat straight to the waiting browser.
+  const { browse, browser_login } = browserTools(workspace, using, null, (login) => ({
+    text: `${login.name} sent a sign-in code. They now see a card to enter it, which hands it straight to your browser. Tell them, then wait until they say it's entered and call browser_login again.`,
+    needsCode: login,
+  }));
+  return { browse, browser_login };
+}
+
 const ONBOARDING_ONLY = ["set_company_name", "update_section", "complete_onboarding"] as const;
 const AFTER_ONBOARDING_ONLY = ["suggest_profile_update"] as const;
 
@@ -1099,13 +1126,9 @@ export function createChiefOfStaff(
     ...profileTools(context),
     ...workTools(context, { workspace, using, enabled: options.research !== false }),
     ...integrationTools(workspace, using, null),
+    // Setting up integrations only (SETUP_ONLY): reading docs behind a sign-in, working through a spec.
     ...sandboxTools(workspace, using),
-    // A sign-in code goes from a card in the chat straight to the waiting browser.
-    ...browserTools(workspace, using, null, (login) => ({
-      text: `${login.name} sent a sign-in code. They now see a card to enter it, which hands it straight to your browser. Tell them, then wait until they say it's entered and call browser_login again (or continue the browser session, if it came from use_browser).`,
-      needsCode: login,
-    })),
-    ...pageTools(workspace, using, { name: "Chief of Staff", personId: context.person?.id }),
+    ...setupBrowser(workspace, using),
     ...githubTools(workspace),
     ...jobTools(context),
     ...actionTools(actorFor(context), { whatsapp: context.channel === "whatsapp" ? context.person?.whatsapp : null }),
@@ -1114,13 +1137,17 @@ export function createChiefOfStaff(
     find_skill: findSkillTool(catalogueOf(context)),
   };
   // Every tool stays in the type (and in stored chats); only the ones that fit
-  // the moment are offered to the model.
+  // the moment are offered to the model, picked before every step.
   const hidden: readonly string[] = context.organization.onboardingCompletedAt ? ONBOARDING_ONLY : AFTER_ONBOARDING_ONLY;
+  const names = (Object.keys(tools) as (keyof typeof tools)[]).filter((name) => !hidden.includes(name));
   return new ToolLoopAgent({
     model: companyModel(context.organization.id, model),
     instructions: chiefOfStaffInstructions(context),
     tools,
-    activeTools: (Object.keys(tools) as (keyof typeof tools)[]).filter((name) => !hidden.includes(name)),
+    prepareStep: ({ messages }) => {
+      const setup = settingUp(messages);
+      return { activeTools: names.filter((name) => setup || !SETUP_ONLY.has(name)) };
+    },
   });
 }
 

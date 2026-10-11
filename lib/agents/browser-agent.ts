@@ -410,7 +410,7 @@ export async function runBrowserAgent(
         },
       });
       const result = await agent.generate({ messages });
-      added = result.response.messages as ModelMessage[];
+      added = result.responseMessages as ModelMessage[];
       if (!state.finished && result.text.trim()) state.finished = { status: "failed", message: result.text.trim() };
     } else {
       const agent = new ToolLoopAgent({
@@ -421,7 +421,7 @@ export async function runBrowserAgent(
         },
       });
       const result = await agent.generate({ messages });
-      added = result.response.messages;
+      added = result.responseMessages;
       if (!state.finished && result.text.trim()) state.finished = { status: "failed", message: result.text.trim() };
     }
   } catch (error) {

@@ -145,6 +145,8 @@ describe("the browser agent", () => {
     const saved = (await getBrowserSession(ORG, report.session, { taskId: task.id }))!;
     expect(saved.status).toBe("done");
     expect(JSON.stringify(saved.messages)).not.toContain("image/jpeg");
+    // Every step, not just the last: the follow-up knows what it already did.
+    expect(JSON.stringify(saved.messages)).toContain('"toolName":"act"');
 
     const second = scriptedModel([[["finish", { status: "done", message: "The tag reads Dividends." }]]]);
     setBrowserAgentModel(second);

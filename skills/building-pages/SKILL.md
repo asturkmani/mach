@@ -1,9 +1,10 @@
 ---
 name: building-pages
 description: "Building a page: a report on company data (a dashboard) in Pages that stays up to date."
+tools: [save_page, read_page, refresh_page, share_page]
 ---
 
-A page is a view of the company's data that people keep coming back to (net worth by entity, cash across banks, the pipeline), in Pages. Build one when someone asks for a dashboard, a view or a page, or to "see X every morning". Answer one-off questions in the chat instead.
+A page is a view of the company's data that people keep coming back to (net worth by entity, cash across banks, the pipeline), in Pages. Build one when someone asks for a dashboard, a view or a page, or to "see X every morning". A one-off question needs an answer, not a page.
 
 Only build a page on real data. If the data isn't available (the system isn't connected, there are no files for it), don't build a placeholder page, write "pending" data or schedule a refresh: tell them what's needed (connect the bank or Masttro, or upload a file) and offer to do that first.
 
@@ -16,7 +17,7 @@ How a page works:
 - Keep data and page apart: a script makes the data, the page only draws it. Shape the data for the page (a small JSON with exactly what it shows: totals, rows, series, and an as_of time), not a raw API dump.
 
 Steps:
-1. Get the data (skip this for a page that only reads Mach1's own data). If it lives in a system that isn't one of the company's data sources yet (say Masttro, with only a docs login connected), connect it first with the connecting-integrations skill, then come back to the page. From a data source: explore it with call_api (small requests), then write a script on the drive, /vercel/drive/pages/<slug>/refresh.py, that calls the API and writes /vercel/drive/pages/<slug>/data.json. Call the API at its normal URL with plain requests; Mach1 signs requests from the sandbox, so never put credentials in code. Run it (run_command: python3 /vercel/drive/pages/<slug>/refresh.py) and read the file back to check its shape. From data already on the drive, read it and, if it's big, write a smaller summary file for the page.
+1. Get the data (skip this for a page that only reads Mach1's own data). If it lives in a system that isn't one of the company's data sources yet (say Masttro, with only a docs login connected), stop and say so with ask: their Chief of Staff connects it with them, and you carry on once it's there. From a data source: explore it with call_api (small requests), then write a script on the drive, /vercel/drive/pages/<slug>/refresh.py, that calls the API and writes /vercel/drive/pages/<slug>/data.json. Call the API at its normal URL with plain requests; Mach1 signs requests from the sandbox, so never put credentials in code. Run it (run_command: python3 /vercel/drive/pages/<slug>/refresh.py) and read the file back to check its shape. From data already on the drive, read it and, if it's big, write a smaller summary file for the page.
 2. Write the page with save_page, a whole HTML document:
    - Mach1's look comes with it. Use its CSS variables (--ink, --muted, --faint, --line, --raised, --panel, --accent, --up, --down, --series-1 to --series-8) and classes: .label (small uppercase label), .stats holding .stat blocks (each with .label, .value and .note) for headline numbers, .table-wrap around a table (th.num and td.num right-align numbers), .card, .grid, .row, .stack, .muted, .up, .down, .empty. Don't restyle the body or load other fonts; light and dark mode then work by themselves.
    - Helpers: mach.money(value, "USD"), mach.number(value), mach.percent(0.123) gives "12.3%", mach.ago(date), mach.file(path).updatedAt, mach.csv(path).
@@ -28,6 +29,6 @@ Steps:
    - Keep data out of the HTML (it has a 1 MB limit).
 3. save_page checks the page in your sandbox browser: fix any script errors, a blank page or overflow, and save again.
 4. To keep it fresh, call refresh_page with the command from step 1 and a schedule in their timezone ("every weekday at 7am" is 0 7 * * 1-5). If they didn't say how often, data that changes daily refreshes each weekday morning. Runs are quiet; only failures reach people.
-5. Tell them in a line or two what it shows and that it's in Pages.
+5. Report in a line or two what it shows, with the page's link (save_page gives it): it's in Pages, private to them until they share it.
 
 Changing a page later: read_page, then save_page with page set to its slug, the whole new HTML and a short note on what changed. Every version is kept, and people can go back to an earlier one.

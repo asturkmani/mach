@@ -1,10 +1,125 @@
 import type { AgentContext } from "@/lib/agents/prompts";
+import { appUrl } from "@/lib/app-url";
+import { drivePath } from "@/lib/drive";
+import { isMachSource } from "@/lib/mach-sources";
+import { buildPageDocument } from "@/lib/page-frame";
+import { getPage, pageDataStatus, pageHtml, PageError, readPageData, savePage, setPageRefresh, setPageVisibility, type PageAuthor } from "@/lib/pages";
 import { JOB_DIR, openCompanySandbox, sandboxNameOf } from "@/lib/sandbox";
+import { getSchedule } from "@/lib/schedules";
 
-// Checks a page the way people will see it: the browser in the agent's
-// sandbox opens the page's document (with its data) and reports script
-// errors, what rendered, and whether it fits a phone, so the agent can fix a
-// broken page before anyone opens it.
+// The page tools' durable steps (lib/agents/page-tools.ts): saving a page,
+// reading it, sharing it and keeping its data fresh. And the check: the
+// browser in the agent's sandbox opens the page's document (with its data)
+// and reports script errors, what rendered, and whether it fits a phone, so
+// the agent can fix a broken page before anyone opens it.
+
+const ago = (date: Date | null) => {
+  if (!date) return "not on the drive yet";
+  const minutes = Math.round((Date.now() - date.getTime()) / 60_000);
+  return minutes < 2 ? "updated just now" : minutes < 120 ? `updated ${minutes} min ago` : `updated ${Math.round(minutes / 60)} h ago`;
+};
+
+export type PageInput = { page?: string; title: string; description?: string; html: string; data: string[]; note?: string };
+
+export type SavedPage =
+  | { error: string }
+  | {
+      page: { slug: string; title: string; version: number; url: string; pinned: boolean };
+      created: boolean;
+      changed: boolean;
+      data: { path: string; status: string }[];
+      /** The document to check in the sandbox browser, when the HTML changed. */
+      document: string | null;
+    };
+
+/** Saves a page, or a new version of one; refused when none of its data exists yet. */
+export async function savePageStep(context: AgentContext, by: PageAuthor, input: PageInput): Promise<SavedPage> {
+  "use step";
+  const orgId = context.organizationId;
+  try {
+    // A page is a report on real data: refuse one whose data doesn't exist yet rather than save a placeholder.
+    const data = input.data.map((path) => (isMachSource(path.trim()) ? path.trim() : drivePath(path)));
+    const status = await pageDataStatus(orgId, { data });
+    if (status.length === 0 || status.every((f) => !f.live && !f.updatedAt)) {
+      return {
+        error: `none of its data exists yet${data.length ? ` (${data.join(", ")} ${data.length === 1 ? "isn't" : "aren't"} on the drive)` : ""}. Get the data first (connect the system, run the script that writes the file), or tell them what's needed; don't build a placeholder page.`,
+      };
+    }
+    const { page, created, changed } = await savePage(orgId, {
+      slug: input.page,
+      title: input.title,
+      description: input.description,
+      html: input.html,
+      data: input.data,
+      note: input.note ?? (input.page ? "" : "First version"),
+      by,
+    });
+    const files = await readPageData(orgId, page);
+    const document = changed
+      ? buildPageDocument({
+          html: (await pageHtml(orgId, page.slug))!.html,
+          title: page.title,
+          theme: "light",
+          files: files.map((f) => ({ path: f.path, updatedAt: f.updatedAt?.toISOString() ?? null, value: f.value, problem: f.problem })),
+        })
+      : null;
+    return {
+      page: { slug: page.slug, title: page.title, version: page.version, url: appUrl(`/pages/${page.slug}`), pinned: page.pinned },
+      created,
+      changed,
+      data: files.map((f) => ({ path: f.path, status: f.problem ?? ago(f.updatedAt) })),
+      document,
+    };
+  } catch (error) {
+    if (error instanceof PageError) return { error: error.message };
+    if (error instanceof Error && /drive|path|name/i.test(error.message)) return { error: error.message };
+    throw error;
+  }
+}
+
+/** Shares a page with the company, or makes it private again: only for whoever made it. */
+export async function sharePageStep(context: AgentContext, by: PageAuthor, slug: string, withCompany: boolean): Promise<string> {
+  "use step";
+  const page = await getPage(context.organizationId, slug, { viewer: by.personId });
+  if (!page) return `There's no page called ${slug}.`;
+  if (!by.personId || page.createdByPersonId !== by.personId) return `Only whoever made ${page.title}, or an admin in the app, can change who sees it.`;
+  await setPageVisibility(context.organizationId, slug, withCompany ? "company" : "private");
+  return withCompany ? `${page.title} is shared with the company.` : `${page.title} is private to whoever made it.`;
+}
+
+/** A page's HTML, the drive files it reads and what refreshes it. */
+export async function readPageStep(context: AgentContext, by: PageAuthor, slug: string): Promise<string> {
+  "use step";
+  const page = await getPage(context.organizationId, slug, { viewer: by.personId });
+  const html = page && (await pageHtml(context.organizationId, slug));
+  if (!page || !html) return `There's no page called ${slug}.`;
+  const schedule = page.taskId ? await getSchedule(page.taskId) : null;
+  const files = await readPageData(context.organizationId, { data: page.data });
+  return [
+    `${page.title}, version ${html.version}. ${page.description}`,
+    `Data: ${files.map((f) => `${f.path} (${f.problem ?? ago(f.updatedAt)})`).join(", ") || "none"}`,
+    `Refreshed by: ${page.taskNumber ? `#${page.taskNumber}${schedule ? `, ${schedule.description}` : ""}` : "nothing yet"}`,
+    "",
+    html.html,
+  ].join("\n");
+}
+
+/** Sets up (or changes) the quiet job that keeps a page's data fresh, and runs it once. */
+export async function refreshPageStep(
+  context: AgentContext,
+  by: PageAuthor,
+  slug: string,
+  refresh: { command: string; cron: string; timezone: string },
+): Promise<string> {
+  "use step";
+  try {
+    const result = await setPageRefresh(context.organizationId, slug, refresh, { name: by.name, personId: by.personId });
+    return `Job #${result.taskNumber} refreshes it ${result.schedule.description}, and is running once now. Runs that work stay quiet; a failure goes to an agent and then to them.`;
+  } catch (error) {
+    if (error instanceof PageError) return `Not set up: ${error.message}`;
+    throw error;
+  }
+}
 
 const CHECKER = `${JOB_DIR}/.mach/check-page.py`;
 

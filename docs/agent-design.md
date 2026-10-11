@@ -613,7 +613,9 @@ Prompts ask agents to get approval before changing other systems. With no limits
    - The proxy refusing writes without an approval, with `approvals.json` and `mach.approved()` for scripts.
    - The step check for the browser.
    - Cost approval on `start_child`, against a limit an admin sets.
-6. **Long work leaves the chat turn.** Code, the browser and pages move to workers, except setting up integrations.
+6. **Long work leaves the chat turn.** Shipped:
+   - The chat agent's sandbox and browser (`run_code`, `run_command`, the file tools, `browse`, `browser_login`) are on only once `connecting-integrations` is loaded in the conversation it sees (`SETUP_ONLY` in `lib/agents/chief-of-staff.ts`).
+   - `use_browser` and the page tools are the Worker's. The page tools are switched on by `building-pages`, and their work runs in durable steps (`lib/agents/page-steps.ts`).
 
 Each phase ships on its own. Phases 3, 4 and 5 are the large ones.
 

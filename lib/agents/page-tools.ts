@@ -1,30 +1,20 @@
-import "server-only";
-
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
-import { checkPage, describeCheck } from "@/lib/agents/page-steps";
+import { checkPage, describeCheck, readPageStep, refreshPageStep, savePageStep, sharePageStep, type SavedPage } from "@/lib/agents/page-steps";
 import type { AgentContext } from "@/lib/agents/prompts";
 import type { SandboxUser } from "@/lib/agents/toolkit";
-import { appUrl } from "@/lib/app-url";
-import { buildPageDocument } from "@/lib/page-frame";
-import { drivePath } from "@/lib/drive";
-import { isMachSource } from "@/lib/mach-sources";
-import { getPage, pageDataStatus, pageHtml, PageError, readPageData, savePage, setPageRefresh, setPageVisibility, type PageAuthor } from "@/lib/pages";
-import { getSchedule } from "@/lib/schedules";
+import type { PageAuthor } from "@/lib/pages";
 
-// The Chief of Staff's tools for pages: views of the company's data, shown as
-// reports in Pages. It writes a page's HTML against files on the drive, checks it
-// in its sandbox browser, and sets up the quiet job that keeps the data fresh.
+// The tools for pages: views of the company's data, shown as reports in
+// Pages. The Worker has them once the building-pages skill is loaded: it
+// writes a page's HTML against files on the drive, checks it in its sandbox
+// browser, and sets up the quiet job that keeps the data fresh. Each does its
+// work in durable steps (lib/agents/page-steps.ts), as a task's run is a workflow.
 
-const ago = (date: Date | null) => {
-  if (!date) return "not on the drive yet";
-  const minutes = Math.round((Date.now() - date.getTime()) / 60_000);
-  return minutes < 2 ? "updated just now" : minutes < 120 ? `updated ${minutes} min ago` : `updated ${Math.round(minutes / 60)} h ago`;
-};
+type SaveOutput = { error: string } | (Omit<Extract<SavedPage, { page: unknown }>, "document"> & { check: string | null });
 
 export function pageTools(context: AgentContext, using: SandboxUser, by: PageAuthor) {
-  const orgId = context.organizationId;
   return {
     save_page: tool({
       description:
@@ -39,53 +29,19 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
           .describe("What it reads: drive files (paths under /vercel/drive, e.g. masttro/holdings.json) and Mach1's own data by name (mach:tasks, mach:people, mach:agents)."),
         note: z.string().max(120).optional().describe("What this version changed, e.g. 'Added the entity filter'."),
       }),
-      execute: async (input) => {
-        try {
-          // A page is a report on real data: refuse one whose data doesn't exist yet rather than save a placeholder.
-          const data = input.data.map((path) => (isMachSource(path.trim()) ? path.trim() : drivePath(path)));
-          const status = await pageDataStatus(orgId, { data });
-          if (status.length === 0 || status.every((f) => !f.live && !f.updatedAt)) {
-            return {
-              error: `none of its data exists yet${data.length ? ` (${data.join(", ")} ${data.length === 1 ? "isn't" : "aren't"} on the drive)` : ""}. Get the data first (connect the system, run the script that writes the file), or tell them what's needed; don't build a placeholder page.`,
-            };
-          }
-          const { page, created, changed } = await savePage(orgId, {
-            slug: input.page,
-            title: input.title,
-            description: input.description,
-            html: input.html,
-            data: input.data,
-            note: input.note ?? (input.page ? "" : "First version"),
-            by,
+      execute: async (input): Promise<SaveOutput> => {
+        const saved = await savePageStep(context, by, input);
+        if ("error" in saved) return saved;
+        const { document, ...rest } = saved;
+        let check: string | null = null;
+        if (document) {
+          const result = await using(() => checkPage(context, document)).catch((error) => {
+            console.error("Page check failed", error);
+            return null;
           });
-          const files = await readPageData(orgId, page);
-          let check: string | null = null;
-          if (changed) {
-            const html = (await pageHtml(orgId, page.slug))!.html;
-            const document = buildPageDocument({
-              html,
-              title: page.title,
-              theme: "light",
-              files: files.map((f) => ({ path: f.path, updatedAt: f.updatedAt?.toISOString() ?? null, value: f.value, problem: f.problem })),
-            });
-            const result = await using(() => checkPage(context, document)).catch((error) => {
-              console.error("Page check failed", error);
-              return null;
-            });
-            check = result ? describeCheck(result) : "The check couldn't run this time.";
-          }
-          return {
-            page: { slug: page.slug, title: page.title, version: page.version, url: appUrl(`/pages/${page.slug}`), pinned: page.pinned },
-            created,
-            changed,
-            data: files.map((f) => ({ path: f.path, status: f.problem ?? ago(f.updatedAt) })),
-            check,
-          };
-        } catch (error) {
-          if (error instanceof PageError) return { error: error.message };
-          if (error instanceof Error && /drive|path|name/i.test(error.message)) return { error: error.message };
-          throw error;
+          check = result ? describeCheck(result) : "The check couldn't run this time.";
         }
+        return { ...rest, check };
       },
       toModelOutput: ({ output }) => ({
         type: "text" as const,
@@ -93,7 +49,7 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
           "error" in output
             ? `Not saved: ${output.error}`
             : [
-                `${output.created ? "Created" : output.changed ? "Saved" : "No change to"} ${output.page.title} (${output.page.slug}), version ${output.page.version}. They see a card that opens it.`,
+                `${output.created ? "Created" : output.changed ? "Saved" : "No change to"} ${output.page.title} (${output.page.slug}), version ${output.page.version}: ${output.page.url}${context.taskId ? " (give them this link in your report)" : ""}.`,
                 `Data: ${output.data.map((d) => `${d.path} (${d.status})`).join(", ") || "none"}.`,
                 output.check ?? "",
               ]
@@ -103,33 +59,14 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
     }),
     share_page: tool({
       description:
-        "Share a page with the whole company (its refresh job too), or make it private again to whoever made it. Only for pages the person you're talking to made.",
+        "Share a page with the whole company (its refresh job too), or make it private again to whoever made it. Only for pages the person the work is for made.",
       inputSchema: z.object({ page: z.string().describe("The page's slug."), withCompany: z.boolean() }),
-      execute: async ({ page: slug, withCompany }): Promise<string> => {
-        const page = await getPage(orgId, slug, { viewer: by.personId });
-        if (!page) return `There's no page called ${slug}.`;
-        if (!by.personId || page.createdByPersonId !== by.personId) return `Only whoever made ${page.title}, or an admin in the app, can change who sees it.`;
-        await setPageVisibility(orgId, slug, withCompany ? "company" : "private");
-        return withCompany ? `${page.title} is shared with the company.` : `${page.title} is private to whoever made it.`;
-      },
+      execute: ({ page, withCompany }) => sharePageStep(context, by, page, withCompany),
     }),
     read_page: tool({
       description: "Read a page: its current HTML, the drive files it reads and how it's refreshed. Do this before changing a page.",
       inputSchema: z.object({ page: z.string().describe("The page's slug.") }),
-      execute: async ({ page: slug }): Promise<string> => {
-        const page = await getPage(orgId, slug, { viewer: by.personId });
-        const html = page && (await pageHtml(orgId, slug));
-        if (!page || !html) return `There's no page called ${slug}.`;
-        const schedule = page.taskId ? await getSchedule(page.taskId) : null;
-        const files = await readPageData(orgId, { data: page.data });
-        return [
-          `${page.title}, version ${html.version}. ${page.description}`,
-          `Data: ${files.map((f) => `${f.path} (${f.problem ?? ago(f.updatedAt)})`).join(", ") || "none"}`,
-          `Refreshed by: ${page.taskNumber ? `#${page.taskNumber}${schedule ? `, ${schedule.description}` : ""}` : "nothing yet"}`,
-          "",
-          html.html,
-        ].join("\n");
-      },
+      execute: ({ page }) => readPageStep(context, by, page),
     }),
     refresh_page: tool({
       description:
@@ -140,15 +77,7 @@ export function pageTools(context: AgentContext, using: SandboxUser, by: PageAut
         cron: z.string().describe("Five-field cron in the timezone, e.g. '0 7 * * 1-5' for weekdays at 07:00."),
         timezone: z.string().describe("IANA timezone, e.g. Europe/London."),
       }),
-      execute: async ({ page, ...refresh }): Promise<string> => {
-        try {
-          const result = await setPageRefresh(orgId, page, refresh, { name: by.name, personId: by.personId });
-          return `Job #${result.taskNumber} refreshes it ${result.schedule.description}, and is running once now. Runs that work stay quiet; a failure goes to an agent and then to them.`;
-        } catch (error) {
-          if (error instanceof PageError) return `Not set up: ${error.message}`;
-          throw error;
-        }
-      },
+      execute: ({ page, ...refresh }) => refreshPageStep(context, by, page, refresh),
     }),
   } satisfies ToolSet;
 }

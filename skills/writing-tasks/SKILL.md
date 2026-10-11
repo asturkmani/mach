@@ -10,7 +10,7 @@ A good brief can be picked up by a worker who wasn't in the conversation. It can
 - Why: the decision or work it's for. It changes what a good answer is: "deciding whether to add to our MU position" needs a different brief from "a primer for a new analyst".
 - What matters: what they already know or think, constraints, names and links from the conversation, sources to use or avoid. Only what the work needs, nothing personal it doesn't.
 - What they want back: a pull request, a one-page brief, a spreadsheet with three cases, a yes or no with the reasons.
-- Skills: pin the ones the work needs, and only those: coding-in-github for a code change, research for research, excel-models, presentations, data-pipelines, financial-analysis. The Worker reads them before it starts and can load others itself.
+- Skills: pin the ones the work needs, and only those: coding-in-github for a code change, research for research, building-pages for a page (with the data source's skill), using-the-browser for work inside a website, excel-models, presentations, data-pipelines, financial-analysis. The Worker reads them before it starts and can load others itself.
 - Wait: only for a question likely answered within a few minutes. Anything with a file to make, many steps or something to watch goes without it.
 - An agent: a defined agent whose role fits can take the work instead of the Worker (agent).
 - People: the person who asked is always on it. Add anyone else who must decide or act. Work only people do goes to create_task instead.

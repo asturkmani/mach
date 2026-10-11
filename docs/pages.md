@@ -1,6 +1,6 @@
 # Pages
 
-A page is a view of the company's data that people keep coming back to: net worth by entity, cash across banks, the pipeline. People ask the Chief of Staff for one; it builds it in the chat and keeps it up to date. Pages in the left menu opens the tabbed view (the page you looked at last); its chevron drops down every page and New page. Open pages sit in tabs across the top, remembered in your browser, with a "+" for a new page: describe it to the Chief of Staff or pick an idea.
+A page is a view of the company's data that people keep coming back to: net worth by entity, cash across banks, the pipeline. People ask the Chief of Staff for one; it hands it to the Worker with the `building-pages` skill, which builds it, keeps it up to date and reports back with the link. Pages in the left menu opens the tabbed view (the page you looked at last); its chevron drops down every page and New page. Open pages sit in tabs across the top, remembered in your browser, with a "+" for a new page: describe it to the Chief of Staff or pick an idea.
 
 ## What a page reads
 
@@ -10,12 +10,12 @@ A page is a view of the company's data that people keep coming back to: net wort
 
 ## How a page is made
 
-1. **Data, by a script** (not needed for Mach1's own data). The Chief of Staff explores the data source with `call_api`, then writes a script on the company drive (`/vercel/drive/pages/<slug>/refresh.py`) that calls the API and writes a small JSON file shaped for the page (`/vercel/drive/pages/<slug>/data.json`). It runs it once in the sandbox of the person it's talking with. Requests from the sandbox are signed by the network proxy, so the script never holds credentials.
+1. **Data, by a script** (not needed for Mach1's own data). The Worker explores the data source with `call_api`, then writes a script on the company drive (`/vercel/drive/pages/<slug>/refresh.py`) that calls the API and writes a small JSON file shaped for the page (`/vercel/drive/pages/<slug>/data.json`). It runs it once in its task's sandbox. Requests from the sandbox are signed by the network proxy, so the script never holds credentials.
 2. **The page, as HTML.** `save_page` stores one HTML document that reads its drive files from `window.mach.data`. Every save is a new version; unchanged HTML adds none.
-3. **A check.** After each save, the page's document (with its data) opens in the Chief of Staff's sandbox browser at desktop and phone widths. The model gets back script errors, blocked requests, a blank page or phone overflow, the headings, tables and charts it rendered, and the start of its text, and fixes what's wrong.
+3. **A check.** After each save, the page's document (with its data) opens in the Worker's sandbox browser at desktop and phone widths. The model gets back script errors, blocked requests, a blank page or phone overflow, the headings, tables and charts it rendered, and the start of its text, and fixes what's wrong.
 4. **Fresh data, quietly.** `refresh_page` sets up a recurring job (*Refresh page: …*) whose `run.sh` runs the script, and runs it once straight away. Its schedule is *quiet*: a run that works is noted on the job's thread and leaves it done, so it never lands in anyone's inbox. A run that fails wakes the job's agent to fix it, and what it reports reaches the people on the job. The page's header says when the data last changed and links to the job.
 
-The `building-pages` skill is the playbook the Chief of Staff follows.
+The `building-pages` skill is the playbook the Worker follows, and it switches the page tools on (`save_page`, `read_page`, `refresh_page`, `share_page`). A page is private to the person it was made for until they share it. To change one, they reply on the task that built it, or ask the Chief of Staff, which starts a worker on it.
 
 ## Ideas
 
