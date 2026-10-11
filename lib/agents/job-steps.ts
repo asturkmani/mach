@@ -50,8 +50,10 @@ export async function batchFor(context: RunContext): Promise<number> {
 }
 
 export type ChildInput = {
-  assignee: "worker" | "person";
+  assignee: "worker" | "person" | "script";
   person?: string;
+  /** For a script child: the skill, the script in it, and its arguments. */
+  script?: { skill: string; path: string; args?: string[] };
   title: string;
   brief: string;
   skills?: string[];
@@ -87,8 +89,16 @@ export async function startChild(context: RunContext, input: ChildInput, batch: 
   const catalogue = [...SKILLS, ...(await companySkillsFor(organizationId, job.createdByPersonId))];
   const unknown = (input.skills ?? []).filter((n) => !knownSkills([n], catalogue).length);
   if (unknown.length) return `Not started: there's no skill called ${unknown.join(", ")}. Look for it with find_skill.`;
+  if (input.assignee === "script") {
+    const skill = catalogue.find((s) => s.name === input.script?.skill);
+    if (!input.script || !skill) return "Not started: a script child names a skill and one of its scripts.";
+    if (!skill.scripts?.[input.script.path]) {
+      return `Not started: ${skill.name} has no script ${input.script.path}${skill.scripts ? ` (it has ${Object.keys(skill.scripts).join(", ")})` : ""}.`;
+    }
+  }
   const waiting = before.some((c) => c!.status !== "review" && c!.status !== "done");
-  const worker = input.assignee === "worker" ? await workerAgent(organizationId) : null;
+  // A script child has the Worker on it too, to fix the script if it fails.
+  const worker = input.assignee !== "person" ? await workerAgent(organizationId) : null;
   const task = await createTask(organizationId, {
     title: input.title,
     description: input.brief,
@@ -100,7 +110,8 @@ export async function startChild(context: RunContext, input: ChildInput, batch: 
     agents: worker ? [worker.id] : [],
     visibility: job.visibility,
     waitsFor: before.map((c) => c!.id),
-    skills: worker ? knownSkills(input.skills, catalogue) : [],
+    skills: input.assignee === "script" ? [input.script!.skill] : worker ? knownSkills(input.skills, catalogue) : [],
+    payload: input.assignee === "script" ? { script: input.script } : undefined,
     parentTaskId: job.id,
     assigneeKind: input.assignee,
     batch,
@@ -112,7 +123,12 @@ export async function startChild(context: RunContext, input: ChildInput, batch: 
     if (file) await attachToTask(organizationId, task.id, file.id, "input");
     else missing.push(name);
   }
-  const who = worker ? `the Worker${task.skills.length ? ` with ${task.skills.join(", ")}` : ""}` : input.person!.trim();
+  const who =
+    input.assignee === "script"
+      ? `the script ${input.script!.skill}/${input.script!.path}`
+      : worker
+        ? `the Worker${task.skills.length ? ` with ${task.skills.join(", ")}` : ""}`
+        : input.person!.trim();
   await addMessage(task.id, {
     ...by(context),
     kind: "event",

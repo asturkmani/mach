@@ -592,7 +592,7 @@ Prompts ask agents to get approval before changing other systems. With no limits
    - Batches that wake the coordinator once, and one report per job.
    - In-depth research moves to jobs. `plan_job` and `investigate` go.
 4. **Learning on the job.**
-   - Script children: a skill's script run without a model, with a worker woken to fix it if it fails.
+   - Script children: a skill's script run without a model, with a worker woken to fix it if it fails (`lib/agents/script-child.ts`).
    - Company skills with scripts and tests, and integration skills taking over from guides.
    - The run log, run records, the gate (Jev, with the `background` model as fallback) and the learner, with its checks.
    - `mach.decide` in the sandbox template, the decision history, retrieval of past cases, and backtested thresholds.

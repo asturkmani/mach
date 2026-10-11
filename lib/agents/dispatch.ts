@@ -3,6 +3,7 @@ import "server-only";
 import { start } from "workflow/api";
 
 import { runAgentChain, type RunOptions } from "@/lib/agents/runner";
+import { runScriptChild } from "@/lib/agents/script-child";
 import { runScheduled, type RunTrigger } from "@/lib/agents/scheduled";
 import {
   addMessage,
@@ -18,6 +19,7 @@ import {
 import { reviewRoundStep, reviseProposalsStep } from "@/lib/learning/review-steps";
 import { agentRunWorkflow } from "@/workflows/agent-run";
 import { learningReviewWorkflow, proposalRevisionWorkflow } from "@/workflows/learning-review";
+import { scriptChildWorkflow } from "@/workflows/script-child";
 import { scheduledRunWorkflow } from "@/workflows/scheduled-run";
 
 export { agentToWake } from "@/lib/tasks";
@@ -79,10 +81,25 @@ export async function dispatchScheduled(organizationId: string, taskId: string, 
   await start(scheduledRunWorkflow, [organizationId, taskId, trigger]);
 }
 
-/** Starts the first agent on a task that is ready to be worked on. */
+/** Runs a job's script child: its skill's script, without a model (lib/agents/script-child.ts). */
+export async function dispatchScript(organizationId: string, taskId: string): Promise<void> {
+  if (inline) {
+    const { options } = inline;
+    inline.schedule(() => runScriptChild(organizationId, taskId, options));
+    return;
+  }
+  await start(scriptChildWorkflow, [organizationId, taskId]);
+}
+
+/** Starts the first agent on a task that is ready to be worked on (or a script child's script). */
 export async function startIfReady(organizationId: string, taskId: string): Promise<boolean> {
   const task = await getTask(organizationId, taskId);
   if (!task || task.status !== "ready" || task.runStartedAt) return false;
+  // A script child that hasn't run its script yet runs it; once the Worker has stepped in, it's the Worker's.
+  if (task.assigneeKind === "script" && (task.payload as { script?: unknown } | null)?.script && task.agentTurns === 0) {
+    await dispatchScript(organizationId, task.id);
+    return true;
+  }
   const agent = agentsOn(task).find((a) => a.status === "active");
   if (!agent) return false;
   await dispatchRun(organizationId, task.id, agent.id);

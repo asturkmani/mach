@@ -91,8 +91,9 @@ that follows the `coordinating` skill. It doesn't do the work itself:
 
 - **First run**: it asks the person what only they can settle (`ask`, on the job), writes the plan on the
   job's thread, starts the children that can start now (`start_child`) and ends with `wait_for_children`.
-- **Children** each have one assignee: the Worker, with the skills that part needs, or one person on the team
-  (a question, or a list to go through). They're created for the person the job is for (whose accounts a run
+- **Children** each have one assignee: the Worker, with the skills that part needs; one person on the team
+  (a question, or a list to go through); or a script, one of a skill's scripts run without a model
+  (`lib/agents/script-child.ts`), with the Worker woken on it only if the script fails, to fix it and finish. They're created for the person the job is for (whose accounts a run
   may use follows from it), with the job's visibility. A Worker's child doesn't notify anyone: its `finish`
   and `ask` go to the Coordinator, and it's shown on the job, not in lists. A person's child is in that
   person's inbox only, and their reply on it is their answer. `after` orders them as it does tasks.

@@ -236,7 +236,13 @@ function jobListing(job?: JobBrief): string {
   const earlier = job.done ? `\n(${job.done} children from earlier rounds are done and not listed.)` : "";
   if (job.children.length === 0) return `\n<children>\nNo children yet.${earlier}\n</children>\n`;
   const lines = job.children.map(({ task: c, latest }) => {
-    const who = c.assigneeKind === "person" ? c.members.find((m) => m.type === "person")?.name ?? "a person" : `Worker${c.skills.length ? `: ${c.skills.join(", ")}` : ""}`;
+    const script = (c.payload as { script?: { skill: string; path: string } } | null)?.script;
+    const who =
+      c.assigneeKind === "person"
+        ? (c.members.find((m) => m.type === "person")?.name ?? "a person")
+        : c.assigneeKind === "script" && script
+          ? `script ${script.skill}/${script.path}${c.agentTurns > 1 ? ", the Worker fixing it" : ""}`
+          : `Worker${c.skills.length ? `: ${c.skills.join(", ")}` : ""}`;
     const after = c.waitsFor.length ? `, after #${c.waitsFor.join(", #")}` : "";
     const word = latest ? `\n  Latest ${latest.kind === "ask" ? "question" : latest.kind === "comment" ? "reply" : "result"} from ${latest.author}: ${clip(latest.body, 1500)}` : "";
     return `- #${c.number} ${c.title} (${who}, batch ${c.batch}${after}) · ${c.status}${c.summary ? ` · ${c.summary}` : ""}${word}`;

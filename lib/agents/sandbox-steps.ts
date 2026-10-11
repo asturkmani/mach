@@ -533,6 +533,41 @@ export async function replayScript(context: RunContext, label: string): Promise<
   return { ok: true, summary: summaryLine(await scrub(context, result.stdout)), attached, unattached, drive: drive.saved, log };
 }
 
+const SCRIPT_RUNNERS: Record<string, string> = { py: "python3", sh: "bash", js: "node", mjs: "node" };
+
+/**
+ * Runs one of a skill's scripts without a model (a job's script child): the
+ * skill's scripts go into skills/<name>/ in the job's sandbox, the script runs
+ * there with the job's data sources connected, and what it writes in outputs/
+ * is attached to the task.
+ */
+export async function runSkillScript(
+  context: RunContext,
+  input: { skill: string; scripts: Record<string, string>; path: string; args: string[]; label: string },
+): Promise<ReplayResult> {
+  "use step";
+  const runner = SCRIPT_RUNNERS[input.path.split(".").pop() ?? ""];
+  if (!runner || !input.scripts[input.path]) return { ok: false, reason: "no_script", log: `${input.skill} has no script ${input.path} to run.` };
+  const sandbox = await open(context);
+  await connectSources(context, sandbox);
+  await pullDrive(context, sandbox);
+  const dir = `${JOB_DIR}/skills/${input.skill}`;
+  const files = Object.entries(input.scripts).map(([path, content]) => ({ path: `${dir}/${path}`, content: Buffer.from(content) }));
+  await sandbox.run("mkdir", ["-p", ...new Set(files.map((f) => f.path.slice(0, f.path.lastIndexOf("/")))), `${JOB_DIR}/outputs`]);
+  await sandbox.writeFiles(files);
+  await sandbox.mark(RUN_MARK);
+  const result = await sandbox.run(runner, [`${dir}/${input.path}`, ...input.args], { cwd: JOB_DIR, timeoutMs: COMMAND_TIMEOUT_MS, env: jobEnv() });
+  const drive = await pushDrive(context, sandbox);
+  const log = `${await scrub(context, formatLog(result))}${driveNote(drive)}`;
+  if (result.exitCode !== 0) return { ok: false, reason: "failed", log };
+  const attached: string[] = [];
+  for (const file of await changedOutputs(sandbox)) {
+    const saved = await attach(context, sandbox, `${JOB_DIR}/outputs/${file.path}`, input.label);
+    if (typeof saved !== "string" && !saved.unchanged) attached.push(`${saved.name} (v${saved.version})`);
+  }
+  return { ok: true, summary: summaryLine(await scrub(context, result.stdout)), attached, unattached: [], drive: drive.saved, log };
+}
+
 /**
  * End of a run that used the sandbox: save anything new on the drive, keep the
  * job's notes and its code (scripts, config, run.sh) in the library, so the

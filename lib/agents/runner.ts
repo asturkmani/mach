@@ -118,10 +118,18 @@ function jobTools(context: RunContext, state: RunState, end: (outcome: RunOutcom
   return {
     start_child: tool({
       description:
-        "Start part of the job as a child task: for the Worker (with the skills that part needs), or for one person on the team (a question, or a list to go through). The children you start in one run are a batch. The child can't see this job: its brief carries everything.",
+        "Start part of the job as a child task: for the Worker (with the skills that part needs), for one person on the team (a question, or a list to go through), or a script: one of a skill's scripts, run without a model (the Worker steps in only if it fails). The children you start in one run are a batch. The child can't see this job: its brief carries everything.",
       inputSchema: z.object({
-        assignee: z.enum(["worker", "person"]),
+        assignee: z.enum(["worker", "person", "script"]),
         person: z.string().optional().describe("For a person's child: their exact name."),
+        script: z
+          .object({
+            skill: z.string().min(1).describe("The skill the script is in."),
+            path: z.string().min(1).describe("The script, as the skill lists it, e.g. pull_untagged.py."),
+            args: z.array(z.string()).optional(),
+          })
+          .optional()
+          .describe("For a script child."),
         title: z.string().min(1).max(100).describe("The outcome, starting with a verb."),
         brief: z
           .string()

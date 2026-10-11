@@ -89,7 +89,7 @@ export default async function TaskPage({ params, searchParams }: PageProps<"/tas
           title: c.title,
           status: c.status,
           summary: c.summary,
-          who: c.assigneeKind === "person" ? (c.members.find((m) => m.type === "person")?.name ?? "A person") : "Worker",
+          who: c.assigneeKind === "person" ? (c.members.find((m) => m.type === "person")?.name ?? "A person") : c.assigneeKind === "script" ? "Script" : "Worker",
         })),
       }}
       messages={messages.map((m) => ({ ...m, createdAt: new Date(m.createdAt).toISOString() }))}

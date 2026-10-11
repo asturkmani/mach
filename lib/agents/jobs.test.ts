@@ -4,12 +4,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createChiefOfStaff } from "@/lib/agents/chief-of-staff";
 import { setScheduler } from "@/lib/agents/dispatch";
 import { agentModel, coordinatorAgent, createAgent, listAgents, workerAgent } from "@/lib/agents/store";
+import { saveCompanySkill } from "@/lib/company-skills";
 import { listTaskFiles } from "@/lib/files";
 import { createOrganization, getOrganization } from "@/lib/orgs";
 import { getPerson, linkMember } from "@/lib/people";
 import { getTask, getTaskByNumber, listChildren, listInbox, listMessages, listTasks } from "@/lib/tasks";
 import { createTaskWithTeam, replyToTask, setStatus } from "@/lib/work";
+import { setSandboxProvider } from "@/lib/sandbox";
 import { useTestDb } from "@/test/db";
+import { fakeSandboxes } from "@/test/fake-sandbox";
 import { scriptedModel, type Step } from "@/test/scripted-model";
 
 const ORG = "org_cedar";
@@ -50,7 +53,10 @@ describe("jobs", () => {
     await useTestDb();
     await createOrganization({ id: ORG, name: "Cedar Legacy" });
   });
-  afterEach(() => setScheduler(null));
+  afterEach(() => {
+    setScheduler(null);
+    setSandboxProvider(null);
+  });
 
   async function sara() {
     const person = await linkMember(ORG, { id: "user_sara", email: "sara@cedar.example", name: "Sara" });
@@ -215,6 +221,53 @@ describe("jobs", () => {
     expect(calls.coordinator.some((p) => p.includes("Cancelled #2, #3, #4."))).toBe(true);
     expect(calls.coordinator.some((p) => p.includes("#4 was cancelled, so it would never start."))).toBe(true);
     expect((await getTask(ORG, job.id))!.status).toBe("review");
+  });
+
+  it("run a skill's script as a child without a model, and wake the Worker only when it fails", async () => {
+    const { by } = await sara();
+    let failing = true;
+    const sandboxes = fakeSandboxes({
+      "pull_untagged.py": (files) => {
+        if (failing) return { exitCode: 1, stderr: "KeyError: 'txn_id'" };
+        files.set("/vercel/job/outputs/untagged.csv", Buffer.from("id,amount\n1,1200"));
+        return { stdout: "SUMMARY: Pulled 20 untagged transactions." };
+      },
+    });
+    setSandboxProvider(sandboxes.provider);
+    await saveCompanySkill(ORG, {
+      name: "masttro-weekly-tagging",
+      description: "Weekly: tag untagged Masttro transactions",
+      body: "Run pull_untagged.py first.",
+      scripts: { "pull_untagged.py": "print('pull')" },
+      by: { name: "Sara" },
+    });
+    const { calls, drain } = models(
+      [
+        [["start_child", { assignee: "script", title: "Pull this week's untagged", brief: "Pull them.", script: { skill: "masttro-weekly-tagging", path: "pull_untagged.py" } }]],
+        [["wait_for_children", {}]],
+        // The fixed script delivered: this round is done; then another round, which runs it without anyone.
+        [["start_child", { assignee: "script", title: "Pull again", brief: "Pull them.", script: { skill: "masttro-weekly-tagging", path: "pull_untagged.py" } }]],
+        [["wait_for_children", {}]],
+        finish("Pulled 20 untagged."),
+      ],
+      () => {
+        failing = false; // the Worker fixed it
+        return finish("Fixed the field name; pulled 20.", "txn_id is now id.");
+      },
+    );
+    const coordinator = await coordinatorAgent(ORG);
+    const job = await createTaskWithTeam(ORG, { title: "Weekly tagging", agentIds: [coordinator.id], by });
+    await drain();
+
+    const [broken, clean] = await listChildren(ORG, job.id);
+    expect(broken).toMatchObject({ assigneeKind: "script", skills: ["masttro-weekly-tagging"], summary: "Fixed the field name; pulled 20." });
+    expect(calls.worker[0]).toContain("masttro-weekly-tagging/pull_untagged.py failed.");
+    expect(calls.worker[0]).toContain("KeyError: 'txn_id'");
+    // The second ran by itself: no model, a result, and its file on the child.
+    expect(calls.worker).toHaveLength(1);
+    expect((await listMessages(clean.id)).map((m) => m.body)).toContain("**Ran masttro-weekly-tagging/pull_untagged.py.** Pulled 20 untagged transactions.\n\nAttached untagged.csv (v1).");
+    expect(sandboxes.file(`mach-task-${clean.id}`, "skills/masttro-weekly-tagging/pull_untagged.py")?.toString()).toBe("print('pull')");
+    expect(await getTask(ORG, job.id)).toMatchObject({ status: "review", summary: "Pulled 20 untagged." });
   });
 
   it("are what a worker's task becomes when it escalates, starting from what it found", async () => {
